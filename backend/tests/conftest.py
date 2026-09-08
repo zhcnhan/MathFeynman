@@ -80,3 +80,28 @@ def app_client():
 
     with TestClient(app) as c:
         yield c
+
+
+def _purge_runtime_auto() -> None:
+    """把测试内容副本中所有运行期生成的 *_auto 文件清掉（R18：模块共享副本，
+    各模块的 seed/unlock 生成必须于模块结束复位，避免级联污染后续模块）。"""
+    from app.content import content_root, stages_dir
+    from app.service.library import refresh_library
+
+    targets = []
+    drafts = content_root() / "_drafts"
+    if drafts.exists():
+        targets.extend(drafts.glob("*_auto.md"))
+    stages = stages_dir()
+    if stages.exists():
+        targets.extend(stages.rglob("*_auto.md"))
+    for p in targets:
+        p.unlink(missing_ok=True)
+    refresh_library()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _purge_runtime_auto_per_module():
+    """每个测试模块结束后清理本会话副本中运行期生成的 *_auto（幂等；真实仓库不受影响）。"""
+    yield
+    _purge_runtime_auto()

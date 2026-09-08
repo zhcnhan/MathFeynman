@@ -8,13 +8,29 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..domain.graph import AVAILABLE, LOCKED, LEARNING, MASTERED
+from ..domain.graph import AVAILABLE, LOCKED, LEVELS, LEARNING, MASTERED
 from ..service import progress, review as review_svc
 from ..service.library import ensure_user, get_graph
 from .deps import get_db
 
 router = APIRouter(tags=["dashboard"])
 USER = "local"
+
+
+def _total_order_recommend(states: dict[str, str], graph) -> str | None:
+    """R18：推荐 = 总序允许集（state==available）内 学段 → 图谱层序 → 编号 最小者。"""
+    level_index = {lv: i for i, lv in enumerate(LEVELS)}
+    avail = [n for n, s in states.items() if s == AVAILABLE]
+    if not avail:
+        return None
+    return min(
+        avail,
+        key=lambda nid: (
+            level_index.get(graph.get(nid).level, len(LEVELS)),
+            graph.depth_of(nid),
+            nid,
+        ),
+    )
 
 
 @router.get("/dashboard")
@@ -34,7 +50,7 @@ def get_dashboard(db: Session = Depends(get_db)) -> dict:
 
     cnt = progress.counts(db, USER, graph)
     due = review_svc.due_queue(db, USER)
-    recommended = graph.recommend(mastered=mastered, learning=learning)
+    recommended = _total_order_recommend(states, graph)  # R18：总序允许集内推荐
     rec_node = graph.get(recommended) if recommended else None
     today = dt.date.today().isoformat()
     today_done = (

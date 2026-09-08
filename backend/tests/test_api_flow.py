@@ -19,14 +19,33 @@ from app.service.library import get_library
 
 @pytest.fixture(scope="module")
 def client():
-    """模块内独立 TestClient；先重置业务数据再进入（lifespan 建表+同步）。"""
+    """模块内独立 TestClient；先重置业务数据，再播种"总序头部" auto 内容（R18：
+    primary 数与运算头 4 条 s01–s04 落库 → 0 掌握时推荐 primary.s01，链可从根推进）。"""
     _reset_db()
+    _seed_primary_head()
+
     from fastapi.testclient import TestClient
 
     from app.main import app
 
     with TestClient(app) as c:
         yield c
+
+
+def _seed_primary_head() -> None:
+    """把 primary 数与运算头链（s01–s04）auto 内容落到 hermetic 副本 + DB 同步。"""
+    from app.content import pipeline as pl
+    from app.content.roadmap import load_roadmap
+    from app.db import SessionLocal
+    from app.service.library import refresh_library, sync_content
+
+    rd = load_roadmap("primary")
+    head = ["primary.s01", "primary.s02", "primary.s03", "primary.s04"]
+    pl.generate_sequence(rd, head)
+    refresh_library()
+    with SessionLocal() as db:
+        sync_content(db)
+        db.commit()
 
 
 def _reset_db() -> None:
@@ -53,7 +72,17 @@ def canonical_answer(node_id: str, exercise_id: str, seed: int) -> str:
     return render_exercise(node_id, ex, seed).canonical_answer
 
 
+def unlock_before(node_id: str) -> None:
+    """R18：进入目标节点前，按蓝图总序生成链上缺失 auto 并把闭包达成（目标自身除外）。"""
+    from order_support import unlock_until
+
+    with SessionLocal() as db:
+        unlock_until(db, node_id)
+        db.commit()
+
+
 def start_practice(client, node_id: str) -> dict:
+    unlock_before(node_id)  # R18 总序：先把前置链达成（目标节点留给本流程真学）
     r = client.post("/api/session/start", json={"node_id": node_id})
     assert r.status_code == 200, r.text
     sess = r.json()
@@ -133,14 +162,15 @@ def _wrong_for_mode(mode: str, canonical: str) -> str:
 
 
 def test_full_chain_master_both_nodes(client):
-    # 起点推荐学段回归（USER_FEEDBACK Day1 🟡）：0 掌握时推荐必须落在最低学段(primary)
+    # R18 总序：0 掌握时唯一可学 = primary 数与运算首节点 primary.s01（seeded auto）
     d0 = client.get("/api/dashboard").json()
     assert d0["stats"]["mastered"] == 0
     assert d0["recommended_node"] is not None
     assert d0["recommended_node"]["level"] == "primary"
-    assert d0["recommended_node"]["id"] == "primary.0101"  # primary 根节点按编号最小
+    assert d0["recommended_node"]["id"] == "primary.s01"  # 总序首节点（不再直接推 middle/high 根）
 
-    # 节点 1：middle.0101
+    # 节点 1：middle.0101（一元一次方程概念；start_practice 内部按总序自动完成 primary 通关与
+    # 链上整式 m03 的内容/达成，目标节点留给本流程真学）
     res1 = pass_node_via_feynman(
         client,
         "middle.0101",
@@ -151,16 +181,27 @@ def test_full_chain_master_both_nodes(client):
     assert any(e["type"] == "feynman_passed" for e in res1["events"])
     assert any(e["type"] == "node_mastered" for e in res1["events"])
 
-    # 仪表盘：掌握 1；内容库存在其他零前置根节点 → 推荐非空但不指定具体节点
+    # 仪表盘：预铺达成（primary 4 锚 + s01–s04 seed + 0201/0202 + m03 = 11）+ 概念真学 1 = 12
     d = client.get("/api/dashboard").json()
-    assert d["stats"]["mastered"] == 1
+    assert d["stats"]["mastered"] == 12
     assert d["recommended_node"] is not None
     g = client.get("/api/graph").json()
     states = {n["id"]: n["state"] for n in g["nodes"]}
     assert states["middle.0101"] == "mastered"
-    assert states["middle.0102"] == "available"  # 前置 0101 已掌握 → 解锁
+    # R18 顺序修正断言：概念之后解锁"等式性质(0104)"，解方程(0102) 必须先学性质 → 仍锁
+    assert states["middle.0104"] == "available"
+    assert states["middle.0102"] == "locked"
 
-    # 节点 2：middle.0102（模板方程题 + 费曼）
+    # 节点 2：middle.0104（等式的性质——蓝图 m12，紧随概念 m11）
+    res2a = pass_node_via_feynman(
+        client,
+        "middle.0104",
+        "等式的性质有两条：两边同加或两边同减同一个数等式仍成立；两边同乘或除以非零数也仍成立。"
+        "天平模型里两边放相同重量仍保持平衡，移项变号就来自这两条等式性质。除以零会把零当除数所以不行。",
+    )
+    assert res2a["payload"].get("mastered") is True
+
+    # 节点 3：middle.0102（解方程——蓝图 m13，前置 m12(0104) 已达成 → 现在解锁）
     res2 = pass_node_via_feynman(
         client,
         "middle.0102",
@@ -172,7 +213,10 @@ def test_full_chain_master_both_nodes(client):
     assert res2["payload"]["mastery"]["next_review_due_at"]
 
     d2 = client.get("/api/dashboard").json()
-    assert d2["stats"]["mastered"] == 2
+    assert d2["stats"]["mastered"] >= 14  # 12(预铺+概念) + 0104 + 0102（直插幂等可能更多，只保下界）
+    g2 = client.get("/api/graph").json()
+    st2 = {n["id"]: n["state"] for n in g2["nodes"]}
+    assert st2["middle.0102"] == "mastered" and st2["middle.0104"] == "mastered"
     # 到期队列为空（首次排程在 ~2 天后）
     q = client.get("/api/review/queue").json()
     assert q["total_due"] == 0
@@ -523,18 +567,9 @@ def test_campaign_snapshot_and_boss_pass(client):
     BOSS = "middle.0199"
     PREREQS = ["middle.0101", "middle.0102", "middle.0103", "middle.0104"]
 
-    # 干净起点：清除 boss 与前置进度后，直接把前置标记 mastered（跳过重复学四关）
+    # 干净起点：清除 boss 进度，按总序把归属主题组（蓝图 m11–m19）达成 → boss 可开
     _reset_node(BOSS)
-    with SessionLocal() as db:
-        for nid in PREREQS:
-            _reset_node_db(db, nid)
-            row = db.get(m.UserNode, ("local", nid))
-            if row is None:
-                row = m.UserNode(user_id="local", node_id=nid)
-                db.add(row)
-            row.state = "mastered"
-            row.mastered_at = None
-        db.commit()
+    unlock_before(BOSS)
 
     cam0 = client.get("/api/campaign").json()
     assert cam0["levels"], "campaign 需返回学段视图"

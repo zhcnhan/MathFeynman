@@ -822,3 +822,32 @@ b) 用户到段前滚动精核 middle 全段（31 条）与 c15b；c) 配置 LLM
 真人全自动冒烟（小学→初中首批连续通关、auto 内容纠错→后台重生成替换可见）；d) 无 key 环境复核
 feedback 自动触发文案与熔断口径。
 
+---
+
+## 22. R18 阶段 1：蓝图总序门禁引擎（2026-09-08 · docs/09 R18）
+
+**规格**：学习进度 = roadmap 权威（roadmap-authoritative progression）。新增 `service/path.py`：
+- 条目达成 = 覆盖节点 mastered（anchors[0] 在库 或 条目 auto 落地 id）；开放 = 全部蓝图前置达成
+  （同文件条目；跨学段 preref 目标已落地→需达成、未落地→不阻塞，学段顺序兜底）且自身未达成。
+- node_allowed：普通节点=所属条目开放（owner：id 即条目 auto 或 anchors 反向）；首领(boss)=归属
+  蓝图主题组（内容 topic 精确/唯一前缀匹配）全部达成；孤儿人工节点（如 high.0201）=学段解锁+内容
+  prereq 兜底；**mastered/复习/重学放行**（总序只防越级新学；达成节点重学不越级）；学段解锁：
+  primary 恒开、其余需前序（有蓝图内容的）学段全部已落地条目达成。
+- 接入：progress.state_map / recompute_states 的 available 判定改由 PathEngine（图谱手写 prereq 不再
+  单独决定可学性；复习/已掌握不受限）；dashboard 推荐 = 总序允许集内 学段→图谱层→编号 最小；
+  /session/start **新建会话门禁**：node_allowed 违反 → 409 invalid_state + "请先完成：<前置标题>"；
+  既有会话恢复/练习费曼续走不受影响；/graph、/campaign 经 state_map 自动跟随总序。
+
+**测试基建**：conftest 每模块结束清理副本中运行期 *_auto（共享副本防级联污染）；新增
+`backend/tests/order_support.py`（unlock_until：按总序闭包生成缺失 auto 内容 + 前序学段已落地条目
+达成 → 目标可学；幂等）；test_api_flow 适配总序（fixture seed primary 头链 s01–s04；0 掌握推荐=
+primary.s01；middle 真学链 0101 概念→0104 性质→0102 求解，断言"0104 先于 0102 解锁"的顺序修正）。
+**回归**：pytest = **188 passed + 1 skipped**（不降，67s）；content validate 24/47（真实库含 auto）；
+git 提交含 docs/09 R17/R18 裁决文本（架构侧书写未提交部分）。
+
+**疑点/记录**
+1. 引擎按"蓝图已落地条目"定义学段通关：未落地（懒生成前）条目不算阻塞；同段未落地前置在部分内容
+   环境会锁目标（测试用 order_support 生成补齐 = 模拟懒生成既定结果）。
+2. start 对"已达成节点"放行=允许复习式重学；严格"不可重学"可由 profile/UI 后续策略另定。
+3. 每请求 make_engine 重建 owner 映射（蓝图缓存 lru；库解析 ~ms）；全量回归 49s→67s，量级可接受。
+

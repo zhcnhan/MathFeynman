@@ -1,9 +1,11 @@
-"""service.progress：用户进度读取/重算（docs/03 §1 节点状态机）。
+"""service.progress：用户进度读取/重算（docs/03 §1 节点状态机 + docs/09 R18 总序）。
 
 设计约定：
 - user_nodes.state 持久化列只存 locked/available/learning/mastered 之一；
   reviewing 为 mastered 之上由复习到期推导的显示态（docs/03 §1/§3），读时叠加。
-- 重算规则：mastered/learning 由既有记录决定；其余节点按图谱 DAG 推 available/locked。
+- 重算规则（R18）：mastered/learning 由既有记录决定；其余节点按**蓝图总序门禁**
+  （service.path.PathEngine）推 available/locked——内容手写 prereq 不再单独决定可学性；
+  复习（已掌握内容）不受总序限制。
 """
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..domain.graph import AVAILABLE, LEARNING, LOCKED, MASTERED, KnowledgeGraph
+from .path import PathEngine, make_engine
 
 REVIEWING = "reviewing"
 
@@ -30,18 +33,40 @@ def _sets(db: Session, user_id: str) -> tuple[set[str], set[str]]:
     return mastered, learning
 
 
+def _engine_and_infos(db: Session, user_id: str, graph: KnowledgeGraph, mastered: set[str]):
+    """构建总序引擎 + 节点元信息（kind/level/topic/prereqs 供门禁）。"""
+    from .library import get_library
+
+    lib = get_library()
+    eng = make_engine(mastered)
+    infos: dict[str, dict] = {}
+    for nid in graph.node_ids:
+        doc = None
+        loaded = lib.by_id.get(nid)
+        if loaded is not None:
+            doc = loaded.doc
+        nd = graph.get(nid)
+        infos[nid] = {
+            "kind": getattr(doc, "kind", "") if doc is not None else "",
+            "level": getattr(nd, "level", "") or (getattr(doc, "level", "") if doc else ""),
+            "topic": getattr(nd, "topic", "") or (getattr(doc, "topic", "") if doc else ""),
+            "prereqs": list(getattr(nd, "prereqs", ()) or ()),
+        }
+    return eng, infos
+
+
 def recompute_states(db: Session, user_id: str, graph: KnowledgeGraph) -> None:
-    """按当前 mastered/learning 记录重算全部节点状态并落库。"""
+    """按当前 mastered/learning 记录 + 蓝图总序重算全部节点状态并落库。"""
     mastered, learning = _sets(db, user_id)
+    eng, infos = _engine_and_infos(db, user_id, graph, mastered)
     for node_id in graph.node_ids:
         if node_id in mastered:
             state = MASTERED
         elif node_id in learning:
             state = LEARNING
-        elif all(p in mastered for p in graph.prereqs_of(node_id)):
-            state = AVAILABLE
         else:
-            state = LOCKED
+            ok, _ = eng.node_allowed(node_id, **infos[node_id])
+            state = AVAILABLE if ok else LOCKED
         row = db.get(models.UserNode, (user_id, node_id))
         if row is None:
             row = models.UserNode(user_id=user_id, node_id=node_id)
@@ -50,7 +75,7 @@ def recompute_states(db: Session, user_id: str, graph: KnowledgeGraph) -> None:
 
 
 def state_map(db: Session, user_id: str, graph: KnowledgeGraph, *, now: dt.datetime | None = None) -> dict[str, str]:
-    """{node_id: 显示状态}：叠加 reviewing（mastered 且复习到期）。"""
+    """{node_id: 显示状态}：叠加 reviewing（mastered 且复习到期）。可用性按蓝图总序（R18）。"""
     # DB DateTime 列为 naive UTC；比较前归一
     now = (now or dt.datetime.now(dt.timezone.utc)).replace(tzinfo=None)
     states: dict[str, str] = {}
@@ -63,15 +88,15 @@ def state_map(db: Session, user_id: str, graph: KnowledgeGraph, *, now: dt.datet
             models.Review.due_at <= now,
         )
     }
+    eng, infos = _engine_and_infos(db, user_id, graph, mastered)
     for node_id in graph.node_ids:
         if node_id in mastered:
             states[node_id] = REVIEWING if node_id in due_nodes else MASTERED
         elif node_id in learning:
             states[node_id] = LEARNING
-        elif all(p in mastered for p in graph.prereqs_of(node_id)):
-            states[node_id] = AVAILABLE
         else:
-            states[node_id] = LOCKED
+            ok, _ = eng.node_allowed(node_id, **infos[node_id])
+            states[node_id] = AVAILABLE if ok else LOCKED
     return states
 
 

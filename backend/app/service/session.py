@@ -173,6 +173,33 @@ class SessionService:
             db.flush()
             return self.resume(db, existing.id)
 
+        # R18 总序门禁：仅"进入新节点"受控（既有会话恢复/练习费曼续走不受影响）。
+        # node_allowed 按蓝图总序（service.path）；违反 → 409 invalid_state + 前置提示。
+        from .path import make_engine
+
+        mastered = {
+            nid
+            for (nid,) in db.query(models.UserNode.node_id)
+            .filter(
+                models.UserNode.user_id == self.user_id,
+                models.UserNode.state == "mastered",
+            )
+            .all()
+        }
+        eng = make_engine(mastered)
+        ok_gate, missing = eng.node_allowed(
+            node_id,
+            kind=loaded.doc.kind or "",
+            level=loaded.doc.level or "",
+            topic=loaded.doc.topic or "",
+            prereqs=list(loaded.doc.prereqs or ()),
+        )
+        if not ok_gate:
+            raise SessionError(
+                "当前节点尚未解锁（须按课程顺序先学前置）：" + "；".join(missing or ["总序前置未达成"]),
+                code="invalid_state",
+            )
+
         sess_id = _new_session_id(node_id)
         sess = models.Session(
             id=sess_id,
