@@ -74,6 +74,10 @@ def _draft_messages(spec: dict) -> list[dict]:
         "    - <追问问题>\n"
         "---\n"
         "（正文可精简，但**结尾的 --- 行不可省略**）\n"
+        "模板题纪律（违反即 sympy 自检失败）：params 只出整数；answer_expr 只允许 + - * / 、括号与参数，"
+        "**禁止 round/floor/ceil/abs/mod 及对符号取整**；需要整除时用 constraint 保证（如 (c-b)%a==0）；"
+        "目标含\"四舍五入/估算/约等于\"的题改出 fixed 题（题干写具体数字、check 配数值答案），"
+        "不要用模板+取整实现。\n"
         "铁律：draft_md 必须以 --- 行开始、以 --- 行结束（无前导/尾随空行，不要代码围栏），"
         "front-matter 字段完整。教学事实简洁正确，适合目标学段。"
     )
