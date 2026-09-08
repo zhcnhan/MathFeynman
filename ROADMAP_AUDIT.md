@@ -1,25 +1,34 @@
 # ROADMAP_AUDIT.md — 课程蓝图自动自查报告
 
-> 生成时间：2026-09-08（A 段跨学段 prereq 机器化后再生）；内容库节点数：13（stages 13，未变）。
-> 依据：docs/11 + content/roadmap/REVIEW-blueprint.md + REVIEW2-master.md（R15 精核补丁批）+ docs/12 P1–P3（high/college/ai 草案）+ R14 后续#1（跨学段 prereq）。
-> 用途：供人工精核参考；机械检查（前置存在/锚点存在/无环/主题连续/covered 明细），质量判断仍需人工。
-> 条目规模口径：primary 26 / middle 4（首批，REVIEW D 待扩段）/ high 81（R15 +h40b 复数）/ college 58（R15 +c34b SVD、c43b 马尔可夫链可选）/ ai 60（R15 +a04b/a17b/a25b）；
+> 生成时间：2026-09-08（C 段 middle 全段扩段后再生）；内容库节点数：13（stages 13，未变）。
+> 依据：docs/11 + content/roadmap/REVIEW-blueprint.md + REVIEW2-master.md（R15 精核补丁批）+ docs/12 P1–P3 + R14 后续#1（跨学段 prereq）+ 工单 C 段（middle 全段）。
+> 用途：供人工精核参考；机械检查（前置存在/锚点存在/跨学段方向/无环/主题连续/covered 明细），质量判断仍需人工。
+> 条目规模口径：primary 26 / middle 31（C 段全段扩段）/ high 81（R15 +h40b 复数）/ college 58（R15 +c34b SVD、c43b 马尔可夫链可选）/ ai 60（R15 +a04b/a17b/a25b）；
 > docs/12 §5 的 200+/300+/150+ 为含未来细拆的全内容口径，两者口径差异见 IMPLEMENTATION_NOTES 疑点）。
 
-## middle（4 条）
+## middle（31 条）
 
 - 自审结论：✅ 通过
 - 前置缺失 0 / 锚点缺失 0 / 自指 0 / 环 0 / 正向引用 0
-- 跨学段引用 0（前序学段）/ 反向 0 / 未落地缺口提示 0（提示不阻塞，学段顺序兜底）
+- 跨学段引用 1（前序学段）/ 反向 0 / 未落地缺口提示 1（提示不阻塞，学段顺序兜底）
 
 主题分组（按顺序）：
 - 代数·数轴与整式初步 ×4（middle.m01 … middle.m04）
+- 代数·有理数与实数 ×6（middle.m05 … middle.m10）
+- 代数·方程不等式与方程组 ×9（middle.m11 … middle.m19）
+- 图形与几何·平面初步 ×5（middle.m20 … middle.m24）
+- 代数·函数初步 ×4（middle.m25 … middle.m28）
+- 统计与概率初步 ×3（middle.m29 … middle.m31）
 
-covered（锚点已覆盖 2）：
+covered（锚点已覆盖 6）：
 - middle.m01（负数与数轴）-> anchors ['middle.0201']
 - middle.m02（有理数的加法）-> anchors ['middle.0202']
-待生成 2：
-  middle.m03、middle.m04
+- middle.m11（一元一次方程的概念）-> anchors ['middle.0101']
+- middle.m12（等式的性质）-> anchors ['middle.0104']
+- middle.m13（解一元一次方程（移项·去括号去分母））-> anchors ['middle.0102']
+- middle.m14（一元一次方程的应用）-> anchors ['middle.0103']
+待生成 25：
+  middle.m03、middle.m04、middle.m05、middle.m06、middle.m07、middle.m08、middle.m09、middle.m10、middle.m15、middle.m16、middle.m17、middle.m18、middle.m19、middle.m20、middle.m21、middle.m22、middle.m23、middle.m24、middle.m25、middle.m26、middle.m27、middle.m28、middle.m29、middle.m30、middle.m31
 
 ## primary（26 条）
 

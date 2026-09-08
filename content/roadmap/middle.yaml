@@ -1,5 +1,17 @@
-# 初中课程蓝图（第一批：代数，供"小学通关→自动解锁初中代数"端到端验收，docs/10 §4）
-# 状态: draft 待精核 —— 仅首批锚点+两条待生成条目（机制演示用，精核后再扩全段）
+# 初中课程蓝图（docs/10 §2.2 · 工单 C 段全段扩段 —— 状态: draft 待精核）
+# 主线（REVIEW-blueprint D + 用户工单 C 段）：有理数 → 整式 → 一元一次方程（锚 middle.0101–0104）
+# → 方程应用与不等式 → 二元一次方程组 → 实数与根式 → 平面几何（角/平行/三角形/勾股）→
+# 一次函数 → 概率统计初步。列表顺序 = 学习序列；prereq 指向本文件条目 id 或前序学段条目（primary.sNN）。
+#
+# 说明：
+# - m01–m04 为既有首批（id/内容未动），m05 起为本轮扩段新增（id 延续 m05–m31）。
+# - 一元一次方程线 4 个锚点（middle.0101 概念 / 0104 等式性质 / 0102 求解 / 0103 应用）按教学序
+#   概念 → 等式性质 → 解方程 → 应用 映射到蓝图条目 m11–m14（anchors 覆盖，不重复生成）。
+# - **一次函数（m27/m28）不占位 high.0201**：high.0201 是高中人工锚点节点，若作 middle anchors
+#   会造成"middle 通关依赖 high 学段节点、而 high 学段解锁依赖 middle 通关"的倒锁；
+#   high.0201 继续仅作 high.h14 的前置真实节点引用（R14"一次函数归 middle"落地为 middle 待生成 auto）。
+# - 统计概率组首条 m29 prereq 引用 primary.s21（跨学段蓝图条目，A 段机制：方向=前序学段合法，
+#   小学统计内容落地后无缺口；未落地时生成剔除 + 缺口提示，学段顺序兜底）。
 level: middle
 entries:
   - id: middle.m01
@@ -28,4 +40,182 @@ entries:
     objectives: ["去括号法则", "整式加减运算"]
     prereqs: [middle.m03]
     difficulty: 3
+    requires_thinking: true
+  - id: middle.m05
+    title: 有理数的乘法与除法
+    topic: 代数·有理数与实数
+    objectives: ["符号法则与绝对值相乘除", "倒数与除法转化", "乘除混合的运算顺序"]
+    prereqs: [middle.m01]
+    difficulty: 2
+  - id: middle.m06
+    title: 有理数的乘方与科学记数法
+    topic: 代数·有理数与实数
+    objectives: ["乘方的意义与符号规律", "科学记数法表示大/小数"]
+    prereqs: [middle.m05]
+    difficulty: 2
+  - id: middle.m07
+    title: 有理数混合运算与运算律
+    topic: 代数·有理数与实数
+    objectives: ["三级混合运算顺序", "交换/结合/分配律的简便计算"]
+    prereqs: [middle.m06]
+    difficulty: 2
+  - id: middle.m08
+    title: 平方根与立方根
+    topic: 代数·有理数与实数
+    objectives: ["算术平方根与平方根", "立方根", "开方与乘方互逆"]
+    prereqs: [middle.m06]
+    difficulty: 2
+  - id: middle.m09
+    title: 实数与数轴（无理数）
+    topic: 代数·有理数与实数
+    objectives: ["无理数与实数分类", "实数在数轴上的表示", "实数大小的比较"]
+    prereqs: [middle.m08, middle.m01]
+    difficulty: 2
+    requires_thinking: true
+  - id: middle.m10
+    title: 二次根式及其运算
+    topic: 代数·有理数与实数
+    objectives: ["二次根式的意义与性质", "最简二次根式与化简", "二次根式加减乘除"]
+    prereqs: [middle.m08]
+    difficulty: 3
+    requires_thinking: true
+  - id: middle.m11
+    title: 一元一次方程的概念
+    topic: 代数·方程不等式与方程组
+    objectives: ["方程/方程的解/解方程", "一元一次方程的识别"]
+    prereqs: [middle.m03]
+    anchors: [middle.0101]
+    difficulty: 1
+  - id: middle.m12
+    title: 等式的性质
+    topic: 代数·方程不等式与方程组
+    objectives: ["等式两条性质", "性质在解方程变形中的依据"]
+    prereqs: [middle.m11]
+    anchors: [middle.0104]
+    difficulty: 2
+  - id: middle.m13
+    title: 解一元一次方程（移项·去括号去分母）
+    topic: 代数·方程不等式与方程组
+    objectives: ["移项法则与依据", "去括号/去分母的完整流程"]
+    prereqs: [middle.m12]
+    anchors: [middle.0102]
+    difficulty: 2
+  - id: middle.m14
+    title: 一元一次方程的应用
+    topic: 代数·方程不等式与方程组
+    objectives: ["审题设列解检五步", "和差倍分/行程/工程等模型"]
+    prereqs: [middle.m13]
+    anchors: [middle.0103]
+    difficulty: 3
+    requires_thinking: true
+  - id: middle.m15
+    title: 一元一次不等式及其解集
+    topic: 代数·方程不等式与方程组
+    objectives: ["不等式的解与解集", "数轴表示解集", "解一元一次不等式"]
+    prereqs: [middle.m13, middle.m01]
+    difficulty: 2
+  - id: middle.m16
+    title: 一元一次不等式的应用（含不等式组初步）
+    topic: 代数·方程不等式与方程组
+    objectives: ["列不等式解决实际问题", "一元一次不等式组的概念与解集"]
+    prereqs: [middle.m15]
+    difficulty: 3
+    requires_thinking: true
+  - id: middle.m17
+    title: 二元一次方程组的概念
+    topic: 代数·方程不等式与方程组
+    objectives: ["二元一次方程（组）及其解", "解与图象的初步联系"]
+    prereqs: [middle.m13]
+    difficulty: 2
+  - id: middle.m18
+    title: 代入与加减消元法
+    topic: 代数·方程不等式与方程组
+    objectives: ["代入消元法", "加减消元法", "选择策略与检验"]
+    prereqs: [middle.m17]
+    difficulty: 2
+  - id: middle.m19
+    title: 二元一次方程组的应用
+    topic: 代数·方程不等式与方程组
+    objectives: ["设双未知数建模", "鸡兔同笼等经典模型", "与一元一次方程方法对比"]
+    prereqs: [middle.m18]
+    difficulty: 3
+    requires_thinking: true
+  - id: middle.m20
+    title: 角与相交线
+    topic: 图形与几何·平面初步
+    objectives: ["余角补角与对顶角", "垂线及其性质", "同位角内错角同旁内角"]
+    prereqs: []
+    difficulty: 2
+  - id: middle.m21
+    title: 平行线的判定与性质
+    topic: 图形与几何·平面初步
+    objectives: ["三种判定方法", "三条性质定理", "判定与性质的综合推理"]
+    prereqs: [middle.m20]
+    difficulty: 2
+    requires_thinking: true
+  - id: middle.m22
+    title: 三角形的认识与内角和
+    topic: 图形与几何·平面初步
+    objectives: ["三角形分类与三边关系", "内角和定理及其证明", "外角性质"]
+    prereqs: [middle.m20]
+    difficulty: 2
+    requires_thinking: true
+  - id: middle.m23
+    title: 三角形全等（判定与性质）
+    topic: 图形与几何·平面初步
+    objectives: ["SSS/SAS/ASA/AAS/HL 判定", "全等性质用于证明", "常见辅助线思路初步"]
+    prereqs: [middle.m22]
+    difficulty: 3
+    requires_thinking: true
+  - id: middle.m24
+    title: 勾股定理及其应用
+    topic: 图形与几何·平面初步
+    objectives: ["勾股定理及其逆定理", "面积法/拼接法证明思路", "直角三角形中求边长与实际应用"]
+    prereqs: [middle.m22]
+    difficulty: 3
+    requires_thinking: true
+  - id: middle.m25
+    title: 平面直角坐标系与点的坐标
+    topic: 代数·函数初步
+    objectives: ["坐标系与象限", "点的坐标与对称", "距离与中点公式初步"]
+    prereqs: [middle.m01]
+    difficulty: 2
+  - id: middle.m26
+    title: 变量与函数的概念
+    topic: 代数·函数初步
+    objectives: ["常量与变量", "函数定义与表示（列表/解析/图象）", "自变量的取值范围"]
+    prereqs: [middle.m25]
+    difficulty: 2
+  - id: middle.m27
+    title: 一次函数及其图象
+    topic: 代数·函数初步
+    objectives: ["正比例函数与一次函数", "k/b 对图象的影响", "待定系数法求解析式"]
+    prereqs: [middle.m26]
+    difficulty: 3
+    requires_thinking: true
+  - id: middle.m28
+    title: 一次函数与方程、不等式的联系
+    topic: 代数·函数初步
+    objectives: ["一次函数与一元一次方程", "一次函数与一元一次不等式", "图象法解问题的综合应用"]
+    prereqs: [middle.m27, middle.m13, middle.m15]
+    difficulty: 3
+    requires_thinking: true
+  - id: middle.m29
+    title: 数据的收集整理与描述
+    topic: 统计与概率初步
+    objectives: ["全面调查与抽样调查", "频数分布表与直方图", "扇形/条形/折线图的选择"]
+    prereqs: [primary.s21]
+    difficulty: 2
+  - id: middle.m30
+    title: 数据的集中趋势与离散程度初步
+    topic: 统计与概率初步
+    objectives: ["平均数中位数众数", "方差与标准差的意义", "用数据做简单决策"]
+    prereqs: [middle.m29]
+    difficulty: 2
+  - id: middle.m31
+    title: 简单概率与频率估计
+    topic: 统计与概率初步
+    objectives: ["事件分类与古典概型", "用频率估计概率", "简单概率模型的列举"]
+    prereqs: [middle.m29]
+    difficulty: 2
     requires_thinking: true
