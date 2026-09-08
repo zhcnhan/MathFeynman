@@ -161,7 +161,11 @@ export default function SessionPage() {
         setNotice("已提交复核；处理仍在后台进行，可在复核队列查看结果。");
         return;
       }
-      setNotice("已提交复核，谢谢反馈！");
+      if (posted.item?.source === "human") {
+        setNotice("已提交复核（本内容为人工精写：仅记录，待人工修订；不会自动修改）。");
+      } else {
+        setNotice("已提交复核，谢谢反馈！");
+      }
     } catch (e) {
       setError((e as Error).message);
     }
