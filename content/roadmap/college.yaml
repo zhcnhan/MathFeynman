@@ -135,6 +135,15 @@ entries:
     prereqs: [college.c07, college.c10]  # R15：补 c07 泰勒公式（幂级数展开的目标依赖）
     difficulty: 3
     requires_thinking: true
+  # D 段：傅里叶级数单列（REVIEW2 college C"傅里叶单列待精核" + 用户工单 D 段——语音/信号方向候选，
+  # 可选条目：不学不阻塞主线；系数积分计算承接 c09/c10 链，展开收敛承接 c15）
+  - id: college.c15b
+    title: 傅里叶级数初步（方向条目：语音/信号）
+    topic: 一元微积分
+    objectives: ["周期函数的傅里叶级数展开", "傅里叶系数（Euler-Fourier 公式）", "收敛性直觉与频谱/语音信号初步"]
+    prereqs: [college.c15]
+    difficulty: 3
+    requires_thinking: true
   # 衔接注（R15/REVIEW2 B）：c16 无文件内前置——入口依赖高中空间几何衔接（见文件头衔接假设 C：
   # high h37–h47 空间向量/立体几何），此处留空前置为有意设计，防"孤立"误判。
   - id: college.c16
