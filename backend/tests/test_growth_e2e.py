@@ -90,6 +90,12 @@ def test_e2e_complete_primary_then_auto_middle_batch():
                 with SessionLocal() as db:
                     _master(db, ids)
                     db.commit()
+                # 本用例验收点 = docs/10 §4（小学通关 → 初中代数第一批 auto 解锁）。
+                # 初中首批生成后即停：high 蓝图（P1）已存在，继续 extend 会按北极星自动推进到 high，
+                # 而 high+ 内容落 _drafts（待 P4 入库护栏），未入库内容无 Node 行、不可掌握；
+                # "推进到高中首批"属 docs/12 §4 验收（high 自动入库生效后另行模拟）。
+                if middle_auto:
+                    break
                 continue
             assert res["status"] in ("done", "idle"), res
             break

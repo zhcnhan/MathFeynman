@@ -438,3 +438,39 @@ npm build 通过。
   docs/13 交接协议）当时未提交 → 本次续接已复核（audit primary 26/middle 4 全绿、covered s05–s08/m01–m02）并收尾提交。
 - **待架构侧核实**：ABC 修订批实现（REVIEW-blueprint A/B/C 对应表见 §10；本批按 REVIEW D 未动 middle.yaml，D 待后续批次）。
 - 疑点（§10 待裁决区）4 条原样挂起；docs/12 总纲 P1（high.yaml）为当前活动工单下一任务。
+
+---
+
+## 12. docs/12 P1：high.yaml 全段草案（2026-09-08 · 只写蓝图，不生成内容）
+
+**交付物**
+- `content/roadmap/high.yaml`：**80 条轻条目草案**（9 主题组，按 docs/12 §2 high 骨架顺序）：
+  集合与常用逻辑 ×6（h01–h06）/ 等式与不等式 ×7（h07–h13）/ 函数 ×17（h14–h30，含幂指对与
+  三角线至解三角形）/ 数列 ×6（h31–h36）/ 平面向量 ×4（h37–h40）/ 立体几何初步 ×7（h41–h47，
+  含空间向量法收尾）/ 解析几何 ×12（h48–h59）/ 导数及其应用 ×9（h60–h68）/ 统计与概率 ×12（h69–h80）。
+- 锚点策略：high 在库人工节点仅 high.0201（一次函数），语义归属 middle 扩段"函数初步"（REVIEW D）→
+  **不作 covered 占位 anchors**，改作 h14/h48 的**前置真实节点引用**（先掌握实例再抽象化）；anchors 留空
+  为有意（audit 锚点存在性检查要求指向库内节点，占位即报错）。
+- `content/roadmap/high-samples.md`：3 条锚点级示例（h16 单调性 / h29 三角恒等 / h59 圆锥曲线综合）
+  供精核——含 thinking 判定理由、生成建议、前后置链条核对与"首节点入库后回填 anchors"演示形态。
+- `ROADMAP_AUDIT.md`：脚本再生（含 high 段；生成器 `_dsh-local/gen_audit_report.py` 供 P2/P3 复用）。
+
+**audit 结果**：high 80 条 ok=True——前置缺失 0 / 锚点缺失 0 / 自指 0 / 环 0 / 正向引用 0 / 孤立主题 0。
+**回归**：pytest = **175 passed + 1 skipped**（含 e2e 边界适配，见下）；content validate 13/30 全绿；零残留。
+
+**e2e 边界适配（test_growth_e2e.py）**：high.yaml 就位后，extend 跨学段回退会按北极星继续自动推进到
+high（high.h01–h06 落 **_drafts**、无 Node 行、不可掌握），原用例"master 生成集"在此 FK 失败。
+修正：初中代数首批生成即停（用例声明范围 = docs/10 §4）；"推进到高中首批"属 docs/12 §4 验收，
+待 high+ 自动入库（P4）生效后另行模拟。引擎行为本身正确（北极星预演）。
+
+**待架构裁决疑点（§1 区登记）**
+1. **条目规模口径**：high 草案 80 条（轻条目口径，同 primary 26 条）；docs/12 §5"高中≈200+"似为
+   含教材级细拆的全内容口径。docs/12 §4"条目数 ≥ 预估下限"无机械定义——建议以本报告/ROADMAP_AUDIT
+   头部记录的规模口径为基准，精核后定稿各学段下限。
+2. **顺序**：middle 全段（REVIEW D）未先于 P1 展开；一次函数归属 middle、high 仅前置引用不占位 anchors，
+   中学→高中函数主线靠 selfextend 学段顺序衔接。是否接受该顺序/归属，请架构确认。
+3. **跨学段 prereq 能力缺口**：audit 口径下 prereq 只能引用"本文件条目或已在库节点"；middle 未入库主题
+   （平面几何、概率统计初步等）在 high.yaml 中无法逐条表达 → h41/h79 等以空前置+学段顺序兜底。
+   是否新增"蓝图级跨学段前置（引用其它 level.yaml 条目）"能力待裁决。
+4. **骨架外主题**：复数等 docs/12 骨架未列主题未纳入（严守总纲）；精核意见可触发增补批。
+5. **requires_thinking 启发式**：证明/含参/综合/压轴类标 true（如 h16/h29/h59）；精核可调。

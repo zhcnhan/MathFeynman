@@ -1,8 +1,10 @@
 # ROADMAP_AUDIT.md — 课程蓝图自动自查报告
 
 > 生成时间：2026-09-08；内容库节点数：13（stages 13，未变）。
-> 依据：docs/11 + content/roadmap/REVIEW-blueprint.md（A/B 落实、C 增强）；蓝图仍为 draft（用户实测后再转正）。
+> 依据：docs/11 + content/roadmap/REVIEW-blueprint.md（A/B 落实、C 增强）+ docs/12 P1（high 草案）。
 > 用途：供人工精核参考；机械检查（前置存在/锚点存在/无环/主题连续/covered 明细），质量判断仍需人工。
+> 条目规模口径：primary 26 / middle 4（首批，REVIEW D 待扩段）/ high 80（P1 草案，docs/12 §5 的 200+
+> 为含未来细拆的全内容口径，两者口径差异见 IMPLEMENTATION_NOTES 疑点）。
 
 ## middle（4 条）
 
@@ -27,9 +29,9 @@ covered（锚点已覆盖 2）：
 - 数与运算 ×12（primary.s01 … primary.s23）
 - 量与测量 ×3（primary.s11 … primary.s13）
 - 图形与几何 ×6（primary.s14 … primary.s25）
-- 代数思维 ×1（primary.s18 … primary.s18） ⚠️ 孤立单条
+- 代数思维 ×1（primary.s18） ⚠️ 孤立单条
 - 应用题建模 ×3（primary.s19 … primary.s20）
-- 统计与概率 ×1（primary.s21 … primary.s21） ⚠️ 孤立单条
+- 统计与概率 ×1（primary.s21） ⚠️ 孤立单条
 
 covered（锚点已覆盖 4）：
 - primary.s05（四则混合运算与运算顺序）-> anchors ['primary.0101']
@@ -38,3 +40,24 @@ covered（锚点已覆盖 4）：
 - primary.s08（分数乘法与倒数初步）-> anchors ['primary.0104']
 待生成 22：
   primary.s01、primary.s02、primary.s03、primary.s04、primary.s22、primary.s09、primary.s10、primary.s23、primary.s11、primary.s12、primary.s13、primary.s14、primary.s15、primary.s16、primary.s17、primary.s24、primary.s25、primary.s18、primary.s19、primary.s26、primary.s20、primary.s21
+
+## high（80 条）
+
+- 自审结论：✅ 通过
+- 前置缺失 0 / 锚点缺失 0 / 自指 0 / 环 0 / 正向引用 0
+
+主题分组（按顺序）：
+- 集合与常用逻辑 ×6（high.h01 … high.h06）
+- 等式与不等式 ×7（high.h07 … high.h13）
+- 函数 ×17（high.h14 … high.h30）
+- 数列 ×6（high.h31 … high.h36）
+- 平面向量 ×4（high.h37 … high.h40）
+- 立体几何初步 ×7（high.h41 … high.h47）
+- 解析几何 ×12（high.h48 … high.h59）
+- 导数及其应用 ×9（high.h60 … high.h68）
+- 统计与概率 ×12（high.h69 … high.h80）
+
+covered（锚点已覆盖 0）：
+- （无：本学段暂无锚点占位条目）
+待生成 80：
+  high.h01、high.h02、high.h03、high.h04、high.h05、high.h06、high.h07、high.h08、high.h09、high.h10、high.h11、high.h12、high.h13、high.h14、high.h15、high.h16、high.h17、high.h18、high.h19、high.h20、high.h21、high.h22、high.h23、high.h24、high.h25、high.h26、high.h27、high.h28、high.h29、high.h30、high.h31、high.h32、high.h33、high.h34、high.h35、high.h36、high.h37、high.h38、high.h39、high.h40、high.h41、high.h42、high.h43、high.h44、high.h45、high.h46、high.h47、high.h48、high.h49、high.h50、high.h51、high.h52、high.h53、high.h54、high.h55、high.h56、high.h57、high.h58、high.h59、high.h60、high.h61、high.h62、high.h63、high.h64、high.h65、high.h66、high.h67、high.h68、high.h69、high.h70、high.h71、high.h72、high.h73、high.h74、high.h75、high.h76、high.h77、high.h78、high.h79、high.h80
