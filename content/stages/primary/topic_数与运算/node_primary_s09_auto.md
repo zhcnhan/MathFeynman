@@ -1,5 +1,6 @@
 ---
 id: primary.s09
+source: auto
 title: 小数的四则运算
 level: primary
 topic: 数与运算

@@ -1,5 +1,6 @@
 ---
 id: primary.s03
+source: auto
 title: 乘法口诀与乘法意义
 level: primary
 topic: 数与运算

@@ -1,5 +1,6 @@
 ---
 id: primary.s04
+source: auto
 title: 除法意义与有余数除法
 level: primary
 topic: 数与运算

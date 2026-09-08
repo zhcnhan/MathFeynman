@@ -1,5 +1,6 @@
 ---
 id: primary.s10
+source: auto
 title: 百分数的认识与应用
 level: primary
 topic: 数与运算

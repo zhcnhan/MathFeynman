@@ -239,8 +239,24 @@ def generate_entry(
 
     dest, is_draft = _dest_dir(entry.level, entry.topic, force_drafts=force_drafts)
     path = dest / _filename(entry.id)
-    path.write_text(raw_md, encoding="utf-8")
+    path.write_text(_with_source_marker(raw_md), encoding="utf-8")
     return ItemResult(entry_id=entry.id, status="ok", path=str(path))
+
+
+def _with_source_marker(raw_md: str) -> str:
+    """入库文件必须带 `source: auto` 标记（纠错/护栏/审计按文件 front-matter 判断来源）。
+
+    历史 bug：管线曾在内存 meta 标 auto 但写盘保留 AI 原文 → 文件无标记 → node_source()
+    默认 'human'，auto 节点纠错被当人工、护栏分母失效（2026-09-08 实测发现，已修）。
+    """
+    if "\nsource:" in raw_md or raw_md.startswith("source:"):
+        return raw_md
+    lines = raw_md.split("\n")
+    for i, line in enumerate(lines):
+        if line.startswith("id:"):
+            lines.insert(i + 1, "source: auto")
+            return "\n".join(lines)
+    return "source: auto\n" + raw_md
 
 
 def _anchor_map(roadmap: Roadmap) -> dict[str, str]:

@@ -1,5 +1,6 @@
 ---
 id: primary.s22
+source: auto
 title: 运算律与简便运算
 level: primary
 topic: 数与运算
