@@ -58,10 +58,16 @@ os.environ["MF_DB_PATH"] = _db_file
 # 绝不污染仓库内容（此前中断测试残留 auto 文件导致图谱校验失败）。
 import shutil  # noqa: E402
 
+
+def _ignore_runtime_auto(_directory: str, names: list[str]) -> list[str]:
+    """测试从"人工基线"起步：排除用户/运行期生成的 *_auto.md（其状态由各测试自行产出）。"""
+    return [n for n in names if n.endswith("_auto.md")]
+
+
 _REPO_CONTENT = _REPO_ROOT / "content"
 _TMP_CONTENT = os.path.join(_tmp_dir, f"mf_content_{uuid.uuid4().hex}")
 if _REPO_CONTENT.exists():
-    shutil.copytree(_REPO_CONTENT, _TMP_CONTENT)
+    shutil.copytree(_REPO_CONTENT, _TMP_CONTENT, ignore=_ignore_runtime_auto)
 os.environ["MF_CONTENT_ROOT"] = _TMP_CONTENT
 
 
