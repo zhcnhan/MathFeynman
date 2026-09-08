@@ -37,15 +37,29 @@ def test_all_levels_exist_helpers():
 
 
 def test_roadmap_audit_no_cycle_no_missing():
-    """D：蓝图自动自查——文件内前置存在、无自指/环（供人工精核基线）。"""
+    """D：蓝图自动自查——文件内前置存在、无自指/环 + R18 内容不变式（真实库）全绿。"""
     from app.content.loader import load_library
 
     lib = load_library()
+    edges: dict[str, dict[str, list]] = {}
+    meta: dict[str, dict[str, dict]] = {}
+    for nid, loaded in lib.by_id.items():
+        doc = loaded.doc
+        lv = doc.level or nid.split(".")[0]
+        edges.setdefault(lv, {})[nid] = list(doc.prereqs or ())
+        meta.setdefault(lv, {})[nid] = {"kind": getattr(doc, "kind", "") or "", "topic": doc.topic or ""}
     for level in ("primary", "middle", "high", "college", "ai"):
-        rep = audit(level, known_node_ids=set(lib.by_id))
+        rep = audit(
+            level,
+            known_node_ids=set(lib.by_id),
+            content_edges=edges.get(level),
+            content_meta=meta.get(level),
+        )
         assert rep["ok"], rep
         assert rep["cycles"] == []
         assert rep["anchors_missing"] == []
+        assert rep["content_prereq_violations"] == [], rep["content_prereq_violations"]
+        assert rep["boss_unmatched"] == [], rep["boss_unmatched"]
 
 
 def test_roadmap_audit_covered_and_pending_detail():
@@ -190,3 +204,74 @@ def test_cross_level_gaps_real_blueprints():
     assert all("未落地" in g for g in gaps)
     rep = audit("ai", known_node_ids=set(lib.by_id))
     assert rep["ok"] is True and rep["cross_refs"], rep
+
+
+# ---------------------------------------------------------------------------
+# R18 阶段 3：audit 内容不变式（造错必报）
+# ---------------------------------------------------------------------------
+
+def test_audit_content_prereq_backward_reported():
+    """内容节点手写 prereq 指向蓝图序更后条目（超出前置闭包）→ 报错。"""
+    from app.content.roadmap import Roadmap
+
+    fake = Roadmap(
+        level="primary",
+        entries=[
+            _mk_entry("primary.a1", prereqs=[]),
+            _mk_entry("primary.a2", prereqs=["primary.a1"]),
+        ],
+    )
+    reg = {"primary.a1": ("primary", fake.by_id()["primary.a1"]), "primary.a2": ("primary", fake.by_id()["primary.a2"])}
+    # a1 内容手写 prereq 指向后项 a2 → 超出 a1 前置闭包 → 违规
+    rep = audit(
+        "primary",
+        roadmap=fake,
+        registry=reg,
+        known_node_ids={"primary.a1", "primary.a2"},
+        content_edges={"primary.a1": ["primary.a2"]},
+        content_meta={"primary.a1": {"kind": "", "topic": "t"}},
+    )
+    assert rep["ok"] is False
+    assert any("primary.a2" in m for m in rep["content_prereq_violations"])
+
+
+def test_audit_content_prereq_forward_ok():
+    """内容手写 prereq 落在蓝图前置闭包内 → 不报（同构正常）。"""
+    from app.content.roadmap import Roadmap
+
+    fake = Roadmap(
+        level="primary",
+        entries=[
+            _mk_entry("primary.a1", prereqs=[]),
+            _mk_entry("primary.a2", prereqs=["primary.a1"]),
+        ],
+    )
+    reg = {"primary.a1": ("primary", fake.by_id()["primary.a1"]), "primary.a2": ("primary", fake.by_id()["primary.a2"])}
+    rep = audit(
+        "primary",
+        roadmap=fake,
+        registry=reg,
+        known_node_ids={"primary.a1", "primary.a2"},
+        content_edges={"primary.a2": ["primary.a1"]},
+        content_meta={"primary.a2": {"kind": "", "topic": "t"}},
+    )
+    assert rep["ok"] is True
+    assert rep["content_prereq_violations"] == []
+
+
+def test_audit_boss_unmatched_reported():
+    """首领内容 topic 无匹配蓝图主题组 → 无主/错主报错。"""
+    from app.content.roadmap import Roadmap
+
+    fake = Roadmap(level="primary", entries=[_mk_entry("primary.a1", prereqs=[], topic="数与运算")])
+    reg = {"primary.a1": ("primary", fake.by_id()["primary.a1"])}
+    rep = audit(
+        "primary",
+        roadmap=fake,
+        registry=reg,
+        known_node_ids={"primary.boss"},
+        content_edges={"primary.boss": ["primary.a1"]},
+        content_meta={"primary.boss": {"kind": "boss", "topic": "神秘首领组"}},
+    )
+    assert rep["ok"] is False
+    assert any("神秘首领组" in m for m in rep["boss_unmatched"])

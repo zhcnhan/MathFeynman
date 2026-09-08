@@ -24,6 +24,7 @@ import functools
 from dataclasses import dataclass
 from typing import Any
 
+from ..content.roadmap import boss_group_topic  # noqa: F401  (自 roadmap 统一；R18 audit 同源)
 from ..domain.graph import LEVELS
 
 
@@ -49,18 +50,6 @@ def _registry() -> dict[str, tuple[str, Any]]:
 def _cached_maps() -> tuple[dict[str, Any], dict[str, tuple[str, Any]]]:
     """蓝图注册表/roadmaps 缓存：会话内蓝图文件不变；R18 门禁每次状态重算复用，避免重复 IO。"""
     return _roadmaps(), _registry()
-
-
-def boss_group_topic(level: str, content_topic: str, roadmap) -> str | None:
-    """首领节点归属主题组：精确匹配蓝图 topic；否则唯一"前缀"匹配（蓝图 topic 以内容 topic 开头）。"""
-    topics: list[str] = []
-    for e in roadmap.entries:
-        if e.topic not in topics:
-            topics.append(e.topic)
-    if content_topic in topics:
-        return content_topic
-    cands = [t for t in topics if t.startswith(content_topic)]
-    return cands[0] if len(cands) == 1 else None
 
 
 @dataclass

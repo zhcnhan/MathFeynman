@@ -125,15 +125,69 @@ def _list_index(e) -> int:
 def unlock_until(db, node_id: str, *, include_self: bool = False) -> None:
     """生成链上缺失 auto 内容 → 刷新库 → DB 同步 → 把闭包（不含目标自身）达成（UserNode mastered）。"""
     from app.content import pipeline as pl
+def _upsert_lib_to_db(db) -> None:
+    """把当前内容库（含新生成 auto）幂等 upsert 到 nodes/edges（原生 ON CONFLICT，无 ORM 会话竞态）。"""
+    import json
+
     from app.content.loader import load_library
-    from app.service.library import refresh_library, sync_content
+    from sqlalchemy import text
+
+    lib = load_library()
+    rows = []
+    for loaded in lib.nodes:
+        doc = loaded.doc
+        rows.append(
+            {
+                "id": doc.id,
+                "p": str(loaded.path),
+                "t": doc.title,
+                "l": doc.level,
+                "topic": doc.topic,
+                "h": loaded.content_hash,
+                "oj": json.dumps(list(doc.objectives), ensure_ascii=False),
+                "cj": json.dumps(list(doc.core_concepts), ensure_ascii=False),
+                "fj": json.dumps(doc.feynman.model_dump(), ensure_ascii=False),
+            }
+        )
+    present_ids = [r["id"] for r in rows]
+    if rows:
+        db.execute(
+            text(
+                "INSERT INTO nodes (id, yaml_path, title, level, topic, objectives_json, core_concepts_json, "
+                "feynman_json, content_hash, enabled) "
+                "VALUES (:id, :p, :t, :l, :topic, :oj, :cj, :fj, :h, 1) "
+                "ON CONFLICT(id) DO UPDATE SET yaml_path=excluded.yaml_path, title=excluded.title, "
+                "level=excluded.level, topic=excluded.topic, objectives_json=excluded.objectives_json, "
+                "core_concepts_json=excluded.core_concepts_json, feynman_json=excluded.feynman_json, "
+                "content_hash=excluded.content_hash, enabled=1"
+            ),
+            rows,
+        )
+    stale = list(db.execute(text("SELECT id FROM nodes WHERE enabled=1")).scalars().all())
+    for sid in stale:
+        if sid not in present_ids:
+            db.execute(text("UPDATE nodes SET enabled=0 WHERE id=:i"), {"i": sid})
+    db.execute(text("DELETE FROM edges"))
+    edge_rows = [
+        {"n": loaded.id, "p": p}
+        for loaded in lib.nodes
+        for p in (loaded.doc.prereqs or ())
+    ]
+    if edge_rows:
+        db.execute(
+            text("INSERT INTO edges (node_id, prereq_id) VALUES (:n, :p)"),
+            edge_rows,
+        )
+    db.flush()
+
+
+def unlock_until(db, node_id: str, *, include_self: bool = False) -> None:
+    """生成链上缺失 auto 内容 → 刷新库 → 幂等 upsert DB → 把闭包（不含目标自身）达成（UserNode mastered）。"""
+    from app.content import pipeline as pl
+    from app.content.loader import load_library
+    from app.service.library import refresh_library
 
     closure = closure_entries(node_id, include_self=include_self)
-
-    closure = closure_entries(node_id, include_self=include_self)
-    if not closure:
-        # 孤儿目标：无条目闭包 → 至少需要前序学段通关；由下方前序达成逻辑兜底
-        pass
     # 1) 生成缺失内容（蓝图列表序，先决先生成；幂等：已落地条目 exists/covered 自动跳过）
     for lv in LVLS:
         missing = [e for e in closure if e.level == lv and _landed(e, set(load_library().by_id)) is None]
@@ -141,22 +195,19 @@ def unlock_until(db, node_id: str, *, include_self: bool = False) -> None:
             continue
         from app.content.roadmap import load_roadmap
 
-        rd = load_roadmap(lv)
-        ordered_ids = [e.id for e in missing]
-        # 先确保同文件前置也入本批（防列表序在子集内靠后）
-        res = pl.generate_sequence(rd, ordered_ids)
+        res = pl.generate_sequence(load_roadmap(lv), [e.id for e in missing])
         refresh_library()
         bad = [r for r in res if r.status == "failed"]
         if bad:
             raise RuntimeError(f"unlock_until 生成失败: {bad[0].entry_id} {bad[0].errors[:2]}")
     refresh_library()
-    # 2) DB 同步（Node/Edge 行，UserNode FK 依赖）——先 flush 本会话 pending，防重复 add 冲突
+    # 2) 内容库 → DB 幂等 upsert（Node/Edge 行；UserNode master 的 FK 依赖）
     db.flush()
-    sync_content(db)
-    db.flush()
+    _upsert_lib_to_db(db)
     # 3) 达成：闭包全部落地条目 + 目标学段之前的"前序学段已落地条目"全部 mastered
     #    （R18 level_unlocked：前序学段通关才能进目标学段）
     lib_ids = set(load_library().by_id)
+    from app import models as m
     from app.content.loader import load_library as _ll
 
     doc = _ll().by_id[node_id].doc
@@ -165,7 +216,6 @@ def unlock_until(db, node_id: str, *, include_self: bool = False) -> None:
         landed = _landed(e, lib_ids)
         if landed:
             to_master.append(landed)
-    prior_ok = False
     if doc.level in LVLS:
         idx = LVLS.index(doc.level)
         roadmaps = _roadmaps()
@@ -177,11 +227,6 @@ def unlock_until(db, node_id: str, *, include_self: bool = False) -> None:
                 landed = _landed(e, lib_ids)
                 if landed:
                     to_master.append(landed)
-        prior_ok = True
-    if not prior_ok and not to_master and closure:
-        pass
-    from app import models as m
-
     for nid in to_master:
         row = db.get(m.UserNode, ("local", nid))
         if row is None:

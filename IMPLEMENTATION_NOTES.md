@@ -884,3 +884,44 @@ git 提交含 docs/09 R17/R18 裁决文本（架构侧书写未提交部分）�
    阶段 3 fresh-run E2E 将沿 s01→s02→s03→s04→s27→s05(0101)… 推进断言单调。
 2. boss 手写 prereq 保留（展示用），门禁权威=引擎组达成（audit 不变式阶段 3 覆盖 boss 归属检查）。
 
+---
+
+## 24. R18 阶段 3：audit 内容不变式 + 总序门禁测试矩阵（2026-09-08）
+
+**规格**（用户工单阶段 3 = R18 #8–#10）：
+- roadmap.audit 内容不变式：普通内容节点手写 prereq ⊆ 所属蓝图条目前置闭包 ∪ 自身结构边（引蓝图序
+  更后项 → 报错）；boss 归属无主/错主 → 报错；报告含"总序 vs 内容手写边"差异说明。
+- 测试矩阵（五学段抽样 + boss + 跨学段 + 允许集 + audit 造错 + fresh-run 单调）；全量回归 188+1 不降。
+
+**改动清单**
+1. `content/roadmap.py`：`boss_group_topic`（自 service/path 移入，audit/引擎同源）+ `_content_closure_landed`
+   （蓝图前置闭包落地 id 集，跨学段未落地不参与）；`audit()` 新增可选 `content_edges/content_meta`——
+   检查 ① 内容手写边 ⊆ 所属条目前置闭包（违规进 ok 判定）；② boss 内容 topic 归属蓝图组（无主/错主
+   进 ok 判定）+ 手写 prereq ⊆ 归属组落地集（缺组内落地 → 差异说明）；③ 孤儿节点差异说明；
+   返回增 content_prereq_violations/boss_unmatched/content_diff_notes。`service/path.py` 复用该
+   boss_group_topic（删除本地副本）。
+2. `ROADMAP_AUDIT.md`：生成器按学段传真实库 content_edges/meta，报告增"R18 内容不变式"行与明细。
+3. 测试：test_roadmap 审计全学段循环传内容数据断言真库绿 + 造错用例（内容边引蓝图后项必报、
+   boss topic 无匹配必报、合法前置不报）；新增 `backend/tests/test_total_order_gate.py`（总序门禁矩阵）：
+   - primary 链：s01 根可学 / s02 未达 409 → master s01 → 200；s03 需 s02；
+   - 分数红线：0101 前置链解锁后才能学、0102(s06) 需先因数倍数 s27 → 409 → unlock → 200；
+   - middle/high/college/ai 各抽样链：未解锁 409 → 依序达成 → 200（college/ai 先 seed 单条 auto）；
+   - boss：middle.0199 组未全达成 409 → unlock_until 组达成 → 200；
+   - 图谱 available ⊆ 总序允许：available 首节点 start 200、locked 抽样 409；
+   - fresh-run 单调：0 掌握 → s01→s02→s03→s04 逐环推进（每环解锁下一环、再后仍 409）→
+     0101 解锁、0102 仍锁（分数在因数倍数后）。
+4. 测试基建健壮化（顺序耦合修复）：`order_support.unlock_until` DB 写入改**原生幂等 upsert**
+   （ON CONFLICT DO UPDATE + JSON 列 + 边重建），规避 ORM 会话/全量 sync 在跨模块共享副本+DB 下的
+   UNIQUE/FK 竞态（排查过程记录于 §24 备注）。
+
+**验证**：真实库（含 auto）audit 全绿（violations 0 / boss 无主 0；差异说明 = boss 手写 prereq 未含组内
+其它已落地 auto，属预期说明）；content validate 24/47 ok；ROADMAP_AUDIT 再生。
+**回归**：pytest = **200 passed + 1 skipped**（188 基线 + roadmap 造错 3 + 门禁矩阵 9，69s 不降）；零残留。
+
+**备注（测试基建排查）**：跨模块共享 hermetic 副本 + 共享 DB 时，unlock 生成 auto 文件 + 全量
+sync_content 触发 nodes UNIQUE（同会话 pending 与已提交行叠加）与 edges FK（节点未先落库）——
+最终以"按 id ON CONFLICT upsert + 节点语句先于边语句 + JSON 列补全"解决，语义与 sync_content 等价且幂等。
+疑点：为何仅跨模块顺序复现、单模块不复现，根因疑似 loader 缓存/会话残留叠加，未进一步深挖（防御已覆盖）。
+
+**测试数字**：全量最终 pytest = **200 passed + 1 skipped**（+12：audit 造错 3 + 门禁矩阵 9）。
+

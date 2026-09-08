@@ -149,29 +149,77 @@ def all_levels_exist() -> list[str]:
     return sorted(p.stem for p in rd.glob("*.yaml")) if rd.exists() else []
 
 
+def boss_group_topic(level: str, content_topic: str, roadmap: "Roadmap") -> str | None:
+    """首领节点归属主题组：内容 topic 精确匹配蓝图 topic；否则唯一"前缀"匹配（蓝图 topic 以内容 topic 开头）。
+
+    R18：boss 门禁 = 归属主题组全部条目达成；无匹配/多匹配 = 无主/错主（audit 报错）。
+    """
+    topics: list[str] = []
+    for e in roadmap.entries:
+        if e.topic not in topics:
+            topics.append(e.topic)
+    if content_topic in topics:
+        return content_topic
+    cands = [t for t in topics if t.startswith(content_topic)]
+    return cands[0] if len(cands) == 1 else None
+
+
+def _content_closure_landed(
+    owner: "RoadmapEntry",
+    registry: dict[str, tuple[str, "RoadmapEntry"]],
+    known_node_ids: set[str] | None,
+) -> set[str]:
+    """owner 条目的蓝图前置闭包（同文件 + 跨学段已落地部分）对应内容落地 id 集（含 owner 自身）。
+
+    R18 audit 不变式：内容节点手写 prereq ⊆ 该闭包（跨学段未落地 → 不参与；反向引用不扩以防环）。
+    """
+    seen: set[str] = set()
+    stack = [owner]
+    landed: set[str] = set()
+    while stack:
+        e = stack.pop()
+        if e.id in seen:
+            continue
+        seen.add(e.id)
+        ld = landed_id_for(e, known_node_ids)
+        if ld:
+            landed.add(ld)
+        for p in e.prereqs:
+            ref = registry.get(p)
+            if ref is None:
+                continue
+            ref_level, ref_entry = ref[0], ref[1]
+            if LEVEL_ORDER.get(ref_level, 99) > LEVEL_ORDER.get(e.level, 99):
+                continue  # 反向引用（audit 已另报）
+            if ref_level != e.level and landed_id_for(ref_entry, known_node_ids) is None:
+                continue  # 跨学段目标未落地 → 不阻塞
+            stack.append(ref_entry)
+    return landed
+
+
 def audit(
     level: str,
     *,
     known_node_ids: set[str] | None = None,
     roadmap: Roadmap | None = None,
     registry: dict[str, tuple[str, "RoadmapEntry"]] | None = None,
+    content_edges: dict[str, list[str]] | None = None,
+    content_meta: dict[str, dict] | None = None,
 ) -> dict:
-    """蓝图自动自查（供人工精核参考；REVIEW-blueprint C 增强 + R14 后续跨学段增强）。
+    """蓝图自动自查（供人工精核参考；REVIEW-blueprint C + R14 跨学段 + R18 总序不变式增强）。
 
     检查项：
-    - 前置引用：指向文件内条目 / 其它学段蓝图条目（跨文件，`level.local`）/ 真实锚点节点；
-    - **锚点存在性（C）**：条目 anchors 引用的节点 id 必须存在于当前内容库（known_node_ids），
-      缺失即报错（防"文件名与 front-matter id 不同名"类回归）；
-    - **跨学段引用（R14 后续 #1）**：prereq 引用其它 level.yaml 条目必须指向"前序学段"条目
-      （方向按 LEVELS 学习顺序）；反向引用（引用后序学段）报错；缺失条目报错；
-      合法但目标学段条目**未落地**到内容库 → 记 cross_gaps 提示（不阻塞 ok——学段顺序推进兜底，
-      生成器/自续可据此提示缺口）；
-    - 环检测：文件内前置边构成的有向图（跨学段方向单向（前序学段），方向规则下跨文件不可能成环）；
-    - 顺序：同文件内指向"更后条目"的正向引用告警（需批量生成先补齐，见 pipeline 展开）；
-    - 主题连续性：相同主题是否连续成组（孤立单条 → 提示）；
-    - **covered 明细（C）**：列出 锚点已覆盖 / 待生成 条目（与 pipeline 判定一致口径）。
+    - 前置引用：指向文件内条目 / 其它学段蓝图条目（跨文件）/ 真实锚点节点；
+    - **锚点存在性（C）**：anchors 必须指向内容库真实节点；
+    - **跨学段引用（R14 #1）**：只许指向前序学段条目；缺失/反向报错；未落地 → cross_gaps 提示；
+    - 环检测：文件内前置边（跨学段方向单向不可能成环）；正向引用告警；主题连续；covered 明细；
+    - **R18 内容不变式**（传 content_edges/content_meta 时启用）：
+      ① 普通内容节点手写 prereq ⊆ 其所属蓝图条目前置闭包的落地 id 集（防"内容手写边引蓝图序更后项"回归）；
+      ② boss 节点归属蓝图主题组（内容 topic 精确/唯一前缀匹配）；无主/错主 → 报错；手写 prereq
+        ⊆ 归属组落地集（缺组内落地 → 记差异说明，门禁以引擎组达成判定为准）；
+      ③ 孤儿（无所属条目）节点：内容 prereq 不受蓝图闭包约束（学段预修），仅记录差异说明。
 
-    registry 可注入（测试用）；缺省读全部已存在 level.yaml（见 all_entries）。
+    registry/content 数据可注入（测试用）；缺省读全部已存在 level.yaml 与当前内容库。
     """
     roadmap = roadmap or load_roadmap(level)
     registry = registry if registry is not None else all_entries()
@@ -217,6 +265,49 @@ def audit(
             for a in e.anchors:
                 if a not in known_node_ids:
                     anchors_missing.append(f"{e.id} 锚点 {a} 不在内容库")
+    # ---- R18 内容不变式（提供 content_edges/content_meta 时启用）----
+    content_violations: list[str] = []
+    boss_unmatched: list[str] = []
+    content_diff_notes: list[str] = []
+    if content_edges is not None:
+        # owner 反查（含跨学段 anchors 引用）
+        owner_of: dict[str, "RoadmapEntry"] = {}
+        for _rid, (_rlv, re_) in registry.items():
+            if re_.id in content_edges and re_.id not in owner_of:
+                owner_of[re_.id] = re_
+            for a in re_.anchors:
+                if a in content_edges and a not in owner_of:
+                    owner_of[a] = re_
+        for node_id, preqs in content_edges.items():
+            meta = (content_meta or {}).get(node_id, {}) or {}
+            kind = meta.get("kind") or ""
+            content_topic = meta.get("topic") or ""
+            if kind == "boss":
+                group = boss_group_topic(level, content_topic, roadmap)
+                if group is None:
+                    boss_unmatched.append(f"{node_id} 首领主题 {content_topic!r} 无匹配蓝图主题组")
+                    continue
+                group_landed = {landed_id_for(e, known_node_ids) for e in roadmap.entries if e.topic == group}
+                group_landed.discard(None)
+                for p in preqs:
+                    if p not in group_landed:
+                        content_violations.append(f"{node_id}->{p}(boss 手写前置不在归属组落地集)")
+                gap_ids = sorted(n for n in group_landed if n not in set(preqs))
+                if gap_ids:
+                    content_diff_notes.append(
+                        f"{node_id} 组内已落地节点未在其手写 prereq 中: {'、'.join(gap_ids[:8])}（门禁=引擎组达成，手写仅展示）"
+                    )
+                continue
+            owner = owner_of.get(node_id)
+            if owner is None:
+                content_diff_notes.append(f"{node_id}(无所属蓝图条目=孤儿，内容 prereq 仅受学段/内容边约束)")
+                continue
+            closure = _content_closure_landed(owner, registry, known_node_ids)
+            for p in preqs:
+                if p not in closure:
+                    content_violations.append(
+                        f"{node_id}->{p}(内容手写 prereq 超出所属蓝图条目 {owner.id} 的前置闭包)"
+                    )
     # 环（DFS）
     cycles: list[str] = []
     WHITE, GRAY, BLACK = 0, 1, 2
@@ -273,13 +364,24 @@ def audit(
         "cross_refs": cross_refs,          # 合法跨学段引用（前序学段）
         "cross_reverse": cross_reverse,    # 非法：引用后序学段（进 ok 判定）
         "cross_gaps": cross_gaps,          # 合法但目标学段条目未落地（提示，不进 ok 判定）
+        "content_prereq_violations": content_violations,  # R18：内容手写边越界（进 ok 判定）
+        "boss_unmatched": boss_unmatched,                  # R18：首领无主/错主（进 ok 判定）
+        "content_diff_notes": content_diff_notes,          # R18：总序 vs 内容手写边差异说明（提示）
         "cycles": cycles,
         "forward_refs": forward,
         "topic_runs": runs,
         "isolated_topics": isolated,
         "covered_entries": covered_entries,
         "pending_entries": pending_entries,
-        "ok": not (missing or self_refs or cycles or anchors_missing or cross_reverse),
+        "ok": not (
+            missing
+            or self_refs
+            or cycles
+            or anchors_missing
+            or cross_reverse
+            or content_violations
+            or boss_unmatched
+        ),
     }
 
 
@@ -292,6 +394,8 @@ __all__ = [
     "all_levels_exist",
     "all_entries",
     "landed_id_for",
+    "boss_group_topic",
+    "_content_closure_landed",
     "_split_entry_ref",
     "audit",
 ]
