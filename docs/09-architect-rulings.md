@@ -207,6 +207,63 @@ scripts CLI 的 `_ai_drafter_factory` 只服务命令行。属阶段 3 交付的
   （当前靠提示词，稳健性可再提升）；测试对 stages/_drafts 写入的清理需健壮化
   （本次发现中断测试残留 auto 文件致图谱校验失败，架构侧已人工清理）。
 
+## R14 · 蓝图总纲 P1–P4 与 ABC 修订批裁决（docs/12 全学段蓝图 · 2026-09-08）
+
+**核验**：架构侧复跑 pytest=177+1、content validate 13/30、5 学段蓝图 audit 全绿、git 提交链
+吻合（613dbee…4d0a2c8）、零残留。**结论：全部接受并批准**。疑点逐条裁决如下。
+
+### ABC 修订批（IMPLEMENTATION_NOTES §10）
+- ✅ s22 运算律列表位在分数块前：接受（学完四则立即强运算律，分数在其后出现语义无碍）。
+- ✅ s23 比 依赖百分数链（生成会连带 s09/s10 主题内容）：接受；入库总量按传递展开计算。
+- ✅ id 序号与列表学习顺序不一致：接受，列表位置为真源；未来工具一律按列表序。
+- ✅ REVIEW D（middle 全段扩段）：确认为后续批次（优先级=用户进入初中下半程前）。
+
+### P1 high / P2 college / P3 ai（§12–14）
+- ✅ 条目规模口径：以仓库轻条目粒度为准（primary 26/high 80/college 56/ai 57），docs/12 §4
+  已改（§5 粗估仅参考上限）。
+- ✅ 顺序/归属：一次函数归 middle、high 以真实节点前置引用衔接——接受；middle 扩段前不占位。
+- ⏳ **跨学段 prereq**（audit 只能引用本文件条目或库内节点，跨 level.yaml 引用缺失）：
+  裁决=**批准设计，列为引擎增强**（roadmap schema/audit/pipeline/selfextend 联动），
+  落地前以"学段顺序 + 文件头衔接假设"兜底（现 high/college/ai 均已此方式，可接受）。
+- ✅ 骨架外主题（复数等）暂不纳入：接受，精核可触发增补批。
+- ✅ requires_thinking 启发式/≈90% think、信息论位置、量化近单链、随机过程归 ai 主线、
+  数值计算归 college 工具线：全部接受（ai/college 衔接以文档承载）。
+- ✅ c43（回归）补链 c34：批准为蓝图微调项，随下一精核批执行（同文件跨 run prereq 可用）。
+
+### P4 护栏与口径变更（§15）
+- ✅ **北极星制入库策略**（全学段自动入库 + guardrails 熔断）批准，取代 docs/10 §3 混合制与
+  README 不可变 #9 旧表述——架构侧已同步修订 docs/10 §3、README #9、docs/12 §4。
+- ✅ 熔断恢复口径 = pending 清零即恢复（MVP 近似），接受；"整条重生成替换后才恢复"列后续增强
+  （依赖 feedback.regenerate 消费管线）。
+- ✅ 阈值 0.3 / ≥2 / ≥3 初值接受，常量集中 guardrails.py 便于调参；CLI 手动通道不熔断接受。
+
+### 给 Euler 的后续任务（排期另定，非紧急）
+1. 跨学段 prereq 引擎增强（schema 扩展引用 level.yaml 条目 + audit/pipeline/selfextend 联动 + 测试）。
+2. c43 回归分析补 c34 前置（college.yaml 微调）。
+3. feedback.regenerate 真正"重生成替换"消费管线（替代当前仅标 reviewed + 待脚本消费）。
+4. （可选）复数等高中增补候选：等用户精核 high.yaml 时收集意见。
+5. REVIEW D：middle 全段扩段，待用户初中进度接近边界时排期。
+
+**文档同步**：README #9、docs/10 §3、docs/12 §4 已同步北极星制；本裁决。
+
+## R15 · 全学段蓝图精核裁决（三路学科评审 + 架构侧 primary/middle，2026-09-08）
+
+**方法**：high/college/ai 各由一名独立学科评审逐条核对（按课标/面向 AI 量化主线），
+primary/middle 架构侧直接精核；college 衔接假设已用 high 实际条目交叉核对成立。
+**详细报告与补丁规格**：`content/roadmap/REVIEW2-master.md`（全学段 A/B/C + 汇总补丁清单）。
+
+**裁决（采纳要点）**：
+- 必修：high 补复数（high.h40b）；college 补 SVD/PCA（c34b）、随机过程初步（c43b 可选条目，
+  ai 主线 a42–a49 维持）、c15 补 c07、全表补 thinking；ai 补贝叶斯推断（a04b）、变分 ELBO（a25b）、
+  ADMM（a17b）、KKT 深化（a12 扩）、ARIMA/单位根（a46 扩）。primary/middle 无阻断。
+- 建议优化与待学科项按 REVIEW2 清单执行（h79 前移、鞅/布朗顺序、各 prereq 微调等）。
+- C 项定夺：三角函数线不扩（课标淡化）；数学归纳法按选学标注；导数止于高中标准（接受）；
+  建模探究不单列条目（记设计边界）；极坐标/参数方程默认不列（扩展候选）；随机过程归 ai 主线。
+- **执行**：以 REVIEW2-master.md 为规格交 Euler"精核补丁批"（只改 roadmap yaml + audit 再生 +
+  全量回归，基线 177+1；既有 id 不动；新增沿用续号风格）；用户到段前滚动转正不变。
+
+**文档同步**：本裁决 + REVIEW2-master.md。
+
 ---
 
 - 架构侧独立验证（2026-09-08）：11 个内容节点真实存在；Euler 复审回归 136 passed/1 skipped

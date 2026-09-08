@@ -13,9 +13,14 @@
 #   D. 信息论与熵（a20–a25）假定 college 概率（c35–c38）与离散组合（c49 生成函数）；微分熵需微积分。
 #   E. 矩阵分析/范数/正则化（a26–a33）假定 college 线性代数全部（c25–c34，含特征值/二次型/SVD 前置）。
 #   F. 高维概率与统计学习理论（a34–a41）假定 college 数理统计（c40–c43）与概率极限（c39）。
-#   G. 时间序列与随机过程（a42–a49）：docs/12 注"随机过程亦可作 college 拓展"——本批置于 ai 主线，
-#      若需在 college 先行扩展（衔接经济/量化路径）请架构裁决后回填 college.yaml（本 P3 不改动 college）。
+#   G. 时间序列与随机过程（a42–a49）：docs/12 注"随机过程亦可作 college 拓展"——经 R15 裁决仍置于
+#      ai 主线（量化刚需）；college.yaml 已回填**可选** c43b（马尔可夫链初步，RL/时间序列方向必修，
+#      用户 ai 到段前可按需先学），本 run 内部顺序按"鞅（a45）在前、布朗运动（a44）在后为鞅特例"编排。
 #   H. 量化应用（a50–a57）假定 college 概率统计/优化（c20/c34/c39/c42/c43）与本文件 run2/run6 前置。
+# R15 精核补丁批（REVIEW2-master）：新增 a04b 贝叶斯推断与共轭先验（a04 后）、a17b ADMM 与算子分裂
+# （a17 后）、a25b 变分推断与 ELBO（依赖 a25+a41，插 a41 后、run6 前）；a12 扩完整 KKT；a46 补
+# 单位根/差分与 ARIMA 整合阶。高斯过程归属（评审 C③）：GP 概念在 a44（布朗运动与扩散初步）内介绍，
+# 归属"时间序列与随机过程"run，更完整的 GP 回归视角不在本蓝图主线（扩展候选）。
 # 【模型档位】R12 基础档：college/ai → think（运行期由 ai/tier 决策链保证）；requires_thinking 字段在
 #   ai 学段作为"精核建议标注"（true=理论/推导/建模深档，false=计算/工具/讨论类可快档），不改变运行期默认档。
 level: ai
@@ -27,6 +32,8 @@ entries:
     prereqs: []
     difficulty: 2
     requires_thinking: true
+  # 承接注（R15/REVIEW2 B）：a02 以代数解（正规方程）为主，不展开矩阵求导体系——完整求导体系见 a29
+  # （矩阵微分与梯度计算），此处只注明承接关系。
   - id: ai.a02
     title: 线性回归与最小二乘（矩阵形式）
     topic: 机器学习数学基础
@@ -34,6 +41,8 @@ entries:
     prereqs: [ai.a01]
     difficulty: 2
     requires_thinking: true
+  # 承接注（R15/REVIEW2 B）：a03 先以"对数似然/交叉熵损失"给出直觉——交叉熵（相对熵）的形式化
+  # 定义与性质在 a21（互信息与相对熵 KL 散度）完整展开，此处只注明承接关系。
   - id: ai.a03
     title: 分类与逻辑回归
     topic: 机器学习数学基础
@@ -47,6 +56,14 @@ entries:
     objectives: ["极大似然估计在模型族的应用", "贝叶斯观点与最大后验（MAP）", "先验与正则化的联系（直觉）"]
     prereqs: [ai.a03]
     difficulty: 2
+    requires_thinking: true
+  # R15（REVIEW2 A1）：a04b 贝叶斯推断——承接 a04"贝叶斯观点"，补完整推断线。
+  - id: ai.a04b
+    title: 贝叶斯推断与共轭先验
+    topic: 机器学习数学基础
+    objectives: ["后验计算（先验×似然与归一化）", "共轭先验族（Beta-Binomial/Normal-Normal 等）", "贝叶斯线性回归的解析形式", "后验预测分布的直觉", "先验选择（无信息/弱信息先验）"]
+    prereqs: [ai.a04]
+    difficulty: 3
     requires_thinking: true
   - id: ai.a05
     title: 偏差-方差分解与模型选择
@@ -82,6 +99,7 @@ entries:
     objectives: ["准确率/精确率/召回率/F1", "ROC 与 AUC 的统计含义", "不平衡数据下的指标选择"]
     prereqs: [ai.a03]
     difficulty: 2
+    requires_thinking: true  # R15（REVIEW2 B）：评估指标的统计意义偏推导，升 thinking
   - id: ai.a10
     title: 典型模型族的数学拆解（案例）
     topic: 机器学习数学基础
@@ -99,7 +117,7 @@ entries:
   - id: ai.a12
     title: 凸优化问题与最优性条件
     topic: 凸优化与数值优化
-    objectives: ["优化问题的标准形式与分类", "无约束一阶/二阶最优性条件", "KKT 条件的引入（约束优化）"]
+    objectives: ["优化问题的标准形式与分类", "无约束一阶/二阶最优性条件", "KKT 四条件（平稳/原始可行/对偶可行/互补松弛）的推导", "KKT 的几何直觉与在 SVM/Lasso/带约束组合优化中的应用"]
     prereqs: [ai.a11]
     difficulty: 3
     requires_thinking: true
@@ -136,6 +154,14 @@ entries:
     topic: 凸优化与数值优化
     objectives: ["次梯度与近端算子", "ISTA/FISTA 的思想", "L1 稀疏优化的近端视角"]
     prereqs: [ai.a16]
+    difficulty: 3
+    requires_thinking: true
+  # R15（REVIEW2 A3）：a17b ADMM——承接 a16 对偶与 a17 近端算子，补分裂算法一级。
+  - id: ai.a17b
+    title: ADMM 与算子分裂
+    topic: 凸优化与数值优化
+    objectives: ["对偶上升与对偶分解思想", "增广拉格朗日与乘子法", "ADMM 的推导（x/z 交替最小化与乘子更新）", "分布式优化与 Lasso 等应用的算子分裂视角"]
+    prereqs: [ai.a16, ai.a17]
     difficulty: 3
     requires_thinking: true
   - id: ai.a18
@@ -196,7 +222,7 @@ entries:
   - id: ai.a26
     title: 向量范数与矩阵范数
     topic: 矩阵分析与正则化
-    objectives: ["常用向量范数与范数等价性", "矩阵范数与算子范数", "范数与正则化惩罚的联系"]
+    objectives: ["常用向量范数与范数等价性", "矩阵范数与算子范数", "范数与正则化惩罚的联系", "矩阵条件数与数值稳定性的直觉"]
     prereqs: []
     difficulty: 2
     requires_thinking: true
@@ -245,7 +271,7 @@ entries:
   - id: ai.a33
     title: 大规模矩阵计算的直觉
     topic: 矩阵分析与正则化
-    objectives: ["稀疏矩阵与结构化矩阵", "迭代法与随机化算法的思想", "计算复杂度与精度权衡"]
+    objectives: ["稀疏矩阵与结构化矩阵", "迭代法与随机化算法的思想", "计算复杂度与精度权衡", "条件数与数值稳定性对大规模求解的影响"]
     prereqs: [ai.a32]
     difficulty: 2
   - id: ai.a34
@@ -304,6 +330,15 @@ entries:
     prereqs: [ai.a37]
     difficulty: 3
     requires_thinking: true
+  # R15（REVIEW2 A1）：a25b 变分推断与 ELBO——依赖 a25（微分熵/KL 视角）与 a41（EM），
+  # 列表位置取 a41 之后、run6（时间序列与随机过程）之前，保证顺序无正向引用。
+  - id: ai.a25b
+    title: 变分推断与 ELBO
+    topic: 高维概率与统计学习理论
+    objectives: ["KL 视角下的 ELBO 推导（证据下界分解）", "均值场假设与坐标上升变分推断", "重参数化技巧的直觉（蒙特卡洛梯度）", "与 EM、VAE、扩散模型训练的联系"]
+    prereqs: [ai.a25, ai.a41]
+    difficulty: 3
+    requires_thinking: true
   - id: ai.a42
     title: 随机过程基础
     topic: 时间序列与随机过程
@@ -318,24 +353,26 @@ entries:
     prereqs: [ai.a42]
     difficulty: 3
     requires_thinking: true
-  - id: ai.a44
-    title: 布朗运动与扩散初步
-    topic: 时间序列与随机过程
-    objectives: ["布朗运动的构造与性质", "高斯过程与协方差核", "随机游走到布朗运动的极限"]
-    prereqs: [ai.a42]
-    difficulty: 3
-    requires_thinking: true
   - id: ai.a45
     title: 鞅与停时初步
     topic: 时间序列与随机过程
     objectives: ["鞅的定义与基本性质", "停时与可选停时定理", "鞅在公平博弈与金融中的应用"]
-    prereqs: [ai.a44]
+    prereqs: [ai.a42]  # R15（REVIEW2 B）：先鞅后布朗；前置由原 ai.a44 改为随机过程基础 a42
+    difficulty: 3
+    requires_thinking: true
+  # R15（REVIEW2 B）：布朗运动在鞅之后、作为鞅（连续时间鞅）特例编排；高斯过程概念在此（a44）介绍，
+  # 归属"时间序列与随机过程"run（评审 C③ 注明；完整 GP 回归视角不在本蓝图主线，为扩展候选）。
+  - id: ai.a44
+    title: 布朗运动与扩散初步
+    topic: 时间序列与随机过程
+    objectives: ["布朗运动的构造与性质", "高斯过程与协方差核", "随机游走到布朗运动的极限"]
+    prereqs: [ai.a45]  # R15：布朗运动作为鞅特例，前置由 ai.a42 改为鞅 a45
     difficulty: 3
     requires_thinking: true
   - id: ai.a46
     title: 时间序列模型（AR/MA/ARMA）
     topic: 时间序列与随机过程
-    objectives: ["自回归与移动平均模型", "平稳性与可逆性条件", "ARMA 的识别与估计直觉"]
+    objectives: ["自回归与移动平均模型", "平稳性与可逆性条件", "ARMA 的识别与估计直觉", "单位根/差分与 ARIMA 整合阶（平稳化）"]
     prereqs: [ai.a42]
     difficulty: 3
     requires_thinking: true
@@ -412,6 +449,6 @@ entries:
     title: 量化项目中的数学工程（综合案例）
     topic: 量化应用
     objectives: ["因子-信号-组合-风控闭环的数学拆解", "把本学段各 run 工具串成工作流", "端到端量化小项目的复盘"]
-    prereqs: [ai.a52, ai.a54, ai.a56]
+    prereqs: [ai.a52, ai.a53, ai.a54, ai.a55, ai.a56]  # R15：补 a53 风险度量、a55 回测严谨性
     difficulty: 3
     requires_thinking: true

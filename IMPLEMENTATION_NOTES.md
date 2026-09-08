@@ -565,3 +565,81 @@ high（high.h01–h06 落 **_drafts**、无 Node 行、不可掌握），原用�
    feedback.regenerate 的 auto 路径做成真正替换（当前 key 路径仅标 reviewed + 待脚本消费，见 §9 待办）。
 3. 阈值 0.3 / ≥2 问题节点 / ≥3 分母为初值，运行期可按反馈量调参（常量集中在 guardrails.py）。
 4. CLI 手动通道不自动熔断（无 DB 依赖）；如需 CLI 也熔断可后续接线。
+
+---
+
+## 16. 蓝图精核补丁批（REVIEW2-master 执行 · 2026-09-08）
+
+**规格**：`content/roadmap/REVIEW2-master.md`（全学段 A/B/C）+ docs/09 R15 裁决。
+**边界遵守**：仅改 content/roadmap/{high,college,ai,primary}.yaml、ROADMAP_AUDIT.md（生成器再生）、本 NOTES；
+content/stages/ 13 节点与锚点 id 未动（validate 13/30 保持）；既有蓝图条目 **id 与 anchors 零改动**；
+新增沿用 REVIEW2 续号风格（h40b / c34b / c43b / a04b / a17b / a25b）；每学段 audit 全绿后才继续下一文件。
+
+### high.yaml（80 → 81 条）
+- **新增 `high.h40b`《复数的概念与四则运算》**：topic 复数，objectives 三项（虚数单位与复数概念/
+  四则运算与共轭/复平面与模），prereq [high.h07, high.h38]（回补 h07"无实根"悬念），d2；插 h40/h41 间；
+  文件头主题组注释补"复数"组（位置对应必修二 向量→复数→立体 序）。
+- **h47 topic 独立为"空间向量与立体几何"**（h41–h46 保持"立体几何初步"）；文件头注释同步组名。
+- **A2 目标并入**：h73 objectives +"频率估计概率与随机模拟"；h79 objectives +"总体百分位数的估计"。
+- **B1 h79 前移**：h79 移至 h73 之前（统计先于概率，为 h80 铺样本/数字特征），原 prereq high.h73 去除
+  （抽样不依赖古典概型，置空 prereq）；id 不变，h80 对 h79 的引用仍向后成立。
+- **B3 h30 prereq**：由 [high.h29] 降为 [high.h27, high.h28]（避免被 3 级恒等变换卡主线）。
+- **B5/B6 注释行**：h09/h19 前加初中衔接说明（二次函数/反比例，middle 扩段后回填引用）；h36 数学归纳法
+  加"选学/了解级"注（REVIEW2 C② 裁决：不升难度）。
+- **C 项执行**：三角函数线 B2 不做（课标淡化）；h25 不扩——未改。
+
+### college.yaml（56 → 58 条）
+- **新增 `college.c34b`《奇异值分解与低秩近似（SVD/PCA 铺垫）》**：topic 线性代数，objectives 五条
+  （定义与几何意义/与 AᵀA 特征分解关系/低秩逼近与图像压缩/数据中心化与 PCA/伪逆衔接最小二乘），
+  prereq [college.c32, college.c34]，d3 + thinking true，紧随 c34；注释注明 ai a27/a28 的 college 侧落点。
+- **新增 `college.c43b`《随机过程初步：马尔可夫链》（可选条目）**：topic 概率论与数理统计，objectives
+  （转移矩阵与 n 步转移/稳态分布/随机游走），prereq [college.c38, college.c39]，d3 + thinking true，
+  紧随 c43；注释标"可选：RL/时间序列方向必修；ai 主线已有随机过程（ai.a42–a49）"。
+- **A3 c15 prereq +c07**（幂级数展开依赖泰勒公式）。
+- **B prereq 补链**：c20 +c19；c31 +c30；c49 +c45；c55 +c04（均向后引用，去重后无正向）；c16 无文件内
+  前置，加衔接注释（入口依赖高中空间几何，见文件头假设 C，防"孤立"误判）。
+- **全表补 requires_thinking（58/58）**：d≥3 → true，d≤2 → false；REVIEW2 B 证明推理类
+  （c07/c14/c23/c30/c33/c39/c41/c42/c43/c56）与新增 c34b/c43b 均在 d3=true 集合内，无需另设例外；
+  未改动任何 difficulty。
+
+### ai.yaml（57 → 60 条）
+- **新增 `ai.a04b`《贝叶斯推断与共轭先验》**：topic 机器学习数学基础（同 a04），objectives 五条
+  （后验计算/共轭先验族/贝叶斯线性回归/后验预测/先验选择），prereq [ai.a04]，d3 + true；插 a04/a05 间。
+- **新增 `ai.a25b`《变分推断与 ELBO》**：objectives（KL 视角 ELBO/均值场/重参数化直觉/EM·VAE·扩散连接），
+  prereq [ai.a25, ai.a41]，d3 + true；**插 a41 后、run6 前**（规格"插 a25 后"与"前置含 a41"冲突——
+  a41 列表位在 a25 之后，若插 a25 后会出现正向引用；按 R14"列表位置为真源 + 正向引用 0"取 a41 后插入并注释）。
+- **新增 `ai.a17b`《ADMM 与算子分裂》**：objectives（对偶上升/乘子法/ADMM 推导/分布式与 Lasso 应用），
+  prereq [ai.a16, ai.a17]，d3 + true；紧随 a17。
+- **A2 a12 KKT 深化**：objectives 扩为完整 KKT（四条件推导/互补松弛/几何直觉/SVM·Lasso·带约束组合应用，≤4 条）。
+- **A4 a46 +"单位根/差分与 ARIMA 整合阶（平稳化）"**（量化平稳化刚需）。
+- **B 项**：a09 requires_thinking → true；a57 prereq +ai.a53、ai.a55；a26/a33 objectives +条件数/数值稳定性；
+  a02/a03 注释注明承接（矩阵求导体系在 a29；交叉熵形式化定义在 a21）。
+- **鞅/布朗顺序修正**：读文件确认实际结构确如评审所述（a44 布朗在前、a45 鞅在后，且 a45 前置 a44）→
+  对调两者**列表位置**（id/anchors 不动，R14 列表位为真源）：鞅（a45）前置改 ai.a42、排布朗之前；
+  布朗（a44）置鞅后作鞅（连续鞅）特例、prereq 改 ai.a45。评审 C③ 高斯过程归属以注释注明
+  （GP 概念在 a44 内介绍、归"时间序列与随机过程"run；完整 GP 回归视角不在主线，为扩展候选）。
+
+### primary.yaml（REVIEW2 B 两项）
+- s18 prereq +primary.s05（方程只需四则基础；s15 保留作"到段位置"锚）；s23 prereq +primary.s08
+  （比依赖分数意义+除法，追加分数乘除）——均向后引用，audit 绿。
+
+### audit 结果（roadmap.audit，5 学段 + 内容库 13 节点 known_node_ids）
+primary 26 / middle 4 / high 81 / college 58 / ai 60 全部 ✅——前置缺失 0 / 锚点缺失 0 / 自指 0 /
+环 0 / 正向引用 0。high 现含 2 个"单条主题组"（复数 ×1、空间向量与立体几何 ×1）为 REVIEW2 组名调整的
+有意结果（audit ok 不受影响；报告 ⚠️ 提示与 primary 代数思维/统计单条同性质，未来扩组即消除）。
+`ROADMAP_AUDIT.md` 已由 `_dsh-local/gen_audit_report.py` 再生（头部口径 26/4/81/58/60，含 5 学段与新条目）。
+
+### 回归
+pytest = **177 passed + 1 skipped**（178 收集、exit 0，与基线持平——新增蓝图条目不改变测试计数；
+test_roadmap 无受影响断言，零测试适配）；content validate 13/30 全绿；`.pytest-*` 临时目录已清理；
+stages/_drafts 无新增；仓库零残留。
+
+### 偏离/说明
+1. REVIEW2 对 c43b 写作 d4——difficulty schema 上限为 3（roadmap.py `ge=1, le=3`），落地 **d3 + thinking
+   true**（"需思考深档"语义由 thinking 字段承载，与 c43 同级）。
+2. ai.a25b 按实际 run 结构插 a41 后 run6 前（见上），并在文件内注释说明，保证顺序无正向引用。
+3. 鞅/布朗以列表位置对调实现（id 不变），符合 R14"id 序号与列表学习顺序不一致可接受、列表位置为真源"。
+4. REVIEW2 college C"傅里叶单列"为待精核项（未在 A/B 清单），本批不执行。
+5. primary REVIEW2 B2 建议 s23 追加"s08 或 s04"（精核可再定），按任务规格取 s08（分数乘除，衔接
+   s06 分数意义的除法视角）。
+

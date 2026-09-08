@@ -78,7 +78,7 @@ entries:
     title: 比的意义·化简比与按比例分配
     topic: 数与运算
     objectives: ["理解比的意义与前项后项", "化简比", "按比例分配的应用"]
-    prereqs: [primary.s06, primary.s10]
+    prereqs: [primary.s06, primary.s08, primary.s10]  # R15（REVIEW2 B）：追加 s08 分数乘除（比依赖分数意义+除法）
     difficulty: 2
     requires_thinking: true
   - id: primary.s11
@@ -142,7 +142,7 @@ entries:
     title: 用字母表示数与简易方程思想
     topic: 代数思维
     objectives: ["字母表示数与关系", "认识简易方程（一步）"]
-    prereqs: [primary.s15]
+    prereqs: [primary.s05, primary.s15]  # R15（REVIEW2 B）：方程只需四则基础 s05；s15 保留作"到段位置"锚
     difficulty: 3
     requires_thinking: true
   - id: primary.s19

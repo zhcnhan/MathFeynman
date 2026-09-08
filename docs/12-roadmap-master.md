@@ -47,9 +47,11 @@
 - 每个新学段蓝图 draft 就绪后，由用户在"到达该学段前"滚动精核转正（运行期仍无人审）。
 
 ## 4. 验收
-- content/roadmap/ 存在 {primary,middle,high,college,ai}.yaml，全部条目数 ≥ 预估下限、
-  audit()（含锚点存在性）全绿、ROADMAP_AUDIT.md 更新。
-- 端到端模拟：小学通关 → 初中自动生成并掌握 → …（模拟推进到至少高中首批），
+- content/roadmap/ 存在 {primary,middle,high,college,ai}.yaml；全部条目
+  audit()（前置/锚点存在性/环/正向引用/孤立主题）全绿、ROADMAP_AUDIT.md 更新；
+  **条目规模口径 = 仓库轻条目粒度**（落地值 primary 26 / high 80 / college 56 / ai 57 等，
+  以 ROADMAP_AUDIT 头部记录为基线；§5 的粗估数仅是含细拆的参考上限，不作机械下限）。
+- 端到端模拟：小学通关 → 初中自动生成并掌握 → …（模拟推进至高中首批，P4 已覆盖），
   全程无人工审核动作（测试自动化模拟，AI 出稿用 stub/mock）。
 - 运行期懒生成确认：mastered 比例到达新学段边界时，系统自动开始该学段首批生成，
   无需任何代码/人工动作（对应 docs/10 §4 全学段扩展）。

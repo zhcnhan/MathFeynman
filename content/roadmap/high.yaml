@@ -1,6 +1,8 @@
 # 高中课程蓝图（docs/10 §2.2 · docs/12 总纲 P1 草案 —— 状态: draft 待精核）
 # 说明：条目顺序 = 建议学习序列；主题组顺序与 docs/12 §2 high 骨架一致
-# （集合逻辑 → 等式不等式 → 函数(含三角) → 数列 → 向量 → 立体几何 → 解析几何 → 导数 → 统计概率）。
+# （集合逻辑 → 等式不等式 → 函数(含三角) → 数列 → 向量 → 复数 → 立体几何初步 → 空间向量与立体几何 → 解析几何 → 导数 → 统计概率）。
+# R15 精核补丁批（REVIEW2-master）：h40b 补复数组（回补 h07"无实根"悬念，对应必修二 向量→复数→立体 序）；
+# h47 组名独立为"空间向量与立体几何"（h41–h46 属立体几何初步/综合法，h47 为向量法收尾）。
 # prereq 指向本文件条目 id（high.hNN）或已入库真实节点 id（middle.*/high.0201，格式含 '.'）；
 # anchors 本批为空：高中已入库人工节点仅 high.0201（一次函数，作为 h14 前置衔接使用，未做 covered 占位）。
 # 学段间推进由 selfextend 学段顺序保证；跨学段逐条前置仅能引用"已入库节点"，见 IMPLEMENTATION_NOTES。
@@ -55,6 +57,8 @@ entries:
     objectives: ["不等式的传递/可加/可乘性", "数轴上表示解集与区间记号"]
     prereqs: [middle.0201, high.h07]
     difficulty: 1
+  # 衔接注（REVIEW2 B）：一元二次不等式的"图象法"依赖初中二次函数图象与性质（含反比例等函数概念），
+  # middle 扩段（REVIEW D）后回填跨学段引用；现以 high.0201/学段顺序兜底。
   - id: high.h09
     title: 一元二次不等式及其解法
     topic: 等式与不等式
@@ -121,6 +125,8 @@ entries:
     prereqs: [high.h17]
     difficulty: 3
     requires_thinking: true
+  # 衔接注（REVIEW2 B）：幂函数 y=x^n 的概念与初中反比例函数 y=1/x（n=−1 特例）及二次函数衔接，
+  # middle 扩段（REVIEW D）后回填跨学段引用；现以 high.0201/学段顺序兜底。
   - id: high.h19
     title: 根式与分数指数幂·幂函数
     topic: 函数
@@ -194,7 +200,7 @@ entries:
     title: 解三角形（正弦定理·余弦定理·面积）
     topic: 函数
     objectives: ["正弦定理与边角互化", "余弦定理及其判别应用", "三角形面积公式与实际问题（测量）"]
-    prereqs: [high.h29]
+    prereqs: [high.h27, high.h28]  # R15：由 h29 降级（避免被 3 级三角恒等 h29 卡主线）
     difficulty: 3
     requires_thinking: true
   - id: high.h31
@@ -229,6 +235,7 @@ entries:
     prereqs: [high.h34]
     difficulty: 3
     requires_thinking: true
+  # 选学标注（REVIEW2 C②）：数学归纳法按"了解/选学"级处理（非高考主线必考），难度维持 3 不升档。
   - id: high.h36
     title: 数学归纳法初步
     topic: 数列
@@ -261,6 +268,12 @@ entries:
     prereqs: [high.h39]
     difficulty: 3
     requires_thinking: true
+  - id: high.h40b
+    title: 复数的概念与四则运算
+    topic: 复数
+    objectives: ["虚数单位 i 与复数概念（实部/虚部/复数相等）", "复数的四则运算与共轭复数", "复平面与模、复数的几何意义初步"]
+    prereqs: [high.h07, high.h38]
+    difficulty: 2
   - id: high.h41
     title: 空间几何体的结构特征与三视图
     topic: 立体几何初步
@@ -302,7 +315,7 @@ entries:
     requires_thinking: true
   - id: high.h47
     title: 空间向量与立体几何
-    topic: 立体几何初步
+    topic: 空间向量与立体几何  # R15：组名自 h41–h46 的"立体几何初步"独立（综合法→向量法收尾）
     objectives: ["空间向量的坐标运算与方向向量/法向量", "向量法求线线/线面/面面角", "向量法求空间距离（点到面）"]
     prereqs: [high.h46, high.h38, high.h39]
     difficulty: 3
@@ -472,10 +485,18 @@ entries:
     prereqs: [high.h71]
     difficulty: 3
     requires_thinking: true
+  # R15（REVIEW2 B1）：h79 由 h73 之后前移至此处（统计先于概率，为 h80 铺样本/数字特征）；
+  # 原 prereq high.h73（概率）随前移去除——抽样估计不依赖古典概型。
+  - id: high.h79
+    title: 抽样方法与用样本估计总体
+    topic: 统计与概率
+    objectives: ["简单随机/系统/分层抽样", "频率分布直方图与茎叶图", "样本的数字特征估计总体", "总体百分位数的估计"]
+    prereqs: []
+    difficulty: 2
   - id: high.h73
     title: 随机事件与古典概型
     topic: 统计与概率
-    objectives: ["随机事件的关系与运算（互斥/对立）", "古典概型的特征与概率公式", "用列举/树图/计数法求概率"]
+    objectives: ["随机事件的关系与运算（互斥/对立）", "古典概型的特征与概率公式", "用列举/树图/计数法求概率", "频率估计概率与随机模拟"]
     prereqs: [high.h03, high.h69]
     difficulty: 2
   - id: high.h74
@@ -510,12 +531,6 @@ entries:
     objectives: ["正态分布的定义与正态曲线", "均值/方差对曲线形态的影响", "3σ 原则与区间概率"]
     prereqs: [high.h76]
     difficulty: 3
-  - id: high.h79
-    title: 抽样方法与用样本估计总体
-    topic: 统计与概率
-    objectives: ["简单随机/系统/分层抽样", "频率分布直方图与茎叶图", "样本的数字特征估计总体"]
-    prereqs: [high.h73]
-    difficulty: 2
   - id: high.h80
     title: 成对数据的统计分析（相关·回归·独立性检验）
     topic: 统计与概率
