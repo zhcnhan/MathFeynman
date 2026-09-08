@@ -110,6 +110,18 @@ def new_flow() -> dict[str, Any]:
     }
 
 
+def _feynman_reset(f: dict[str, Any]) -> None:
+    """R17：费曼阶段完整复位（回炉重学/轮次满防御用）。"""
+    f.update(
+        rounds_done=0,
+        passed=False,
+        last_combined=None,
+        last_scores=[],
+        last_transcript="",
+        followup=None,
+    )
+
+
 def _practice_reset_cycle(p: dict[str, Any]) -> None:
     """回炉后开始新练习轮：保留 passed 与 excluded。"""
     p.update(
@@ -594,14 +606,25 @@ class SessionService:
         flow = sess.flow_json
         events.append({"type": "practice_cap_reached", "cap": PRACTICE_CAP})
         _practice_reset_cycle(flow["practice"])  # 模块级函数，非方法（热修 R11）
+        _feynman_reset(flow["feynman"])  # R17：回炉重学需重置费曼轮次，防"轮次上限"锁死
         flow["stage"] = STAGE_EXPLAIN
         events.append({"type": "relearn_notice", "reason": "本轮 5 题未连续答对 3 题，请重读讲解后再试"})
 
     def _relearn_explain(self, db: Session, sess: models.Session, node: NodeDoc, events: list[dict], reason: str = "练习连续答错") -> None:
         flow = sess.flow_json
         _practice_reset_cycle(flow["practice"])  # 模块级函数，非方法（热修 R11）
+        _feynman_reset(flow["feynman"])  # R17：同上——回炉后重新走费曼必须从第 0 轮开始
         flow["stage"] = STAGE_EXPLAIN
         events.append({"type": "relearn_notice", "reason": reason})
+
+    def _enter_feynman(self, db: Session, sess: models.Session, node: NodeDoc, events: list[dict]) -> None:
+        flow = sess.flow_json
+        # R17 防御：进入费曼前若轮次已满（历史回炉未清零的会话/数据迁移遗留），
+        # 视为新费曼阶段自动清零，避免用户"重学后仍 409 锁死"。
+        if flow["feynman"]["rounds_done"] >= MAX_FEYNMAN_ROUNDS:
+            _feynman_reset(flow["feynman"])
+        flow["stage"] = STAGE_FEYNMAN
+        events.append({"type": "stage_feynman"})
 
     # ------------------------------------------------------------------
     # 内部：费曼/达标
