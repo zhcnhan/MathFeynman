@@ -112,7 +112,7 @@ export default function SessionPage() {
     }
   };
 
-  // docs/10 §3：内容纠错反馈 → 复核队列（auto 内容可自动重生成）
+  // docs/10 §3 + 工单 B 段：内容纠错反馈 → 复核/自动重生成（auto 节点后台替换后可见处理结果）
   const reportContentIssue = async () => {
     if (!resp) return;
     const kind = step === "explain" ? "lecture" : step === "practice" ? "exercise" : "content";
@@ -123,7 +123,44 @@ export default function SessionPage() {
     );
     if (msg === null) return;
     try {
-      await api.post("/feedback", { node_id: session.node_id, kind, message: msg, exercise_id: exId || null });
+      const posted = await api.post<{ item?: { source?: string }; regen?: { action?: string } }>("/feedback", {
+        node_id: session.node_id,
+        kind,
+        message: msg,
+        exercise_id: exId || null,
+      });
+      // auto 节点 → 后台自动重生成替换：轮询复核队列看处理结果（最多 ~15s）
+      if (posted.regen?.action === "regenerating") {
+        setNotice("已提交复核，正在自动重生成替换…");
+        const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+        for (let i = 0; i < 10; i++) {
+          await sleep(1500);
+          try {
+            const list = await api.get<{ items: Array<{ status: string; result?: string }> }>(
+              `/feedback?node_id=${encodeURIComponent(session.node_id)}`
+            );
+            const latest = list.items[0];
+            if (!latest) continue;
+            if (latest.status === "regenerated") {
+              setNotice("✅ 已自动重生成替换该节点（纠错已处理）。");
+              return;
+            }
+            if (latest.status === "failed") {
+              setNotice(`❌ 自动重生成失败（原内容保留，待人工）：${(latest.result ?? "").slice(0, 120)}`);
+              return;
+            }
+            if (latest.status === "reviewed") {
+              setNotice("已标记复核（人工节点）。");
+              return;
+            }
+            // pending / regenerating：继续等
+          } catch {
+            break; // 轮询失败不再打扰用户
+          }
+        }
+        setNotice("已提交复核；处理仍在后台进行，可在复核队列查看结果。");
+        return;
+      }
       setNotice("已提交复核，谢谢反馈！");
     } catch (e) {
       setError((e as Error).message);

@@ -5,11 +5,11 @@
    sympy 验算 broken=0 —— 全部通过才入库（既有权责，本模块不重复）。
 2. 白名单：蓝图条目 id 与其 prereq 链即为生成白名单（generate_sequence 注入 known_ids），
    概念白名单在 ai/prompts ContextBlock（docs/05）。
-3. **纠错召回熔断（本模块）**：用户纠错反馈（feedback 表 status=pending）命中某蓝图主题的
+3. **纠错召回熔断（本模块）**：用户纠错反馈（feedback 表**未处置**：pending/regenerating/failed）命中某蓝图主题的
    "已入库 auto 节点"达到问题率阈值 → 该主题后续生成转 _drafts 待检（selfextend 接线 force_drafts）；
-   pending 清零（复核 reviewed / 自动重生成替换）→ 自动恢复入库。
+   未处置清零（人工复核 reviewed / 自动重生成替换 regenerated）→ 自动恢复入库。
    - 分母 = 该主题已入库 **auto** 节点数（锚点覆盖的人工节点不算：人工质量本就有人把关）。
-   - 分子 = 其中被"未处置(pending)反馈"命中的去重节点数。
+   - 分子 = 其中被"未处置反馈"命中的去重节点数。
    - 阈值与最小样本见常量；样本过小不触发（防单点误伤）。
 
 计数与恢复均可由 DB 推导（无状态、无持久化标志），服务重启不丢失。
@@ -30,6 +30,9 @@ MIN_PROBLEM_NODES = 2
 MIN_DENOM = 3
 
 KINDS = ("lecture", "exercise", "content")
+# 未处置反馈状态（pending=待处理/复核、regenerating=自动重生成中、failed=重生成失败保留原内容）——
+# regenerated/reviewed 视为已处置（工单 B 段：重生成替换或人工复核后即恢复）
+UNRESOLVED = ("pending", "regenerating", "failed")
 
 
 def _landed_auto_ids(level: str, topic: str) -> set[str]:
@@ -53,7 +56,7 @@ def topic_problem_stats(db: Session, level: str, topic: str) -> dict:
     rows = (
         db.query(models.Feedback.node_id)
         .filter(
-            models.Feedback.status == "pending",
+            models.Feedback.status.in_(UNRESOLVED),
             models.Feedback.node_id.in_(landed),
             models.Feedback.kind.in_(KINDS),
         )

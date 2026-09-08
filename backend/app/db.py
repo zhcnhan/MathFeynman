@@ -39,11 +39,31 @@ engine = _make_engine(settings.db_path)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
+def _migrate_columns(engine) -> None:
+    """旧库轻迁移：create_all 不会给已存在表加列；逐个 try-ALTER 补列（幂等）。"""
+    import sqlalchemy as sa
+
+    insp = sa.inspect(engine)
+    try:
+        cols = {c["name"] for c in insp.get_columns("feedback")}
+    except sa.exc.NoSuchTableError:
+        return
+    missing: list[str] = []
+    if "result" not in cols:
+        missing.append("ALTER TABLE feedback ADD COLUMN result TEXT NOT NULL DEFAULT ''")
+    if "updated_at" not in cols:
+        missing.append("ALTER TABLE feedback ADD COLUMN updated_at DATETIME")
+    for stmt in missing:
+        with engine.begin() as conn:
+            conn.execute(sa.text(stmt))
+
+
 def init_db() -> None:
     """建表（幂等）。启动时调用；单测可换临时库路径后重调。"""
     from . import models as m  # noqa: F401  确保所有模型注册
 
     models.Base.metadata.create_all(engine)
+    _migrate_columns(engine)
 
 
 @contextmanager

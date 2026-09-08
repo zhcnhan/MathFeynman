@@ -702,3 +702,44 @@ stages/_drafts 无新增；仓库零残留。
 2. 跨学段"环"在方向规则（只许引用前序学段）下不可能；同文件环能力保留并有测试。
 3. 注册表 all_entries() 每次读取 ≤5 个 yaml（量小无缓存）；若蓝图文件数大再引入缓存。
 
+---
+
+## 19. B 段：feedback 真正"重生成替换"消费管线（R14 后续 #3 · 2026-09-08）
+
+**规格**：用户工单 B 段 = auto 节点纠错反馈 → status=regenerating → 后台 pipeline 重生成（复用 ai.drafting）
+→ 校验通过【原子替换】文件与库内节点 + 刷新 + 反馈清零记 regenerated；失败保留原内容记 failed 待人工；
+人工锚点仍只标 reviewed；UI 状态可见。
+
+**改动清单**
+1. `models.py`：Feedback 增 `result`（处理结果/失败原因）与 `updated_at`（onupdate）。`db.py`：`init_db` 后
+   `_migrate_columns` try-ALTER 给旧库补列（create_all 不会加列；幂等）。
+2. `service/feedback.py`（重写）：状态机 pending→regenerating→regenerated/failed（+reviewed 人工复核）。
+   - `record()`：不变（pending）；auto 节点由调用方在提交提交后 `spawn_auto_regen` 自动触发后台线程。
+   - `regenerate(db,…,wait=,drafter=)`：人工 → reviewed manual_only（不替换）；auto → wait=True 同步核心
+     （测试/脚本）/ wait=False 后台线程（API 默认）。
+   - `_regenerate_node_now()` 同步核心：由现有文件 front-matter 重建条目 → 出稿（make_ai_drafter；**无 key
+     不回落 stub**，记 failed"未配置 LLM_API_KEY…保留原内容"）→ pipeline.validate_candidate + 节点 id 不变
+     校验（防串位）→ ≤2 稿 → 通过则同目录临时文件 + os.replace **原子替换** → refresh_library + sync_content
+     （库内节点/边/掌握度刷新）→ 该节点 pending/failed 反馈清零记 regenerated + result。
+   - 并发：模块级 `_regen_active` 锁集合同一节点同时仅一个重生成在飞。
+   - `list_feedback` 增 node_id 过滤、result/updated_at 字段。
+3. `service/guardrails.py`：未处置口径由 pending 扩为 **pending|regenerating|failed**（B 段后 failed 属
+   未处置，熔断不因失败尝试被误解除；regenerated/reviewed=已处置即恢复）。
+4. `api/feedback.py`：GET /feedback 支持 node_id；POST /feedback 对 auto 节点 commit 后自动触发
+   `spawn_auto_regen`（返回 regen 状态）；POST /{id}/regen 默认后台（regenerating）。
+5. `frontend SessionPage.tsx`："内容纠错"提交后若进入 auto 重生成 → 轮询
+   `GET /feedback?node_id=` 至多 ~15s 显示处理结果（✅ 已自动重生成替换 / ❌ 失败保留原内容待人工 /
+   仍在后台等提示）。
+
+**测试**（test_feedback +3）：auto 重生成成功原子替换+文件/库内节点刷新+反馈清零（注入 marker drafter）；
+失败保留原内容+result 原因；无 key 不回落 stub 记 failed。guardrails 既有用例（pending→reviewed 恢复）
+通过。**回归**：pytest = **188 passed + 1 skipped**（+3）；content validate 13/30 全绿；npm run build 通过。
+
+**疑点/偏离**
+1. 无 key 时 auto 反馈自动触发 → 立即 failed"未配置 key"（不再排队 queued_needs_ai）——语义=保留原内容待
+   人工/配 key 重试；failed 计入熔断未处置（防误解除），熔断恢复口径随 B 段更新为"regenerated/reviewed
+   即恢复"（原 R14 批准口径 pending 清零，功能超集，注释已同步）。
+2. 原子替换在单机本地盘上以"同目录临时文件 + os.replace"近似原子（无跨设备）；失败路径不改动原文件。
+3. 自动触发点在 API 提交后（commit 先行保证后台会话可见）；服务层直接调用 record 不自动触发
+   （可显式 spawn_auto_regen / regenerate）。
+

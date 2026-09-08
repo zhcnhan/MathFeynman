@@ -146,7 +146,7 @@ class RelearnLog(Base):
 
 
 class Feedback(Base):
-    """内容纠错反馈（docs/10 §3、docs/11 子步 9）：讲解/题目 → 标记复核，auto 内容可自动重生成。"""
+    """内容纠错反馈（docs/10 §3、docs/11 子步 9、工单 B 段）：讲解/题目 → auto 自动重生成替换 / 人工仅复核。"""
 
     __tablename__ = "feedback"
 
@@ -156,8 +156,12 @@ class Feedback(Base):
     kind: Mapped[str] = mapped_column(String(16), default="content")  # lecture|exercise|content
     exercise_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     message: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|reviewed|regenerated
+    # pending(待处理/复核) | regenerating(auto 重生成中) | regenerated(已重生成替换) |
+    # reviewed(人工仅复核) | failed(重生成失败，保留原内容待人工)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    result: Mapped[str] = mapped_column(Text, default="")  # 处理结果/失败原因（UI 可见）
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None, onupdate=utcnow)
 
 
 __all__ = [

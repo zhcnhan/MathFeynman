@@ -1,13 +1,20 @@
-"""service.feedback：内容纠错反馈闭环（docs/10 §3、docs/11 子步 9）。
+"""service.feedback：内容纠错反馈闭环（docs/10 §3、docs/11 子步 9、工单 B 段）。
 
-- 记录：用户对讲解/题目/内容的"纠错反馈" → feedback 表（status=pending）。
-- 自动重生成（auto 内容）：根据反馈对该条 auto 节点重新出稿替换；无 LLM key 时置为需 key 队列
-  （status 保持 pending，标记 `needs_ai`），由配置 key 后重跑/脚本批量处理。
-- 人工精写节点（source≠auto）不做自动覆盖（保护人工锚点），仅标记复核。
+管线（工单 B 段，真正"重生成替换"）：
+- 记录（record）：反馈入表 status=pending；**auto 节点**由调用方在提交后触发
+  `spawn_auto_regen` → 后台线程执行重生成；**人工锚点**停留在复核队列（regenerate 端点对其只标 reviewed）。
+- 重生成（`regenerate` / `_regenerate_node_now`）：auto 节点 → status=regenerating →
+  复用 ai/drafting 的 AI 出稿器（未配 LLM_API_KEY → 记 failed、保留原内容待人工，**不回落 stub 占位**）→
+  pipeline 自动校验（结构/sympy broken=0）→ 通过则**原子替换**内容文件（同目录临时文件 + os.replace）
+  + refresh_library + sync_content（库内节点/边/掌握度随内容刷新）→ 该节点未处置反馈 pending/failed
+  全部清零记 regenerated；失败（≤2 稿）→ status=failed + result 记录原因、原文件与库内节点保留。
+- 并发：同一节点同时只允许一个重生成在飞（模块级活跃集合，防并行重复替换）。
 """
 from __future__ import annotations
 
-from dataclasses import asdict
+import os
+import threading
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -16,22 +23,22 @@ from .. import models
 from .library import refresh_library, sync_content
 
 KINDS = ("lecture", "exercise", "content")
+# 未处置 = pending | regenerating | failed（regenerated/reviewed 视为已处置）
+UNRESOLVED = ("pending", "regenerating", "failed")
+
+_regen_lock = threading.Lock()
+_regen_active: set[str] = set()
 
 
 def node_source(node_id: str) -> str:
     """节点来源：auto（流水线生成）| human（人工/锚点）。读原始文件 front-matter source。"""
-    from ..content.loader import load_node_file
-    from ..content.roadmap import roadmap_path  # noqa: F401
+    from ..content.loader import load_library, parse_node_text
 
     try:
-        from ..content.loader import load_library
-
         lib = load_library()
         loaded = lib.by_id.get(node_id)
         if loaded is None:
             return "unknown"
-        from ..content.loader import parse_node_text
-
         meta, _ = parse_node_text(loaded.raw_text)
         return meta.get("source", "human")
     except Exception:
@@ -50,6 +57,7 @@ def record(db: Session, user_id: str, *, node_id: str, kind: str, message: str, 
         exercise_id=exercise_id,
         message=message.strip(),
         status="pending",
+        result="",
     )
     db.add(row)
     db.flush()
@@ -62,10 +70,12 @@ def record(db: Session, user_id: str, *, node_id: str, kind: str, message: str, 
     }
 
 
-def list_feedback(db: Session, user_id: str, *, status: str | None = None) -> list[dict[str, Any]]:
+def list_feedback(db: Session, user_id: str, *, status: str | None = None, node_id: str | None = None) -> list[dict[str, Any]]:
     q = db.query(models.Feedback).filter(models.Feedback.user_id == user_id)
     if status:
         q = q.filter(models.Feedback.status == status)
+    if node_id:
+        q = q.filter(models.Feedback.node_id == node_id)
     out = []
     for row in q.order_by(models.Feedback.id.desc()).limit(200).all():
         node = db.get(models.Node, row.node_id)
@@ -78,45 +88,227 @@ def list_feedback(db: Session, user_id: str, *, status: str | None = None) -> li
                 "exercise_id": row.exercise_id,
                 "message": row.message,
                 "status": row.status,
+                "result": row.result,
                 "source": node_source(row.node_id),
                 "created_at": row.created_at.isoformat() if row.created_at else None,
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
             }
         )
     return out
 
 
-def regenerate(db: Session, user_id: str, feedback_id: int) -> dict[str, Any]:
-    """尝试自动重生成该条 auto 节点；人工节点只标记不覆盖。"""
+def _feedback_rows(db: Session, user_id: str, node_id: str) -> list:
+    """该节点未处置（pending/failed）反馈行（重生成成功后全部清零；failed 允许重试）。"""
+    return (
+        db.query(models.Feedback)
+        .filter(
+            models.Feedback.user_id == user_id,
+            models.Feedback.node_id == node_id,
+            models.Feedback.status.in_(("pending", "failed")),
+        )
+        .all()
+    )
+
+
+def _atomic_replace(path: Path, raw_md: str) -> None:
+    """原子替换内容文件：同目录临时文件 + os.replace。"""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(raw_md, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _node_file_and_entry(node_id: str) -> tuple[Path | None, dict | None]:
+    """返回 (文件路径, front-matter meta)。节点必须在内容库（stages）且来源 auto。"""
+    from ..content.loader import load_library, parse_node_text
+
+    lib = load_library()
+    loaded = lib.by_id.get(node_id)
+    if loaded is None:
+        return None, None
+    path = Path(loaded.path)
+    meta, _ = parse_node_text(path.read_text(encoding="utf-8"))
+    if meta.get("source", "human") != "auto":
+        return None, None
+    return path, meta
+
+
+def regenerate(db: Session, user_id: str, feedback_id: int, *, wait: bool = False, drafter=None) -> dict[str, Any]:
+    """显式重生成（复核动作）：
+    - 人工锚点（source≠auto）：仅标 reviewed，不替换；
+    - auto 节点：wait=True 同步执行（测试/脚本）；wait=False 起后台线程（API 默认），
+      返回 regenerating；pending/failed 均可触发（regenerating 在飞时返回 already）。
+    """
     row = db.get(models.Feedback, feedback_id)
     if row is None or row.user_id != user_id:
         raise KeyError(f"反馈不存在: {feedback_id}")
-    node_id = row.node_id
-    src = node_source(node_id)
+    src = node_source(row.node_id)
     if src != "auto":
         row.status = "reviewed"
+        row.result = "人工节点：仅标记复核，不自动替换（人工修订）。"
         db.flush()
         return {
             "action": "manual_only",
-            "node_id": node_id,
-            "message": "该节点非流水线(auto)内容，不自动覆盖（已标记复核，人工修订）。",
+            "node_id": row.node_id,
+            "status": "reviewed",
+            "message": row.result,
         }
-    # auto 节点：无 LLM key → 入"需 AI 重生成"队列；有 key 的 AI 重出稿由 scripts 批量执行（预留）
-    from ..config import get_settings
+    return _start_or_run_regen(db, user_id, row.node_id, wait=wait, drafter=drafter)
 
-    if not get_settings().llm_api_key:
+
+def spawn_auto_regen(node_id: str, user_id: str = "local") -> dict[str, Any]:
+    """提交反馈后由 API 调用的自动触发入口（auto 节点；人工节点由调用方自行判断）。"""
+    with _regen_lock:
+        if node_id in _regen_active:
+            return {"action": "regenerating", "node_id": node_id, "message": "该节点重生成已在后台进行中"}
+    threading.Thread(target=_worker, args=(node_id, user_id), daemon=True).start()
+    return {"action": "regenerating", "node_id": node_id, "message": "已提交复核；auto 内容将自动重生成替换（完成后可查看处理结果）"}
+
+
+def _worker(node_id: str, user_id: str) -> None:
+    from ..db import SessionLocal
+
+    try:
+        with SessionLocal() as wdb:
+            _regenerate_node_now(wdb, user_id, node_id, drafter=None)
+            wdb.commit()
+    except Exception:  # 后台失败不炸请求线程
+        pass
+
+
+def _start_or_run_regen(db: Session, user_id: str, node_id: str, *, wait: bool, drafter) -> dict[str, Any]:
+    rows = _feedback_rows(db, user_id, node_id)
+    if not rows:
+        return {"action": "nothing", "node_id": node_id, "message": "该节点无未处置的反馈。"}
+    if wait:
+        return _regenerate_node_now(db, user_id, node_id, drafter=drafter)
+    with _regen_lock:
+        if node_id in _regen_active:
+            return {"action": "already", "node_id": node_id, "message": "该节点重生成已在后台进行中"}
+    # 后台线程在独立会话执行同一核心；核心内部自取活跃锁（防重复执行）
+    def _run() -> None:
+        from ..db import SessionLocal
+
+        try:
+            with SessionLocal() as wdb:
+                _regenerate_node_now(wdb, user_id, node_id, drafter=drafter)
+                wdb.commit()
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"action": "regenerating", "node_id": node_id, "message": "已启动后台重生成替换（完成后可在复核队列查看结果）"}
+
+
+def _mark(db: Session, rows: list, status: str, result: str) -> None:
+    for r in rows:
+        r.status = status
+        r.result = result
+
+
+def _regenerate_node_now(db: Session, user_id: str, node_id: str, *, drafter=None) -> dict[str, Any]:
+    """同步核心：出稿 → 自动校验 → 原子替换 + 库刷新同步 + 反馈清零。测试/脚本走 wait=True 同此路径。"""
+    rows = _feedback_rows(db, user_id, node_id)
+    if not rows:
+        return {"action": "nothing", "node_id": node_id, "message": "该节点无未处置的反馈。"}
+    with _regen_lock:
+        if node_id in _regen_active:
+            return {"action": "already", "node_id": node_id, "message": "该节点重生成已在后台进行中"}
+        _regen_active.add(node_id)
+    try:
+        _mark(db, rows, "regenerating", "正在自动重生成替换…")
+        db.flush()
+        path, meta = _node_file_and_entry(node_id)
+        if path is None or meta is None:
+            _mark(db, rows, "failed", "节点不在内容库或非 auto 来源（保留原内容，请人工处理）。")
+            db.flush()
+            return {"action": "failed", "node_id": node_id, "message": "节点不可自动重生成（非 auto/不存在）。"}
+
+        from ..content import pipeline as pl
+        from ..content.loader import load_library
+        from ..content.roadmap import RoadmapEntry
+
+        # 由现有文件 front-matter 重建蓝图条目（prereqs 已是落地后的真实引用）
+        entry = RoadmapEntry(
+            id=meta["id"],
+            title=meta.get("title", node_id),
+            level=meta.get("level", "primary"),
+            topic=meta.get("topic", ""),
+            objectives=list(meta.get("objectives") or []),
+            prereqs=list(meta.get("prereqs") or []),
+            difficulty=int(meta.get("difficulty", 2)),
+            requires_thinking=bool(meta.get("requires_thinking", False)),
+        )
+        known_ids = set(load_library().by_id)
+        user_notes = [f"用户纠错反馈：{r.message.strip()}" for r in rows if r.message.strip()][:3]
+
+        if drafter is None:
+            from ..ai.drafting import make_ai_drafter
+
+            drafter = make_ai_drafter()
+        if drafter is None:
+            _mark(db, rows, "failed", "未配置 LLM_API_KEY：无法 AI 重生成（保留原内容待人工；配置 key 后重试可自动替换）。")
+            db.flush()
+            return {"action": "failed", "node_id": node_id, "message": "未配置 LLM_API_KEY，保留原内容待人工。"}
+
+        attempts: list[str] = []
+        raw_md: str | None = None
+        last_errs: list[str] = []
+        for attempt in range(1, 3):
+            errors_arg = list(attempts) or list(user_notes)
+            try:
+                raw_md = drafter(entry, errors_arg or None)
+            except Exception as e:  # 出稿器异常（DraftingError 等）
+                attempts.append(f"[attempt {attempt}] 出稿器异常: {e}")
+                raw_md = None
+                continue
+            errs = pl.validate_candidate(raw_md, known_ids)
+            if not errs:
+                # 出稿必须保持同一节点 id（防串位覆盖）
+                try:
+                    from ..content.loader import parse_node_text
+
+                    new_meta, _ = parse_node_text(raw_md)
+                    if new_meta.get("id") != node_id:
+                        errs.append(f"重生成节点 id 应为 {node_id}，实得 {new_meta.get('id')!r}")
+                except Exception as e:
+                    errs.append(f"重生成产物解析失败: {e}")
+            if not errs:
+                break
+            attempts.extend(f"[attempt {attempt}] {e}" for e in errs[:3])
+            last_errs = errs
+            raw_md = None
+
+        if raw_md is None:
+            detail = "; ".join((attempts or last_errs or ["未知"])[:4])
+            _mark(db, rows, "failed", f"自动重生成失败（原内容保留）：{detail[:400]}")
+            db.flush()
+            return {"action": "failed", "node_id": node_id, "message": "重生成未通过校验，保留原内容（详见 result）。", "errors": attempts[:4]}
+
+        _atomic_replace(path, raw_md)
+        refresh_library()
+        report = sync_content(db)
+        if not report.ok:
+            _mark(db, rows, "failed", f"内容文件已替换但库同步失败：{report.errors[:2]}（请重启服务或人工复核）")
+            db.flush()
+            return {"action": "failed", "node_id": node_id, "message": "库同步失败，请人工复核。"}
+        _mark(db, rows, "regenerated", f"已自动重生成替换（第 {len([a for a in attempts if '[attempt' in a]) + 1} 稿通过自动校验；{len(rows)} 条反馈清零）。")
+        db.flush()
         return {
-            "action": "queued_needs_ai",
+            "action": "regenerated",
             "node_id": node_id,
-            "message": "已入复核队列；配置 LLM_API_KEY 后运行 gen_content 可对该条自动重生成替换。",
+            "message": f"已自动重生成替换该节点（{len(rows)} 条反馈清零）。",
         }
-    # 有 key：由外部 AI drafter 重建（本服务不直接调 LLM，返回待办标记，脚本侧消费）
-    row.status = "reviewed"
-    db.flush()
-    return {
-        "action": "queued_regen",
-        "node_id": node_id,
-        "message": "已标记待 AI 重生成（gen_content 消费队列后替换并同步图谱）。",
-    }
+    finally:
+        with _regen_lock:
+            _regen_active.discard(node_id)
 
 
-__all__ = ["record", "list_feedback", "regenerate", "node_source", "KINDS"]
+__all__ = [
+    "record",
+    "list_feedback",
+    "regenerate",
+    "spawn_auto_regen",
+    "node_source",
+    "KINDS",
+    "UNRESOLVED",
+]
