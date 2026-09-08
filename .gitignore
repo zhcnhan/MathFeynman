@@ -36,3 +36,6 @@ _dsh-local/
 # 鏈湴杩愯鏃ュ織/涓存椂浜х墿
 .runtime/
 *.log
+
+# 本地进度数据库备份（绝不推送）
+backend/data/
