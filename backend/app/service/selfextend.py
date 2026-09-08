@@ -202,7 +202,15 @@ def _extend_sync(db: Session, level: str | None, *, drafter, use_ai: bool, setti
             return {"status": "budget", "summary": f"当日 token 预算已用尽（used={used}）"}
 
     topic = pending[0]
-    results = pl.generate_topic(effective, topic, drafter=drafter, limit=max_items)
+    # docs/12 P4：高+ 自动入库的纠错召回熔断——该主题问题率超阈值 → 本轮转 _drafts 待检
+    from . import guardrails as gr
+
+    stats = gr.topic_problem_stats(db, effective, topic)
+    meltdown = stats["tripped"]
+    results = pl.generate_topic(
+        effective, topic, drafter=drafter, limit=max_items,
+        force_drafts=True if meltdown else None,
+    )
     ok = [r for r in results if r.status == "ok"]
     failed = [r for r in results if r.status == "failed"]
     if not ok:
@@ -218,14 +226,21 @@ def _extend_sync(db: Session, level: str | None, *, drafter, use_ai: bool, setti
     if failed:
         sample = "; ".join(f"{r.entry_id}: {('; '.join(r.errors))[:100]}" for r in failed[:2])
         fail_note = f"；失败 {len(failed)}（例：{sample}）"  # R13/A2：失败原因透传 UI/状态
+    melt_note = ""
+    if meltdown:
+        melt_note = (
+            f"；⚠️ 纠错召回熔断：该主题问题率 {stats['problems']}/{stats['landed']} "
+            f"> 阈值 {gr.TRIP_RATIO:.0%} → 本轮内容转 _drafts 待检（pending 清零后自动恢复）"
+        )
     return {
         "status": "done",
-        "summary": f"已生成 {effective}:{topic}：auto {len(ok)} 条 + 锚点覆盖 {covered} 条" + fail_note,
+        "summary": f"已生成 {effective}:{topic}：auto {len(ok)} 条 + 锚点覆盖 {covered} 条" + fail_note + melt_note,
         "generated": [r.entry_id for r in ok],
         "failed": [r.entry_id for r in failed],
         "errors": [r.errors for r in failed],  # 失败明细（状态/日志可审计）
         "level": effective,
         "topic": topic,
+        "guardrail": {"meltdown_topic": topic, "tripped": meltdown, "problems": stats["problems"], "landed": stats["landed"]},
     }
 
 

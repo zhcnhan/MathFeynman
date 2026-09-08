@@ -1,8 +1,9 @@
-"""阶段 3 子步 10：端到端验收模拟（docs/10 §4）。
+"""阶段 3 子步 10 → docs/12 §4：端到端验收模拟（北极星：跨学段自动推进至高中首批）。
 
 离线链路：重置 → 掌握小学锚点至 ≥90% → 反复"下一主题"生成并掌握，直至小学蓝图内容齐且全掌握 →
-auto_check 命中跨学段放行（小学全通关）→ 自动生成"初中代数第一批"（middle 蓝图 m03/m04 auto）。
-用例结束清理所有生成文件与 DB 行；真实验收仍需用户在浏览器+真模型环境跑一遍。
+auto_check 命中跨学段放行 → 自动生成"初中代数第一批"（middle 蓝图 m03/m04 auto）→ 初中齐 → 自动推进
+"高中首批"（high.* auto 入库，docs/12 P4 全学段自动入库）。用例结束清理所有生成文件与 DB 行；
+真实验收仍需用户在浏览器+真模型环境跑一遍。
 """
 from __future__ import annotations
 
@@ -76,9 +77,11 @@ def test_e2e_complete_primary_then_auto_middle_batch():
             db.commit()
             assert se.mastered_ratio(db, "local", "primary") >= 1.0
 
-        # 2) 循环："下一主题"生成并掌握，直到小学蓝图内容齐；
-        #    小学齐后 extend 自动推进（fallback）生成"初中代数第一批"（middle.m03/m04 auto；m01/m02 锚点覆盖）
+        # 2) 循环："下一主题"生成并掌握，跨学段自动推进：
+        #    小学齐 → 初中代数第一批（middle.m03/m04 auto；m01/m02 锚点覆盖）；
+        #    初中齐 → 高中首批（high.* auto，docs/12 P4 全学段自动入库）。
         middle_auto: set[str] = set()
+        high_auto: set[str] = set()
         for _ in range(60):
             with SessionLocal() as db:
                 res = se.extend(db, "local", level="primary", wait=True)
@@ -87,25 +90,25 @@ def test_e2e_complete_primary_then_auto_middle_batch():
                 ids = set(res["generated"])
                 all_generated |= ids
                 middle_auto |= {x for x in ids if x.startswith("middle.")}
+                high_auto |= {x for x in ids if x.startswith("high.")}
                 with SessionLocal() as db:
                     _master(db, ids)
                     db.commit()
-                # 本用例验收点 = docs/10 §4（小学通关 → 初中代数第一批 auto 解锁）。
-                # 初中首批生成后即停：high 蓝图（P1）已存在，继续 extend 会按北极星自动推进到 high，
-                # 而 high+ 内容落 _drafts（待 P4 入库护栏），未入库内容无 Node 行、不可掌握；
-                # "推进到高中首批"属 docs/12 §4 验收（high 自动入库生效后另行模拟）。
-                if middle_auto:
+                # 高中首批自动入库（stages→DB 可见）即达 docs/12 §4"至少高中首批"验收点；
+                # 到点停止，不继续模拟 college/ai（机制同构，避免用例过长）。
+                if high_auto:
                     break
                 continue
             assert res["status"] in ("done", "idle"), res
             break
 
-        # 3) 断言：小学有生成内容（自续非空）；"初中代数第一批"已自动解锁并生成（跨学段链路）
+        # 3) 断言：小学有生成内容；初中代数第一批自动解锁（跨学段链路）；高中首批 auto 入库（docs/12 P4）
         assert all_generated
         assert "middle.m03" in middle_auto and "middle.m04" in middle_auto, middle_auto
+        assert high_auto, "高中首批应自动生成（high+ 默认自动入库）"
 
         with SessionLocal() as db:
             found = {r[0] for r in db.query(m.Node.id).filter(m.Node.id.in_(all_generated)).all()}
-        assert all_generated <= found  # DB 已同步（关卡地图可见）
+        assert all_generated <= found  # DB 已同步（关卡地图可见；含 high 首批）
     finally:
         _cleanup(all_generated)

@@ -3,9 +3,11 @@
 职责：按蓝图主题组批量"出稿 → 自动校验 → 入库策略"：
 1. 出稿：AI（provider.chat_json CALL_DRAFT_CONTENT）或**离线确定性 Stub**（无 key 的机制验证/测试用）。
 2. 自动校验（逐条，入库前）：front-matter 结构合法 / prereq 存在且无环 / 每题模板多 seed 渲染
-   + sympy 自检（broken=0）。
-3. 入库策略（默认混合制，docs/10 §3）：primary/middle → content/stages/<level>/ 自动入库（front-matter
-   标注 `source: auto`）；high 及以上 → content/_drafts/ 待人工审核（本模块只写草稿）。
+   + sympy 自检（broken=0）。（prereq 白名单：只能引用"已在库节点或本批前置链"——见 validate_candidate。）
+3. 入库策略（docs/10 §3 + docs/12 P4 升级）：**全学段默认自动入库**（content/stages/<level>/，
+   front-matter 标注 `source: auto`）；质量护栏替代强制人审 = 自动校验 + 服务层**内容问题率熔断**
+   （主题问题率 > 阈值 → 该主题转 _drafts 待检，见 service/guardrails.py；selfextend 接线时传
+   force_drafts=True）。CLI `--to-drafts` / 显式 force_drafts 仍可强制草稿。
 
 - 幂等：目标 id 已存在（stages 或 _drafts）→ 跳过并报 exists。
 - 本模块不 import 任何 LLM 依赖路径以外的组件：AI 出稿经注入的 provider（schema 化调用点 draft_content）。
@@ -163,11 +165,11 @@ def validate_candidate(raw_md: str, known_ids: set[str]) -> list[str]:
 
 
 # --------------------------------------------------------------------------
-# 入库策略
+# 入库策略（docs/12 P4：全学段默认自动入库；_drafts 仅由显式 force_drafts / 服务层熔断驱动）
 # --------------------------------------------------------------------------
 def _dest_dir(level: str, topic: str, *, force_drafts: bool | None = None) -> tuple[Path, bool]:
-    """返回 (目标目录, is_draft)。默认：primary/middle → stages；其余 → _drafts。"""
-    to_draft = force_drafts if force_drafts is not None else level not in ("primary", "middle")
+    """返回 (目标目录, is_draft)。默认自动入库（stages）；force_drafts=True → _drafts（CLI/熔断）。"""
+    to_draft = bool(force_drafts)
     if to_draft:
         d = content_root() / "_drafts"
         d.mkdir(parents=True, exist_ok=True)

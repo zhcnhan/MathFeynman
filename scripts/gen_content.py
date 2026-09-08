@@ -6,7 +6,8 @@
 
 - 默认 source=stub：离线确定性出稿（机制端到端验证/演示）。
 - source=ai：需 .env 配置 LLM_API_KEY，经 schema 化调用点 draft_content 由真模型按 docs/04 出稿；
-  自动校验与入库策略同一套（结构/无环/渲染/sympy broken=0；primary/middle→stages 标 auto；high+→_drafts）。
+  自动校验与入库策略同一套（结构/无环/渲染/sympy broken=0；**docs/12 P4：全学段默认自动入库**、
+  标 source: auto；`--to-drafts` 可强制草稿；服务层（selfextend）另有纠错召回熔断自动转草稿）。
 """
 from __future__ import annotations
 

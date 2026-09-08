@@ -533,3 +533,35 @@ high（high.h01–h06 落 **_drafts**、无 Node 行、不可掌握），原用�
    位置（不动 id）。
 3. 量化 run 内部工具链较长（a50→a57 近单链），符合"单用户顺序学习"，记知悉。
 4. ai 学段 thinking 标注 ≈90% true 属预期（deep 档）；false 类（a09/a19/a33/a56）供精核复核。
+
+---
+
+## 15. docs/12 P4：high+ 自动入库护栏升级（2026-09-08 · 北极星配套，与 P1 蓝图一并评审）
+
+**背景**：docs/12 P4 = high+ 默认自动入库，以 自动校验 + 白名单 + 掌握/费曼旁证 + 纠错召回 替代强制人审，
+保留"内容问题率 > 阈值 → 该主题转草稿待检"自动熔断。P1 前 high+ 强制 _drafts（docs/10 §3 混合制），
+本批按 docs/12 P4 升级（docs/10 §3 / README 不可变 #9 的口径差异见"评审点"）。
+
+**改动清单**
+1. `content/pipeline.py`：入库策略默认**全学段自动入库**（stages/<level>/，source: auto）；_drafts 仅由
+   显式 `force_drafts`（CLI `--to-drafts`）或服务层熔断驱动。prereq 白名单语义在 docstring 明示
+   （仅库内+本批前置链，validate_candidate 强制）。
+2. `service/guardrails.py`（新增）：主题问题率 = 未处置(pending)纠错反馈命中的去重节点数 /
+   该主题已入库 **auto** 节点数（锚点人工节点不计分母）；熔断条件 ratio > 0.3 且 问题节点 ≥2 且
+   分母 ≥3（防小样本误伤）；pending 清零（复核/自动重生成替换）→ 自动恢复（状态可由 DB 推导，无持久化标志）。
+3. `service/selfextend.py`：接线熔断——生成目标主题前查 guardrails，命中 → `force_drafts=True` 转草稿，
+   summary 标注"⚠️ 纠错召回熔断 … 转 _drafts 待检"，返回 dict 增 `guardrail` 字段。
+4. `scripts/gen_content.py`：docstring 同步新策略（CLI 手动通道不自动熔断，用户可自行 `--to-drafts`）。
+5. 测试：`test_guardrails.py` ×2（high 默认自动入库 stages 标 auto；熔断→_drafts→pending 清零恢复）；
+   `test_growth_e2e.py` 升级到 docs/12 §4 验收——跨学段模拟推进至**高中首批 auto 入库并 DB 可见**
+   （解除 P1 时"初中首批即停"的边界，原边界原因已消除：high 现在自动入库、无 Node 行 FK 问题）。
+
+**回归**：pytest = **177 passed + 1 skipped**（+2 护栏用例）；content validate 13/30 全绿；零残留。
+
+**评审点（与 P1 蓝图一并提交架构/用户）**
+1. **口径变更**：docs/10 §3"high+ → _drafts 待审"与 README 不可变 #9"人工审核 gate"被 docs/12 P4 覆盖
+   （运行期零人审 + 熔断兜底）。本批未改 docs/10/README——若批准请架构侧同步修订该两处表述。
+2. **熔断恢复口径**：pending 清零即恢复（"复核=已处置"的近似）；若要求"整条重生成替换后才恢复"需把
+   feedback.regenerate 的 auto 路径做成真正替换（当前 key 路径仅标 reviewed + 待脚本消费，见 §9 待办）。
+3. 阈值 0.3 / ≥2 问题节点 / ≥3 分母为初值，运行期可按反馈量调参（常量集中在 guardrails.py）。
+4. CLI 手动通道不自动熔断（无 DB 依赖）；如需 CLI 也熔断可后续接线。
