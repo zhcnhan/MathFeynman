@@ -186,7 +186,7 @@ class SessionService:
             )
             .all()
         }
-        eng = make_engine(mastered)
+        eng = make_engine(mastered, lib=lib)
         ok_gate, missing = eng.node_allowed(
             node_id,
             kind=loaded.doc.kind or "",

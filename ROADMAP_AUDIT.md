@@ -3,7 +3,7 @@
 > 生成时间：2026-09-08（C 段 middle 全段扩段后再生）；内容库节点数：13（stages 13，未变）。
 > 依据：docs/11 + content/roadmap/REVIEW-blueprint.md + REVIEW2-master.md（R15 精核补丁批）+ docs/12 P1–P3 + R14 后续#1（跨学段 prereq）+ 工单 C 段（middle 全段）。
 > 用途：供人工精核参考；机械检查（前置存在/锚点存在/跨学段方向/无环/主题连续/covered 明细），质量判断仍需人工。
-> 条目规模口径：primary 26 / middle 31（C 段全段扩段）/ high 81（R15 +h40b 复数）/ college 58（R15 +c34b SVD、c43b 马尔可夫链可选）/ ai 60（R15 +a04b/a17b/a25b）；
+> 条目规模口径：primary 27（R18 阶段2 +s27 因数倍数线）/ middle 31（C 段全段扩段）/ high 81（R15 +h40b 复数）/ college 59（R15 +c34b/c43b + D 段 c15b）/ ai 60（R15 +a04b/a17b/a25b）；
 > docs/12 §5 的 200+/300+/150+ 为含未来细拆的全内容口径，两者口径差异见 IMPLEMENTATION_NOTES 疑点）。
 
 ## middle（31 条）
@@ -30,14 +30,14 @@ covered（锚点已覆盖 6）：
 待生成 25：
   middle.m03、middle.m04、middle.m05、middle.m06、middle.m07、middle.m08、middle.m09、middle.m10、middle.m15、middle.m16、middle.m17、middle.m18、middle.m19、middle.m20、middle.m21、middle.m22、middle.m23、middle.m24、middle.m25、middle.m26、middle.m27、middle.m28、middle.m29、middle.m30、middle.m31
 
-## primary（26 条）
+## primary（27 条）
 
 - 自审结论：✅ 通过
 - 前置缺失 0 / 锚点缺失 0 / 自指 0 / 环 0 / 正向引用 0
 - 跨学段引用 0（前序学段）/ 反向 0 / 未落地缺口提示 0（提示不阻塞，学段顺序兜底）
 
 主题分组（按顺序）：
-- 数与运算 ×12（primary.s01 … primary.s23）
+- 数与运算 ×13（primary.s01 … primary.s23）
 - 量与测量 ×3（primary.s11 … primary.s13）
 - 图形与几何 ×6（primary.s14 … primary.s25）
 - 代数思维 ×1（primary.s18） ⚠️ 孤立单条
@@ -49,8 +49,8 @@ covered（锚点已覆盖 4）：
 - primary.s06（分数初步与同分母分数加减）-> anchors ['primary.0102']
 - primary.s07（异分母分数加减与约分）-> anchors ['primary.0103']
 - primary.s08（分数乘法与倒数初步）-> anchors ['primary.0104']
-待生成 22：
-  primary.s01、primary.s02、primary.s03、primary.s04、primary.s22、primary.s09、primary.s10、primary.s23、primary.s11、primary.s12、primary.s13、primary.s14、primary.s15、primary.s16、primary.s17、primary.s24、primary.s25、primary.s18、primary.s19、primary.s26、primary.s20、primary.s21
+待生成 23：
+  primary.s01、primary.s02、primary.s03、primary.s04、primary.s22、primary.s27、primary.s09、primary.s10、primary.s23、primary.s11、primary.s12、primary.s13、primary.s14、primary.s15、primary.s16、primary.s17、primary.s24、primary.s25、primary.s18、primary.s19、primary.s26、primary.s20、primary.s21
 
 ## high（81 条）
 

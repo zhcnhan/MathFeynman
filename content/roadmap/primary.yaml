@@ -40,25 +40,32 @@ entries:
     objectives: ["交换律/结合律/分配律", "用运算律简便计算"]
     prereqs: [primary.s05]
     difficulty: 2
+  # R18 阶段2#6：因数·倍数线（约分/通分基础），插除法(s04)/四则(s05)之后、分数(s06)之前
+  - id: primary.s27
+    title: 因数·倍数·质数与合数·公因数公倍数
+    topic: 数与运算
+    objectives: ["因数倍数与整除、质数合数概念", "公因数与最大公因数（GCD）", "公倍数与最小公倍数（LCM）"]
+    prereqs: [primary.s04, primary.s05]
+    difficulty: 2
   - id: primary.s06
     title: 分数初步与同分母分数加减
     topic: 数与运算
     objectives: ["理解 a/b 的意义", "同分母加减分母不变"]
-    prereqs: [primary.s05]
+    prereqs: [primary.s05, primary.s27]
     anchors: [primary.0102]
     difficulty: 2
   - id: primary.s07
     title: 异分母分数加减与约分
     topic: 数与运算
     objectives: ["通分后加减", "结果约成最简分数"]
-    prereqs: [primary.s06]
+    prereqs: [primary.s06, primary.s27]
     anchors: [primary.0103]
     difficulty: 2
   - id: primary.s08
     title: 分数乘法与倒数初步
     topic: 数与运算
     objectives: ["分数乘分数", "倒数的概念"]
-    prereqs: [primary.s07]
+    prereqs: [primary.s07, primary.s27]
     anchors: [primary.0104]
     difficulty: 2
   - id: primary.s09

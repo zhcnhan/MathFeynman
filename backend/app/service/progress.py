@@ -38,7 +38,7 @@ def _engine_and_infos(db: Session, user_id: str, graph: KnowledgeGraph, mastered
     from .library import get_library
 
     lib = get_library()
-    eng = make_engine(mastered)
+    eng = make_engine(mastered, lib=lib)
     infos: dict[str, dict] = {}
     for nid in graph.node_ids:
         doc = None

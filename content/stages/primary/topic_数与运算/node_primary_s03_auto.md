@@ -4,7 +4,7 @@ source: auto
 title: 乘法口诀与乘法意义
 level: primary
 topic: 数与运算
-prereqs: []
+prereqs: [primary.s02]  # R18 阶段2#5：回填乘法口诀前置（蓝图 primary.s03 prereq s02；生成期曾静默剔除）
 objectives:
   - 理解乘法是相同加数的简便
   - 熟练 1–9 乘法口诀

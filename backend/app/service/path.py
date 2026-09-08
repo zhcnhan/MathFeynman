@@ -223,11 +223,15 @@ class PathEngine:
         return out
 
 
-def make_engine(mastered: set[str]) -> PathEngine:
-    """从当前内容库 + 蓝图构建总序求值器（mastered = 用户已掌握节点 id 集）。"""
-    from ..content.loader import load_library
+def make_engine(mastered: set[str], lib=None) -> PathEngine:
+    """从内容库 + 蓝图构建总序求值器（mastered = 用户已掌握节点 id 集）。
 
-    lib = load_library()
+    lib 可选（复用调用方已载库，避免每请求重复解析内容文件）；缺省自载。
+    """
+    if lib is None:
+        from ..content.loader import load_library
+
+        lib = load_library()
     roadmaps, registry = _cached_maps()
     return PathEngine(
         mastered=set(mastered),
