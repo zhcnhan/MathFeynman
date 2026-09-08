@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+backend/*.egg-info/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# Local data & secrets
+.env
+backend/data/*.db
+backend/data/*.db-*
+backend/data/*.sqlite*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Content drafts (未审核区，永不入库运行；审核后移入 stages 由 git 记录)
+content/_drafts/*
+!content/_drafts/.gitkeep
+
+# 本地运维（与产品无关）
+_dsh-local/
+
+# 本地运行日志/临时产物
+.runtime/
+*.log

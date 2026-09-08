@@ -1,0 +1,5 @@
+# MathFeynman 内容库清单（docs/04 §1）。运行库只加载 content/stages/。
+# 每新增入库节点：git 提交即人工审核记录。
+version: 0
+node_count: 0
+updated_at: ""

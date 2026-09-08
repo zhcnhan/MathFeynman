@@ -1,0 +1,174 @@
+# 小学课程蓝图（docs/10 §2.2 草案，待人工精核 —— 状态: draft）
+# 说明：条目顺序 = 建议学习序列；prereq 指向本文件条目 id（“s.序号”）或
+# 已入库人工锚点节点 id（如 primary.0101）；anchors 表示该条已有人工节点满足。
+level: primary
+entries:
+  - id: primary.s01
+    title: 数的认识与读写（万以内）·四舍五入与估算
+    topic: 数与运算
+    objectives: ["认识数位（个/十/百/千/万）", "能正确读写与比较（万以内）", "会用四舍五入取近似数并估算"]
+    prereqs: []
+    difficulty: 1
+  - id: primary.s02
+    title: 百以内加减（进位与退位）
+    topic: 数与运算
+    objectives: ["掌握竖式进位/退位加减", "能用口算与估算"]
+    prereqs: [primary.s01]
+    difficulty: 1
+  - id: primary.s03
+    title: 乘法口诀与乘法意义
+    topic: 数与运算
+    objectives: ["理解乘法是相同加数的简便", "熟练 1–9 乘法口诀"]
+    prereqs: [primary.s02]
+    difficulty: 1
+  - id: primary.s04
+    title: 除法意义与有余数除法
+    topic: 数与运算
+    objectives: ["理解除法与乘法互逆", "会做有余数除法并处理余数"]
+    prereqs: [primary.s03]
+    difficulty: 2
+  - id: primary.s05
+    title: 四则混合运算与运算顺序
+    topic: 数与运算
+    objectives: ["先乘除后加减、有括号先算括号", "两步混合计算"]
+    prereqs: [primary.s04]
+    anchors: [primary.0101]
+    difficulty: 1
+  - id: primary.s22
+    title: 运算律与简便运算
+    topic: 数与运算
+    objectives: ["交换律/结合律/分配律", "用运算律简便计算"]
+    prereqs: [primary.s05]
+    difficulty: 2
+  - id: primary.s06
+    title: 分数初步与同分母分数加减
+    topic: 数与运算
+    objectives: ["理解 a/b 的意义", "同分母加减分母不变"]
+    prereqs: [primary.s05]
+    anchors: [primary.0102]
+    difficulty: 2
+  - id: primary.s07
+    title: 异分母分数加减与约分
+    topic: 数与运算
+    objectives: ["通分后加减", "结果约成最简分数"]
+    prereqs: [primary.s06]
+    anchors: [primary.0103]
+    difficulty: 2
+  - id: primary.s08
+    title: 分数乘法与倒数初步
+    topic: 数与运算
+    objectives: ["分数乘分数", "倒数的概念"]
+    prereqs: [primary.s07]
+    anchors: [primary.0104]
+    difficulty: 2
+  - id: primary.s09
+    title: 小数的四则运算
+    topic: 数与运算
+    objectives: ["小数与分数互化", "小数加减乘", "小数除法竖式"]
+    prereqs: [primary.s08]
+    difficulty: 2
+  - id: primary.s10
+    title: 百分数的认识与应用
+    topic: 数与运算
+    objectives: ["理解百分数意义", "求一个数的百分之几"]
+    prereqs: [primary.s09]
+    difficulty: 3
+    requires_thinking: true
+  - id: primary.s23
+    title: 比的意义·化简比与按比例分配
+    topic: 数与运算
+    objectives: ["理解比的意义与前项后项", "化简比", "按比例分配的应用"]
+    prereqs: [primary.s06, primary.s10]
+    difficulty: 2
+    requires_thinking: true
+  - id: primary.s11
+    title: 长度·质量·时间单位与换算
+    topic: 量与测量
+    objectives: ["常见单位及进率", "单位换算与简单测量应用"]
+    prereqs: [primary.s02]
+    difficulty: 1
+  - id: primary.s12
+    title: 人民币与货币计算
+    topic: 量与测量
+    objectives: ["元角分互化", "购物找零情境计算"]
+    prereqs: [primary.s02]
+    difficulty: 2
+  - id: primary.s13
+    title: 面积与体积单位换算
+    topic: 量与测量
+    objectives: ["平方米/公顷等进率", "体积容积单位的关系"]
+    prereqs: [primary.s11]
+    difficulty: 2
+  - id: primary.s14
+    title: 平面图形认识与周长
+    topic: 图形与几何
+    objectives: ["点线角与常见图形", "长方形正方形周长"]
+    prereqs: [primary.s02]
+    difficulty: 1
+  - id: primary.s15
+    title: 面积公式（长方形·正方形·平行四边形·三角形·梯形）
+    topic: 图形与几何
+    objectives: ["推导并会算基本图形面积", "组合图形分解"]
+    prereqs: [primary.s14]
+    difficulty: 3
+    requires_thinking: true
+  - id: primary.s16
+    title: 角的度量·垂直与平行·三角形分类
+    topic: 图形与几何
+    objectives: ["量角器与角度", "三角形内角和", "分类"]
+    prereqs: [primary.s14]
+    difficulty: 2
+  - id: primary.s17
+    title: 轴对称与图形的运动
+    topic: 图形与几何
+    objectives: ["轴对称图形", "平移与旋转现象"]
+    prereqs: [primary.s16]
+    difficulty: 2
+  - id: primary.s24
+    title: 圆的认识·周长与面积
+    topic: 图形与几何
+    objectives: ["圆的各部分（圆心/半径/直径）", "周长公式 C=2πr", "面积公式推导与计算"]
+    prereqs: [primary.s15]
+    difficulty: 2
+    requires_thinking: true
+  - id: primary.s25
+    title: 立体图形（长方体·正方体·圆柱·圆锥）
+    topic: 图形与几何
+    objectives: ["长方体/正方体表面积与体积", "圆柱表面积与体积", "圆锥体积（与圆柱关系）"]
+    prereqs: [primary.s13, primary.s15]
+    difficulty: 3
+    requires_thinking: true
+  - id: primary.s18
+    title: 用字母表示数与简易方程思想
+    topic: 代数思维
+    objectives: ["字母表示数与关系", "认识简易方程（一步）"]
+    prereqs: [primary.s15]
+    difficulty: 3
+    requires_thinking: true
+  - id: primary.s19
+    title: 两步应用题与等量关系
+    topic: 应用题建模
+    objectives: ["画图/列表找等量", "列式或设未知数两步求解"]
+    prereqs: [primary.s18]
+    difficulty: 3
+    requires_thinking: true
+  - id: primary.s26
+    title: 分数与百分数应用题（求率·折扣）
+    topic: 应用题建模
+    objectives: ["求一个数是另一个数的几分之几/百分之几", "增加/减少百分之几", "折扣问题"]
+    prereqs: [primary.s07, primary.s10]
+    difficulty: 3
+    requires_thinking: true
+  - id: primary.s20
+    title: 和差倍·归一·行程初步应用
+    topic: 应用题建模
+    objectives: ["和差倍/归一模型", "相遇行程初步"]
+    prereqs: [primary.s19]
+    difficulty: 3
+    requires_thinking: true
+  - id: primary.s21
+    title: 平均数与简单统计（统计图初步）·可能性
+    topic: 统计与概率
+    objectives: ["平均数意义与计算", "会读条形/折线统计图", "简单可能性判断（一定/可能/不可能）"]
+    prereqs: [primary.s20]
+    difficulty: 2

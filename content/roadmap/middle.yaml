@@ -1,0 +1,31 @@
+# 初中课程蓝图（第一批：代数，供"小学通关→自动解锁初中代数"端到端验收，docs/10 §4）
+# 状态: draft 待精核 —— 仅首批锚点+两条待生成条目（机制演示用，精核后再扩全段）
+level: middle
+entries:
+  - id: middle.m01
+    title: 负数与数轴
+    topic: 代数·数轴与整式初步
+    objectives: ["负数意义与数轴表示", "比较大小"]
+    prereqs: []
+    anchors: [middle.0201]
+    difficulty: 1
+  - id: middle.m02
+    title: 有理数的加法
+    topic: 代数·数轴与整式初步
+    objectives: ["同号/异号加法法则", "数轴理解加法"]
+    prereqs: [middle.m01]
+    anchors: [middle.0202]
+    difficulty: 2
+  - id: middle.m03
+    title: 整式的概念与同类项
+    topic: 代数·数轴与整式初步
+    objectives: ["单项式/多项式与次数", "同类项识别与合并"]
+    prereqs: [middle.m02]
+    difficulty: 2
+  - id: middle.m04
+    title: 整式的加减与去括号
+    topic: 代数·数轴与整式初步
+    objectives: ["去括号法则", "整式加减运算"]
+    prereqs: [middle.m03]
+    difficulty: 3
+    requires_thinking: true
