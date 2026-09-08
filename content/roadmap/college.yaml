@@ -331,7 +331,7 @@ entries:
     title: 方差分析与回归分析初步
     topic: 概率论与数理统计
     objectives: ["单因素方差分析", "一元线性回归与最小二乘估计", "相关系数与显著性检验"]
-    prereqs: [college.c42]
+    prereqs: [college.c42, college.c34]  # R14：回归依赖线代最小二乘/法方程
     difficulty: 3
     requires_thinking: true
   # R15（REVIEW2 A2）：c43b 随机过程初步——可选条目（RL/时间序列方向必修；ai 主线已有随机过程
