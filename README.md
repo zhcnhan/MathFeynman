@@ -23,6 +23,7 @@
 | [docs/10-progression.md](docs/10-progression.md) | **闯关式学习与内容自续**：关卡化体验、课程蓝图、自动生成闭环 |
 | [docs/11-workorder.md](docs/11-workorder.md) | 成长型阶段总工单（分阶段执行，Euler 当前任务） |
 | [docs/12-roadmap-master.md](docs/12-roadmap-master.md) | **课程蓝图总纲**：全学段地图规划、北极星与懒生成 |
+| [docs/13-agent-handover.md](docs/13-agent-handover.md) | **Agent 交接协议**：新 Euler 续接的开机清单与行为公约 |
 
 ## 不可变决策（改动需先改本文档并重新评审）
 

@@ -45,3 +45,37 @@ def test_roadmap_audit_no_cycle_no_missing():
         rep = audit(level, known_node_ids=set(lib.by_id))
         assert rep["ok"], rep
         assert rep["cycles"] == []
+        assert rep["anchors_missing"] == []
+
+
+def test_roadmap_audit_covered_and_pending_detail():
+    """C：covered/待生成明细与锚点判定口径一致。"""
+    from app.content.loader import load_library
+
+    lib = load_library()
+    rep = audit("primary", known_node_ids=set(lib.by_id))
+    covered = {e["id"] for e in rep["covered_entries"]}
+    assert covered == {"primary.s05", "primary.s06", "primary.s07", "primary.s08"}
+    pending = {e["id"] for e in rep["pending_entries"]}
+    assert {"primary.s22", "primary.s23", "primary.s24", "primary.s25", "primary.s26"} <= pending
+    # 交集为空：每一条非此即彼
+    assert not (covered & pending)
+
+
+def test_roadmap_audit_reports_missing_anchor():
+    """C：人为造错锚点（不在内容库）→ audit 报错。"""
+    from app.content.roadmap import Roadmap, RoadmapEntry
+
+    fake = Roadmap(
+        level="primary",
+        entries=[
+            RoadmapEntry(id="primary.x01", title="x", level="primary", topic="t", anchors=["primary.9999"], prereqs=[]),
+            RoadmapEntry(id="primary.x02", title="y", level="primary", topic="t", prereqs=["primary.x01"]),
+        ],
+    )
+    rep = audit("primary", roadmap=fake, known_node_ids=set())
+    assert rep["ok"] is False
+    assert any("primary.9999" in e for e in rep["anchors_missing"])
+    # 无锚点条目在 pending 明细
+    pending_ids = {e["id"] for e in rep["pending_entries"]}
+    assert "primary.x02" in pending_ids

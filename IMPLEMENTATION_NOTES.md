@@ -389,3 +389,52 @@ npm build 通过。
 
 **回归**：pytest = **173 passed + 1 skipped**；content validate 13/30 全绿；npm build 通过；
 仓库 stages/_drafts 零残留 auto 文件。
+
+---
+
+## 10. 蓝图精核修订批（REVIEW-blueprint A/B/C · 2026-09-08）
+
+**执行边界遵守**：仅改 content/roadmap/primary.yaml、roadmap.audit() 与其测试、ROADMAP_AUDIT.md、
+本 NOTES；content/stages/ 13 节点与锚点 id 未动（validate 13/30 保持）；已有条目 id 未重编号，
+新增延续 s22–s26。
+
+**A. 内容缺口落实**
+| id | title | topic | prereq | difficulty/thinking |
+|---|---|---|---|---|
+| s22 | 运算律与简便运算 | 数与运算 | s05（四则混合，锚点不动） | 2 / – |
+| s23 | 比的意义·化简比与按比例分配 | 数与运算 | s06(分数锚点0102) + s10(百分数) | 2 / true |
+| s24 | 圆的认识·周长与面积 | 图形与几何 | s15（面积公式） | 2 / true（面积推导） |
+| s25 | 立体图形（长方体·正方体·圆柱·圆锥） | 图形与几何 | s13 + s15 | 3 / true |
+| s26 | 分数与百分数应用题（求率·折扣） | 应用题建模 | s07(分数锚点0103)+s10 | 3 / true（置于 s19 与 s20 之间） |
+- 并入/扩展：s01（标题扩为"万以内·四舍五入与估算"、objectives 增 3 条）；s09（标题"小数的四则运算"、
+  objectives 增"小数除法竖式"）；s21（objectives 增"简单可能性判断"）。
+**B. 顺序微调**：s12 prereq s11 → **s02**（人民币依赖加减）；s15/s16 重叠、s18/s21 单条保持（REVIEW B/C 备注）。
+**C. 审计增强**
+- `roadmap.audit()`：新增 **anchors 存在性检查**（anchors 指向的节点必须在内容库，缺失报错并进 ok 判定）；
+  新增 **covered/pending 明细**（covered=锚点全部在库，与 pipeline 判定同口径）；支持注入 roadmap 供造错测试。
+- 测试：+2（covered/pending 明细断言；人造缺失锚点 → ok=False 且 anchors_missing 含该项）。
+- 重跑 audit：primary **26 条** / middle 4 条全部 ✅（前置缺失 0、锚点缺失 0、环 0、正向引用 0）；
+  covered：primary s05–s08、middle m01–m02（与 pipeline 口径一致）；待生成 primary 22 / middle 2。
+  `ROADMAP_AUDIT.md` 已更新（含 covered/待生成清单与新条目明细）。
+
+**回归**：pytest = **175 passed + 1 skipped**；content validate 13/30 全绿；零残留。
+
+**待架构裁决疑点（§1 区新增）**
+1. 运算律 s22 按 REVIEW"紧接 s05 之后"插入——列表顺序上它先于分数块；学习中"分数"在"运算律"之后出现，
+   语义是否接受（如需先分数后运算律可仅调整列表位置不动 id，不涉及锚点）。
+2. s23 比 依赖 s10（百分数，未生成）→ pipeline 生成"比"时会先连链生成百分数链内容（s09/s10 等）；
+   属依赖链正常行为，但"单主题生成"会连带多主题内容，需知悉（入库总量按传递展开计算）。
+3. 新条目 id 延续 s22+，id 序号与列表学习顺序不再一致（列表位置为真源）；若日后有工具假定 id 序请先读列表。
+4. REVIEW D（middle 扩段）为后续批次，本批未动 middle.yaml。
+
+---
+
+## 11. 会话续接（2026-09-08 18:53）—— 基线复核通过：pytest=175 passed + 1 skipped，content=ok 13 节点/30 练习
+
+**续接前最后已知状态**：
+- 里程碑：M0–M5（M5 人工验收剩余真人项）+ docs/11 阶段 1/2/3 完成态（153→175 演进路径见 §8–§10）。
+- blueprint 修订批 A/B/C（§10）：代码（primary.yaml 26 条、roadmap.audit 锚点存在性检查、covered/pending 明细）在
+  snapshot 613dbee 内已含；**证据尾巴**（test_roadmap.py +2、ROADMAP_AUDIT.md 重生成、本 NOTES §10、README 文档导航 +
+  docs/13 交接协议）当时未提交 → 本次续接已复核（audit primary 26/middle 4 全绿、covered s05–s08/m01–m02）并收尾提交。
+- **待架构侧核实**：ABC 修订批实现（REVIEW-blueprint A/B/C 对应表见 §10；本批按 REVIEW D 未动 middle.yaml，D 待后续批次）。
+- 疑点（§10 待裁决区）4 条原样挂起；docs/12 总纲 P1（high.yaml）为当前活动工单下一任务。
