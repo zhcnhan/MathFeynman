@@ -15,7 +15,7 @@
 ### 学习会话
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/session/start` | body `{node_id}` → 创建/恢复会话，返回状态机当前步与首批内容（讲解稿演绎结果可选异步） |
+| POST | `/session/start` | body `{node_id}` → 创建/恢复会话，返回状态机当前步与首批内容（讲解稿演绎结果可选异步）。**R18 总序门禁**：无既有会话而新建时校验蓝图总序（docs/09 R18）；越级 → `409 invalid_state`，detail 含"请先完成：<前置条目标题>"。既有会话恢复 / 练习·费曼续走 / 复习不受门禁影响 |
 | POST | `/session/step` | body `{session_id, action, payload}`；action ∈ `ask_question / next / submit_exercise / request_hint / feynman_submit / feynman_answer / finish / quit`（`next` = 阶段前进：讲解→例题→练习，见 docs/09 R1）。返回：下一步 UI 状态 + 新内容 + 状态机事件流 |
 | GET | `/session/{id}` | 恢复会话全状态 |
 
@@ -108,7 +108,7 @@ relearn_logs (user_id, node_id, reason TEXT, created_at)   -- mastered→learnin
 
 | code | 含义 |
 |---|---|
-| `not_found` / `invalid_state` | 会话已结束或状态非法（前端应刷新会话） |
+| `not_found` / `invalid_state` | 会话已结束或状态非法（前端应刷新会话）；`/session/start` 的 `invalid_state` = **越级进入未解锁节点（R18 总序门禁）**，detail 含前置提示 |
 | `ai_unavailable` | LLM 降级已发生（响应中带 `degraded: true`） |
 | `exercise_broken` | 模板不可渲染（应触发 content 告警，不计入用户失败） |
 | `validation_error` | 入参格式错 |
