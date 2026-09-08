@@ -29,7 +29,7 @@ def test_entries_wellformed():
 
 def test_roadmap_missing_file_raises():
     with pytest.raises(RoadmapError):
-        load_roadmap("college")
+        load_roadmap("no_such_level")  # 该文件名永不存在（college 建成后仍成立）
 
 
 def test_all_levels_exist_helpers():
@@ -41,7 +41,7 @@ def test_roadmap_audit_no_cycle_no_missing():
     from app.content.loader import load_library
 
     lib = load_library()
-    for level in ("primary", "middle"):
+    for level in ("primary", "middle", "high", "college"):
         rep = audit(level, known_node_ids=set(lib.by_id))
         assert rep["ok"], rep
         assert rep["cycles"] == []
