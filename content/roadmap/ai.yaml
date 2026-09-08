@@ -1,0 +1,417 @@
+# AI 进阶课程蓝图（docs/10 §2.2 · docs/12 总纲 P3 草案 —— 状态: draft 待精核）
+# 说明：条目顺序 = 建议学习序列；主题组顺序与 docs/12 §2 ai 骨架一致（机器学习数学基础 → 凸优化 →
+# 信息论与熵 → 矩阵分析/范数/正则化 → 高维概率与统计学习理论 → 时间序列与随机过程 → 量化应用）。
+# prereq 指向本文件条目 id（ai.aNN）；anchors 留空（全部待生成/运行期懒生成）。
+#
+# 【依赖 college 的衔接说明】（docs/12 §2 注：ai 学段编排需在 college 完成后自然衔接；机械层面由
+#   selfextend 学段顺序保证——college 通关后才解锁 ai。蓝图 prereq 仅限本文件内，见 IMPLEMENTATION_NOTES）
+#   A. 入口假设：进入 ai 前 college 已通关，默认掌握一元/多元微积分、线性代数、概率论与数理统计、
+#      离散与数值计算初步（college.c01–c56）。
+#   B. 机器学习数学基础（a01–a10）在 college 概率/线代/优化基础上以"模型-损失-风险"视角重述，
+#      不重复教材推导；梯度下降在 a07 给直觉，严格收敛分析在凸优化 run（a13）。
+#   C. 凸优化与数值优化（a11–a19）假定 college 微积分最值（c20 拉格朗日）与数值初步（c51–c56）。
+#   D. 信息论与熵（a20–a25）假定 college 概率（c35–c38）与离散组合（c49 生成函数）；微分熵需微积分。
+#   E. 矩阵分析/范数/正则化（a26–a33）假定 college 线性代数全部（c25–c34，含特征值/二次型/SVD 前置）。
+#   F. 高维概率与统计学习理论（a34–a41）假定 college 数理统计（c40–c43）与概率极限（c39）。
+#   G. 时间序列与随机过程（a42–a49）：docs/12 注"随机过程亦可作 college 拓展"——本批置于 ai 主线，
+#      若需在 college 先行扩展（衔接经济/量化路径）请架构裁决后回填 college.yaml（本 P3 不改动 college）。
+#   H. 量化应用（a50–a57）假定 college 概率统计/优化（c20/c34/c39/c42/c43）与本文件 run2/run6 前置。
+# 【模型档位】R12 基础档：college/ai → think（运行期由 ai/tier 决策链保证）；requires_thinking 字段在
+#   ai 学段作为"精核建议标注"（true=理论/推导/建模深档，false=计算/工具/讨论类可快档），不改变运行期默认档。
+level: ai
+entries:
+  - id: ai.a01
+    title: 机器学习中的数学框架
+    topic: 机器学习数学基础
+    objectives: ["数据/模型/损失/风险的数学表述", "训练集与测试集、过拟合欠拟合的直觉", "机器学习问题的规范化步骤"]
+    prereqs: []
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a02
+    title: 线性回归与最小二乘（矩阵形式）
+    topic: 机器学习数学基础
+    objectives: ["正规方程与矩阵形式推导", "多项式特征与基函数展开", "从概率视角看最小二乘（高斯噪声）"]
+    prereqs: [ai.a01]
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a03
+    title: 分类与逻辑回归
+    topic: 机器学习数学基础
+    objectives: ["sigmoid 与伯努利模型", "对数似然与交叉熵损失", "决策边界与多分类（softmax）直觉"]
+    prereqs: [ai.a02]
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a04
+    title: 概率视角的机器学习（MLE 与 MAP）
+    topic: 机器学习数学基础
+    objectives: ["极大似然估计在模型族的应用", "贝叶斯观点与最大后验（MAP）", "先验与正则化的联系（直觉）"]
+    prereqs: [ai.a03]
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a05
+    title: 偏差-方差分解与模型选择
+    topic: 机器学习数学基础
+    objectives: ["偏差-方差分解的推导", "交叉验证与模型选择的原理", "泛化误差与测试误差的关系"]
+    prereqs: [ai.a02, ai.a03]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a06
+    title: 正则化与损失函数设计初步
+    topic: 机器学习数学基础
+    objectives: ["L1/L2 惩罚的优化与统计意义", "稀疏性与压缩估计的直觉", "损失函数选择的稳健性考量"]
+    prereqs: [ai.a05]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a07
+    title: 梯度下降与随机梯度下降（直觉层）
+    topic: 机器学习数学基础
+    objectives: ["批量/小批量/随机梯度下降", "学习率与批大小的作用", "动量与常见实践的直观解释"]
+    prereqs: [ai.a06]
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a08
+    title: 特征表示与核方法直觉
+    topic: 机器学习数学基础
+    objectives: ["特征标准化与表示变换", "核技巧的思想（高维内积）", "核与相似度的联系"]
+    prereqs: [ai.a07]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a09
+    title: 评估指标与统计意义
+    topic: 机器学习数学基础
+    objectives: ["准确率/精确率/召回率/F1", "ROC 与 AUC 的统计含义", "不平衡数据下的指标选择"]
+    prereqs: [ai.a03]
+    difficulty: 2
+  - id: ai.a10
+    title: 典型模型族的数学拆解（案例）
+    topic: 机器学习数学基础
+    objectives: ["线性族/树模型/神经网络族对比", "从损失与容量角度理解模型差异", "端到端小案例的数学复盘"]
+    prereqs: [ai.a08, ai.a09]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a11
+    title: 凸集与凸函数
+    topic: 凸优化与数值优化
+    objectives: ["凸集定义与保凸运算", "凸函数判定（一阶/二阶条件）", "常见凸函数类与强凸性"]
+    prereqs: []
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a12
+    title: 凸优化问题与最优性条件
+    topic: 凸优化与数值优化
+    objectives: ["优化问题的标准形式与分类", "无约束一阶/二阶最优性条件", "KKT 条件的引入（约束优化）"]
+    prereqs: [ai.a11]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a13
+    title: 梯度下降的收敛性分析
+    topic: 凸优化与数值优化
+    objectives: ["平滑性与强凸下的线性收敛", "步长选择与收敛率", "与随机梯度下降收敛的差异"]
+    prereqs: [ai.a12]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a14
+    title: 加速与自适应优化方法
+    topic: 凸优化与数值优化
+    objectives: ["动量与 Nesterov 加速思想", "AdaGrad/RMSProp/Adam 的自适应步长", "实践中的方法选择"]
+    prereqs: [ai.a13]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a15
+    title: 牛顿法与拟牛顿方法
+    topic: 凸优化与数值优化
+    objectives: ["牛顿法的局部收敛性", "BFGS 与 L-BFGS 思想", "二阶方法在大规模问题的局限"]
+    prereqs: [ai.a12]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a16
+    title: 拉格朗日对偶与约束优化
+    topic: 凸优化与数值优化
+    objectives: ["拉格朗日函数与对偶问题", "弱对偶/强对偶与 Slater 条件", "对偶在 SVM 等模型中的应用"]
+    prereqs: [ai.a12]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a17
+    title: 近端方法与稀疏优化
+    topic: 凸优化与数值优化
+    objectives: ["次梯度与近端算子", "ISTA/FISTA 的思想", "L1 稀疏优化的近端视角"]
+    prereqs: [ai.a16]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a18
+    title: 在线凸优化与遗憾界
+    topic: 凸优化与数值优化
+    objectives: ["在线学习框架与遗憾定义", "在线梯度下降的遗憾界", "与统计学习的联系（可学习性）"]
+    prereqs: [ai.a13]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a19
+    title: 优化在训练中的应用实践
+    topic: 凸优化与数值优化
+    objectives: ["学习率调度策略", "批次/分布式训练的优化直觉", "训练不稳定问题的排查思路"]
+    prereqs: [ai.a14]
+    difficulty: 2
+  - id: ai.a20
+    title: 熵与信息量
+    topic: 信息论与熵
+    objectives: ["自信息与熵的定义", "联合熵与条件熵", "熵的性质（非负/上界）"]
+    prereqs: []
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a21
+    title: 互信息与相对熵（KL 散度）
+    topic: 信息论与熵
+    objectives: ["互信息的定义与链式法则", "KL 散度与交叉熵", "散度的非负性与等式条件"]
+    prereqs: [ai.a20]
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a22
+    title: 熵在机器学习中的应用
+    topic: 信息论与熵
+    objectives: ["决策树的信息增益", "最大熵原理", "softmax 交叉熵损失的统计含义"]
+    prereqs: [ai.a21]
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a23
+    title: 数据压缩与信道容量直觉
+    topic: 信息论与熵
+    objectives: ["无损压缩与熵编码", "信道模型与互信息", "信道容量的直观理解"]
+    prereqs: [ai.a21]
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a24
+    title: 率失真与信息论极限
+    topic: 信息论与熵
+    objectives: ["率失真函数的思想", "有损压缩的信息论边界", "信源-信道编码定理直觉"]
+    prereqs: [ai.a23]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a25
+    title: 微分熵与最大熵分布
+    topic: 信息论与熵
+    objectives: ["微分熵的定义与高斯分布", "最大熵分布（给定矩约束）", "相对熵在变分推断的初步联系"]
+    prereqs: [ai.a21]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a26
+    title: 向量范数与矩阵范数
+    topic: 矩阵分析与正则化
+    objectives: ["常用向量范数与范数等价性", "矩阵范数与算子范数", "范数与正则化惩罚的联系"]
+    prereqs: []
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a27
+    title: 谱分解与奇异值分解（SVD）
+    topic: 矩阵分析与正则化
+    objectives: ["实对称矩阵的谱分解", "SVD 的存在性与几何意义", "Moore-Penrose 伪逆"]
+    prereqs: [ai.a26]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a28
+    title: SVD 的应用（低秩近似与 PCA）
+    topic: 矩阵分析与正则化
+    objectives: ["低秩近似的 Eckart-Young 定理", "主成分分析（PCA）的推导", "特征脸/去噪等应用思想"]
+    prereqs: [ai.a27]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a29
+    title: 矩阵微分与梯度计算
+    topic: 矩阵分析与正则化
+    objectives: ["标量对向量/矩阵求导的布局", "常用矩阵微分恒等式", "链式法则在模型求导中的应用"]
+    prereqs: [ai.a27]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a30
+    title: 伪逆与最小二乘的完整解
+    topic: 矩阵分析与正则化
+    objectives: ["欠定/超定方程的最小二乘解", "用 SVD/伪逆表示通解", "与岭估计的联系"]
+    prereqs: [ai.a27, ai.a29]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a31
+    title: 正则化理论（Lasso/Ridge 统计视角）
+    topic: 矩阵分析与正则化
+    objectives: ["岭估计的偏差-方差权衡", "Lasso 的稀疏性与变量选择", "正则化参数的选取方法"]
+    prereqs: [ai.a30]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a32
+    title: 谱理论初步
+    topic: 矩阵分析与正则化
+    objectives: ["特征值的变分刻画（Rayleigh 商）", "Gershgorin 圆盘定理", "对称矩阵的谱分解应用"]
+    prereqs: [ai.a27]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a33
+    title: 大规模矩阵计算的直觉
+    topic: 矩阵分析与正则化
+    objectives: ["稀疏矩阵与结构化矩阵", "迭代法与随机化算法的思想", "计算复杂度与精度权衡"]
+    prereqs: [ai.a32]
+    difficulty: 2
+  - id: ai.a34
+    title: 高维几何直觉与集中不等式
+    topic: 高维概率与统计学习理论
+    objectives: ["高维球的体积与维数灾难直觉", "Hoeffding/Bernstein 不等式", "集中不等式在估计中的应用"]
+    prereqs: []
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a35
+    title: 高维中的大数定律失效与尾部行为
+    topic: 高维概率与统计学习理论
+    objectives: ["高维样本协方差的病态性", "尾分布与重尾直觉", "随机向量范数的集中现象"]
+    prereqs: [ai.a34]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a36
+    title: 随机矩阵初步
+    topic: 高维概率与统计学习理论
+    objectives: ["Wishart 分布与样本协方差", "谱分布的半圆/MP 定律直觉", "随机矩阵在信号处理的应用"]
+    prereqs: [ai.a34, ai.a27]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a37
+    title: 统计学习理论框架
+    topic: 高维概率与统计学习理论
+    objectives: ["ERM 与假设类", "泛化误差的分解", "可学习性与一致性"]
+    prereqs: [ai.a34]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a38
+    title: 一致收敛与 VC 维
+    topic: 高维概率与统计学习理论
+    objectives: ["一致收敛与均匀大数定律", "VC 维的定义与计算例子", "由 VC 维导出的泛化界"]
+    prereqs: [ai.a37]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a39
+    title: Rademacher 复杂度与泛化界
+    topic: 高维概率与统计学习理论
+    objectives: ["经验 Rademacher 复杂度", "对称化与泛化界推导", "复杂度界与 VC 界的比较"]
+    prereqs: [ai.a37]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a40
+    title: 模型选择的统计理论（AIC/BIC/交叉验证）
+    topic: 高维概率与统计学习理论
+    objectives: ["似然框架下的模型选择准则", "信息准则的推导直觉", "交叉验证的理论视角"]
+    prereqs: [ai.a38, ai.a39]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a41
+    title: 无监督学习的数学（聚类/混合模型/EM）
+    topic: 高维概率与统计学习理论
+    objectives: ["K-means 与高斯混合模型", "EM 算法的推导与收敛性", "隐变量模型的统计视角"]
+    prereqs: [ai.a37]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a42
+    title: 随机过程基础
+    topic: 时间序列与随机过程
+    objectives: ["随机过程的定义与有限维分布", "严平稳与宽平稳", "相关函数与遍历性直觉"]
+    prereqs: []
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a43
+    title: 泊松过程与马尔可夫链
+    topic: 时间序列与随机过程
+    objectives: ["泊松过程的定义与性质", "离散/连续时间马尔可夫链", "平稳分布与极限行为"]
+    prereqs: [ai.a42]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a44
+    title: 布朗运动与扩散初步
+    topic: 时间序列与随机过程
+    objectives: ["布朗运动的构造与性质", "高斯过程与协方差核", "随机游走到布朗运动的极限"]
+    prereqs: [ai.a42]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a45
+    title: 鞅与停时初步
+    topic: 时间序列与随机过程
+    objectives: ["鞅的定义与基本性质", "停时与可选停时定理", "鞅在公平博弈与金融中的应用"]
+    prereqs: [ai.a44]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a46
+    title: 时间序列模型（AR/MA/ARMA）
+    topic: 时间序列与随机过程
+    objectives: ["自回归与移动平均模型", "平稳性与可逆性条件", "ARMA 的识别与估计直觉"]
+    prereqs: [ai.a42]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a47
+    title: 谱分析与频域方法
+    topic: 时间序列与随机过程
+    objectives: ["谱密度与自相关函数的关系", "周期图与平滑估计直觉", "滤波在频域的解释"]
+    prereqs: [ai.a46]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a48
+    title: 状态空间模型与卡尔曼滤波
+    topic: 时间序列与随机过程
+    objectives: ["状态空间模型的形式", "卡尔曼滤波的递推推导", "在跟踪/预测中的应用"]
+    prereqs: [ai.a46]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a49
+    title: 蒙特卡洛与 MCMC 初步
+    topic: 时间序列与随机过程
+    objectives: ["蒙特卡洛估计与方差缩减", "Metropolis-Hastings 与 Gibbs 采样", "马尔可夫链收敛诊断直觉"]
+    prereqs: [ai.a43, ai.a42]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a50
+    title: 金融数学基础（收益与分布）
+    topic: 量化应用
+    objectives: ["收益率/对数收益与分布假设", "期望/方差/协方差矩阵的作用", "金融数据的统计特征（肥尾/波动聚集）"]
+    prereqs: []
+    difficulty: 2
+    requires_thinking: true
+  - id: ai.a51
+    title: 资产组合理论（均值-方差）
+    topic: 量化应用
+    objectives: ["均值-方差优化问题", "有效前沿与夏普比率", "协方差矩阵估计的实践问题"]
+    prereqs: [ai.a50]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a52
+    title: 定价模型与多因子模型
+    topic: 量化应用
+    objectives: ["资本资产定价模型（CAPM）的推导直觉", "多因子模型与因子收益", "套利定价理论初步"]
+    prereqs: [ai.a51]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a53
+    title: 风险度量与管理
+    topic: 量化应用
+    objectives: ["VaR 与 CVaR 的定义与估计", "回撤与波动率的风险指标", "风险预算与组合约束"]
+    prereqs: [ai.a50]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a54
+    title: 组合优化与再平衡
+    topic: 量化应用
+    objectives: ["带约束的组合优化建模", "交易成本与再平衡策略", "与凸优化 run 方法的衔接"]
+    prereqs: [ai.a51]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a55
+    title: 回测的统计严谨性
+    topic: 量化应用
+    objectives: ["样本外评估与数据窥探偏差", "多重检验与回测过拟合", "稳健回测的方法论"]
+    prereqs: [ai.a50]
+    difficulty: 3
+    requires_thinking: true
+  - id: ai.a56
+    title: 交易成本与市场微观结构初步
+    topic: 量化应用
+    objectives: ["买卖价差/冲击成本模型", "订单流的统计特征", "高频数据的噪声与采样"]
+    prereqs: [ai.a55]
+    difficulty: 2
+  - id: ai.a57
+    title: 量化项目中的数学工程（综合案例）
+    topic: 量化应用
+    objectives: ["因子-信号-组合-风控闭环的数学拆解", "把本学段各 run 工具串成工作流", "端到端量化小项目的复盘"]
+    prereqs: [ai.a52, ai.a54, ai.a56]
+    difficulty: 3
+    requires_thinking: true

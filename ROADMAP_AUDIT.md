@@ -1,10 +1,10 @@
 # ROADMAP_AUDIT.md — 课程蓝图自动自查报告
 
 > 生成时间：2026-09-08；内容库节点数：13（stages 13，未变）。
-> 依据：docs/11 + content/roadmap/REVIEW-blueprint.md（A/B 落实、C 增强）+ docs/12 P1（high 草案）+ P2（college 草案）。
+> 依据：docs/11 + content/roadmap/REVIEW-blueprint.md（A/B 落实、C 增强）+ docs/12 P1–P3（high/college/ai 草案）。
 > 用途：供人工精核参考；机械检查（前置存在/锚点存在/无环/主题连续/covered 明细），质量判断仍需人工。
-> 条目规模口径：primary 26 / middle 4（首批，REVIEW D 待扩段）/ high 80（P1）/ college 56（P2）；
-> docs/12 §5 的 200+/300+ 为含未来细拆的全内容口径，两者口径差异见 IMPLEMENTATION_NOTES 疑点）。
+> 条目规模口径：primary 26 / middle 4（首批，REVIEW D 待扩段）/ high 80（P1）/ college 56（P2）/ ai 57（P3）；
+> docs/12 §5 的 200+/300+/150+ 为含未来细拆的全内容口径，两者口径差异见 IMPLEMENTATION_NOTES 疑点）。
 
 ## middle（4 条）
 
@@ -79,3 +79,22 @@ covered（锚点已覆盖 0）：
 - （无：本学段暂无锚点占位条目）
 待生成 56：
   college.c01、college.c02、college.c03、college.c04、college.c05、college.c06、college.c07、college.c08、college.c09、college.c10、college.c11、college.c12、college.c13、college.c14、college.c15、college.c16、college.c17、college.c18、college.c19、college.c20、college.c21、college.c22、college.c23、college.c24、college.c25、college.c26、college.c27、college.c28、college.c29、college.c30、college.c31、college.c32、college.c33、college.c34、college.c35、college.c36、college.c37、college.c38、college.c39、college.c40、college.c41、college.c42、college.c43、college.c44、college.c45、college.c46、college.c47、college.c48、college.c49、college.c50、college.c51、college.c52、college.c53、college.c54、college.c55、college.c56
+
+## ai（57 条）
+
+- 自审结论：✅ 通过
+- 前置缺失 0 / 锚点缺失 0 / 自指 0 / 环 0 / 正向引用 0
+
+主题分组（按顺序）：
+- 机器学习数学基础 ×10（ai.a01 … ai.a10）
+- 凸优化与数值优化 ×9（ai.a11 … ai.a19）
+- 信息论与熵 ×6（ai.a20 … ai.a25）
+- 矩阵分析与正则化 ×8（ai.a26 … ai.a33）
+- 高维概率与统计学习理论 ×8（ai.a34 … ai.a41）
+- 时间序列与随机过程 ×8（ai.a42 … ai.a49）
+- 量化应用 ×8（ai.a50 … ai.a57）
+
+covered（锚点已覆盖 0）：
+- （无：本学段暂无锚点占位条目）
+待生成 57：
+  ai.a01、ai.a02、ai.a03、ai.a04、ai.a05、ai.a06、ai.a07、ai.a08、ai.a09、ai.a10、ai.a11、ai.a12、ai.a13、ai.a14、ai.a15、ai.a16、ai.a17、ai.a18、ai.a19、ai.a20、ai.a21、ai.a22、ai.a23、ai.a24、ai.a25、ai.a26、ai.a27、ai.a28、ai.a29、ai.a30、ai.a31、ai.a32、ai.a33、ai.a34、ai.a35、ai.a36、ai.a37、ai.a38、ai.a39、ai.a40、ai.a41、ai.a42、ai.a43、ai.a44、ai.a45、ai.a46、ai.a47、ai.a48、ai.a49、ai.a50、ai.a51、ai.a52、ai.a53、ai.a54、ai.a55、ai.a56、ai.a57

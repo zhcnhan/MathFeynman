@@ -41,7 +41,7 @@ def test_roadmap_audit_no_cycle_no_missing():
     from app.content.loader import load_library
 
     lib = load_library()
-    for level in ("primary", "middle", "high", "college"):
+    for level in ("primary", "middle", "high", "college", "ai"):
         rep = audit(level, known_node_ids=set(lib.by_id))
         assert rep["ok"], rep
         assert rep["cycles"] == []

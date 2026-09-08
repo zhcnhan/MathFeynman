@@ -504,3 +504,32 @@ high（high.h01–h06 落 **_drafts**、无 Node 行、不可掌握），原用�
    近单链学习序不同——单用户顺序学习下即"先学完微积分 run 再学线代 run"，可接受特性，记知悉。
 3. c43（回归分析）实际未在 prereq 引用 c34（最小二乘法方程），仅内部链 c42——法方程工具可由 c34 并行/
    前置选修后补；如需强制顺序可加跨 run prereq，精核时定。
+
+---
+
+## 14. docs/12 P3：ai.yaml 全段草案（2026-09-08 · 只写蓝图，不生成内容）
+
+**交付物**
+- `content/roadmap/ai.yaml`：**57 条轻条目草案、7 主题组**（docs/12 §2 ai 骨架顺序）：
+  机器学习数学基础 ×10（a01–a10）/ 凸优化与数值优化 ×9（a11–a19）/ 信息论与熵 ×6（a20–a25）/
+  矩阵分析与正则化 ×8（a26–a33）/ 高维概率与统计学习理论 ×8（a34–a41）/ 时间序列与随机过程 ×8
+  （a42–a49）/ 量化应用 ×8（a50–a57）。
+- 文件头含 **8 条依赖 college 的衔接说明（A–H）**：入口 = college 通关（selfextend 学段顺序）；
+  各 run 假定掌握的 college 内容（cNN 区间）与内部前置标注（如 SVD 依赖 college 特征值 c31–c32、
+  随机过程/量化依赖 college 概率优化 c39/c43 等，均以文档说明承载——跨学段 prereq 受 audit 口径限制）。
+- **requires_thinking 标注**：理论/推导/建模类 ≈90% 标 true（docs/12 注"默认 deep 档"的建议以字段表达）；
+  计算/工具/讨论类标 false（a09/a19/a33/a56）。运行期档位仍由 R12 ai/tier 决策链决定（ai 基础档即 think），
+  字段仅作精核建议——已在文件头注明。
+- `ROADMAP_AUDIT.md`：再生含 ai 段（5 学段蓝图文件齐全：primary/middle/high/college/ai）。
+- `backend/tests/test_roadmap.py`：audit 全覆盖循环扩到 5 学段（加 ai）。
+
+**audit 结果**：ai 57 条 ok=True——前置缺失 0 / 锚点缺失 0 / 自指 0 / 环 0 / 正向引用 0 / 孤立主题 0。
+**回归**：pytest = **175 passed + 1 skipped**；content validate 13/30 全绿；零残留。
+
+**待架构裁决疑点（§1 区登记）**
+1. 随机过程/时间序列的归属：docs/12 注"某些主题（随机过程）也可作 college 拓展"——本批置于 ai 主线
+   （a42–a49），并在 ai.yaml 头注明了"如需 college 先行扩展请裁决后回填 college.yaml（P3 不改动 college）"。
+2. 信息论（a20–a25）位于凸优化之后：纯信息论不依赖优化，位置是"骨架排布"决定；若精核认为应前移可调列表
+   位置（不动 id）。
+3. 量化 run 内部工具链较长（a50→a57 近单链），符合"单用户顺序学习"，记知悉。
+4. ai 学段 thinking 标注 ≈90% true 属预期（deep 档）；false 类（a09/a19/a33/a56）供精核复核。
