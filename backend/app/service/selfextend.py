@@ -232,9 +232,13 @@ def _extend_sync(db: Session, level: str | None, *, drafter, use_ai: bool, setti
             f"；⚠️ 纠错召回熔断：该主题问题率 {stats['problems']}/{stats['landed']} "
             f"> 阈值 {gr.TRIP_RATIO:.0%} → 本轮内容转 _drafts 待检（pending 清零后自动恢复）"
         )
+    gap_note = ""
+    cross_gaps = pl.cross_level_gaps(effective)  # R14 后续#1：跨学段前置未落地 → 提示（不阻塞）
+    if cross_gaps:
+        gap_note = "；跨学段前置缺口提示（不阻塞，学段顺序兜底）：" + "；".join(cross_gaps[:3])
     return {
         "status": "done",
-        "summary": f"已生成 {effective}:{topic}：auto {len(ok)} 条 + 锚点覆盖 {covered} 条" + fail_note + melt_note,
+        "summary": f"已生成 {effective}:{topic}：auto {len(ok)} 条 + 锚点覆盖 {covered} 条" + fail_note + melt_note + gap_note,
         "generated": [r.entry_id for r in ok],
         "failed": [r.entry_id for r in failed],
         "errors": [r.errors for r in failed],  # 失败明细（状态/日志可审计）

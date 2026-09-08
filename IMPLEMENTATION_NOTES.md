@@ -643,3 +643,62 @@ stages/_drafts 无新增；仓库零残留。
 5. primary REVIEW2 B2 建议 s23 追加"s08 或 s04"（精核可再定），按任务规格取 s08（分数乘除，衔接
    s06 分数意义的除法视角）。
 
+---
+
+## 17. 会话续接（2026-09-08 19:50）—— 基线复核通过：pytest=177 passed + 1 skipped，content=ok 13 节点/30 练习
+
+**续接前最后已知状态**：
+- 蓝图总纲 P1–P4 全部落地（4d0a2c8）；其后另一 Euler 会话执行 R15 精核补丁批（fa75d28：high +h40b 复数
+  81 条 / college +c34b·c43b 58 条 / ai +a04b·a17b·a25b 60 条 / primary B 两项 / 全表补 thinking /
+  REVIEW2-master.md + docs/09 R14/R15 裁决 + docs 北极星制同步）与 R14 收尾（35f2d95：college.c43 +c34）。
+  架构侧 R14 批准 P1–P4 并把跨学段 prereq / feedback 重生成替换 / middle 扩段列为后续任务（docs/09 R14"给
+  Euler 的后续任务" 1/3/5）。
+- 本会话（用户工单 A/B/C/D）承接：A=跨学段 prereq 引擎增强（R14 后续#1）+ 落地改写衔接假设为真实跨学段
+  prereq；B=feedback 真正"重生成替换"消费管线（R14 后续#3）；C=middle 全段扩段（REVIEW D / R14 后续#5）；
+  D=傅里叶单列候选 + REVIEW2 清单闭合核对。基线复核数字如上；git HEAD=35f2d95、status 干净。
+
+---
+
+## 18. A 段：跨学段 prereq 引擎增强（R14 后续 #1 · 2026-09-08）
+
+**规格**：用户工单 A 段 = roadmap 条目 prereq 允许引用其它学段蓝图条目（`level.local` 跨文件），
+把"文档说明式衔接"升级为机器可校验；audit/生成器可提示缺口但不阻塞（学段顺序推进兜底，北极星懒生成不变）。
+
+**改动清单**
+1. `content/roadmap.py`：
+   - `LEVEL_ORDER`（LEVELS 学习顺序）+ `_split_entry_ref`（`level.local` 两级格式解析）+ `all_entries()`
+     （跨学段蓝图条目注册表：读全部已存在 level.yaml）+ `landed_id_for()`（条目→内容落地 id：锚点在库
+     → anchors[0]，否则条目自身 id）。
+   - `load_roadmap` 格式层增强：含 '.' 的 prereq 必须是合法学段前缀 + 非空本地号，否则 RoadmapError
+     （错误信息含具体条目与非法值）。
+   - `audit()`：新增 `registry` 注入参数 + 跨学段语义——引用其它学段条目：目标学段为后序 → `cross_reverse`
+     （进 ok 判定，报错）；前序 → `cross_refs`（合法），目标条目未落地到内容库 → `cross_gaps`（提示，
+     不进 ok 判定——学段顺序兜底）；同文件环 DFS 保留；返回 dict 增 cross_refs/cross_reverse/cross_gaps。
+2. `content/pipeline.py`：
+   - `_resolve_prereqs()`：生成前置翻译——同文件锚点覆盖 → 锚点 id（原行为）；跨学段引用 → 目标条目
+     已落地（锚点节点/auto 节点在库）→ 用落地 id 建内容边，**未落地 → 剔除**（内容文件不得声明指向
+     不存在节点的 prereq——loader/图谱校验不允许；依赖由学段顺序兜底）。
+   - `cross_level_gaps(level)`：该学段跨学段前置未落地清单（selfextend summary 提示用）。
+   - `generate_sequence` 使用注册表 + `_resolve_prereqs`。
+3. `service/selfextend.py`：`_extend_sync` 成功后附"跨学段前置缺口提示（不阻塞，学段顺序兜底）：…"入 summary。
+4. **蓝图落地（最小必要，11 条跨学段引用）**：college → high 5 条（c01→high.h31 数列；c16→high.h47 空间
+   向量；c25→high.h38 平面向量坐标；c35→high.h74 条件概率；c44→high.h06 集合逻辑）；ai → college 6 条
+   （a11→college.c20 拉格朗日；a27→college.c34b SVD/PCA；a29→college.c18 偏导/全微分；a34→college.c39
+   大数/中心极限；a43→college.c43b 马尔可夫链（college 可选条目衔接）；a50→college.c38 数字特征）。
+   文件头衔接假设 A–H 保留文档性说明，机器可表达部分已改写为真实 prereq 并在头注释标注。
+5. `ROADMAP_AUDIT.md`：再生（含每学段"跨学段引用/反向/缺口提示"行）。
+
+**audit**：5 学段全 ok——college cross_refs 5 / ai cross_refs 6，反向 0，缺口提示 5/6（目标内容未生成属
+正常：运行期懒生成到段时前置学段已齐则缺口消失）；前置缺失 0 / 锚点缺失 0 / 环 0 / 正向引用 0。
+
+**测试**：test_roadmap +7（合法带缺口 / 落地无缺口 / 条目缺失 / 反向拒绝 / 同文件环保留 / loader 格式 /
+真实蓝图 gaps+audit）；test_pipeline +1（_resolve_prereqs 未落地剔除·落地翻译·锚点落地·同文件翻译）。
+**回归**：pytest = **185 passed + 1 skipped**（+8）；content validate 13/30 全绿；零残留。
+
+**疑点/偏离**
+1. 生成语义取"跨学段前置未落地 → 剔除引用"（而非占位生成）：内容 prereq 只允许指向真实存在节点，
+   与 loader/图谱校验一致；缺口由 audit.cross_gaps + selfextend summary 提示。若未来要"前置学段首批自动
+   补齐"需架构另裁（现由学段顺序推进覆盖，北极星懒生成不变）。
+2. 跨学段"环"在方向规则（只许引用前序学段）下不可能；同文件环能力保留并有测试。
+3. 注册表 all_entries() 每次读取 ≤5 个 yaml（量小无缓存）；若蓝图文件数大再引入缓存。
+

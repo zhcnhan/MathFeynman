@@ -23,7 +23,13 @@ import yaml
 
 from . import content_root, stages_dir
 from .loader import load_library, parse_node_text
-from .roadmap import Roadmap, RoadmapEntry, load_roadmap
+from .roadmap import (
+    Roadmap,
+    RoadmapEntry,
+    all_entries,
+    landed_id_for,
+    load_roadmap,
+)
 from .schemas import (
     CheckDoc,
     ExerciseDoc,
@@ -261,6 +267,52 @@ def _needed_ids(roadmap: Roadmap, target_topics: set[str]) -> list[str]:
     return [e.id for e in roadmap.entries if e.id in need]
 
 
+def _resolve_prereqs(
+    entry: RoadmapEntry,
+    *,
+    amap: dict[str, str],
+    registry: dict[str, tuple[str, RoadmapEntry]],
+    known: set[str],
+    level: str,
+) -> list[str]:
+    """把蓝图条目 prereq 翻译为"内容节点可落地的 prereq 列表"（R14 后续 #1 跨学段语义）：
+
+    - 同文件条目被锚点覆盖 → 指真实锚点节点（原 amap 行为）；
+    - 跨学段引用（registry 其它学段条目）：目标条目已落地（锚点节点或已生成 auto 节点在库）
+      → 用其落地 id 建内容边；**未落地 → 剔除**（该依赖由学段顺序推进兜底，见 selfextend 缺口提示；
+      内容文件不得声明指向不存在节点的 prereq——loader/图谱校验不允许）。
+    - 其余（同文件条目 / 真实节点引用）原样保留。
+    """
+    out: list[str] = []
+    for x in entry.prereqs:
+        if x in amap:
+            out.append(amap[x])
+            continue
+        ref = registry.get(x)
+        if ref is not None and ref[0] != level:
+            landed = landed_id_for(ref[1], known)
+            if landed in known:
+                out.append(landed)
+            # else：未落地 → 剔除（缺口由 cross_level_gaps/selfextend 提示）
+            continue
+        out.append(x)
+    return out
+
+
+def cross_level_gaps(level: str, lib_ids: set[str] | None = None) -> list[str]:
+    """该学段条目中"跨学段前置条目未落地"清单（提示用，不阻塞；学段顺序推进兜底）。"""
+    roadmap = load_roadmap(level)
+    lib = lib_ids if lib_ids is not None else set(load_library().by_id)
+    registry = all_entries()
+    gaps: list[str] = []
+    for e in roadmap.entries:
+        for x in e.prereqs:
+            ref = registry.get(x)
+            if ref is not None and ref[0] != level and landed_id_for(ref[1], lib) not in lib:
+                gaps.append(f"{e.id}->{x}({ref[0]} 条目未落地)")
+    return gaps
+
+
 def generate_sequence(
     roadmap: Roadmap,
     entry_ids: list[str],
@@ -272,12 +324,13 @@ def generate_sequence(
     lib = load_library()
     known: set[str] = set(lib.by_id)
     amap = _anchor_map(roadmap)
+    registry = all_entries()  # 跨学段蓝图条目注册表（跨文件引用解析）
     results: list[ItemResult] = []
     for eid in entry_ids:
         entry = roadmap.by_id()[eid]
-        # 前置翻译：蓝图条目被锚点覆盖 → 指真实节点
+        # 前置翻译：同文件锚点覆盖 → 真实节点；跨学段引用 → 落地 id（未落地剔除）
+        translated = _resolve_prereqs(entry, amap=amap, registry=registry, known=known, level=roadmap.level)
         eff = entry
-        translated = [amap.get(x, x) for x in entry.prereqs]
         if translated != list(entry.prereqs):
             eff = entry.model_copy(update={"prereqs": translated})
         # 被覆盖的锚点视为已知（其前置通过）
@@ -323,5 +376,6 @@ __all__ = [
     "generate_sequence",
     "generate_entry",
     "validate_candidate",
+    "cross_level_gaps",
     "SELFCHECK_SEEDS",
 ]

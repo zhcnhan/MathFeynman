@@ -1,28 +1,37 @@
 # AI 进阶课程蓝图（docs/10 §2.2 · docs/12 总纲 P3 草案 —— 状态: draft 待精核）
 # 说明：条目顺序 = 建议学习序列；主题组顺序与 docs/12 §2 ai 骨架一致（机器学习数学基础 → 凸优化 →
 # 信息论与熵 → 矩阵分析/范数/正则化 → 高维概率与统计学习理论 → 时间序列与随机过程 → 量化应用）。
-# prereq 指向本文件条目 id（ai.aNN）；anchors 留空（全部待生成/运行期懒生成）。
+# prereq 指向本文件条目 id（ai.aNN）或**前序学段蓝图条目**（college.cNN，A 段已机器化：audit 校验方向/
+# 存在性、生成时翻译为落地内容 id）；anchors 留空（全部待生成/运行期懒生成）。
 #
-# 【依赖 college 的衔接说明】（docs/12 §2 注：ai 学段编排需在 college 完成后自然衔接；机械层面由
-#   selfextend 学段顺序保证——college 通关后才解锁 ai。蓝图 prereq 仅限本文件内，见 IMPLEMENTATION_NOTES）
+# 【依赖 college 的衔接说明】（docs/12 §2 注：ai 学段编排需在 college 完成后自然衔接 + R14 后续#1
+#   跨学段 prereq 机器校验；学段推进由 selfextend 顺序保证——college 通关后才解锁 ai）
 #   A. 入口假设：进入 ai 前 college 已通关，默认掌握一元/多元微积分、线性代数、概率论与数理统计、
 #      离散与数值计算初步（college.c01–c56）。
 #   B. 机器学习数学基础（a01–a10）在 college 概率/线代/优化基础上以"模型-损失-风险"视角重述，
 #      不重复教材推导；梯度下降在 a07 给直觉，严格收敛分析在凸优化 run（a13）。
 #   C. 凸优化与数值优化（a11–a19）假定 college 微积分最值（c20 拉格朗日）与数值初步（c51–c56）。
+#      **机器化引用**：a11 prereq +[college.c20]（多元极值与拉格朗日，凸优化入口衔接）。
 #   D. 信息论与熵（a20–a25）假定 college 概率（c35–c38）与离散组合（c49 生成函数）；微分熵需微积分。
 #   E. 矩阵分析/范数/正则化（a26–a33）假定 college 线性代数全部（c25–c34，含特征值/二次型/SVD 前置）。
+#      **机器化引用**：a27 prereq +[college.c34b]（SVD/PCA，college 侧落点）；a29 +[college.c18]
+#      （偏导/全微分——矩阵求导的多元微分基础）。
 #   F. 高维概率与统计学习理论（a34–a41）假定 college 数理统计（c40–c43）与概率极限（c39）。
+#      **机器化引用**：a34 prereq +[college.c39]（大数定律与中心极限定理）。
 #   G. 时间序列与随机过程（a42–a49）：docs/12 注"随机过程亦可作 college 拓展"——经 R15 裁决仍置于
 #      ai 主线（量化刚需）；college.yaml 已回填**可选** c43b（马尔可夫链初步，RL/时间序列方向必修，
 #      用户 ai 到段前可按需先学），本 run 内部顺序按"鞅（a45）在前、布朗运动（a44）在后为鞅特例"编排。
+#      **机器化引用**：a43 prereq +[college.c43b]（马尔可夫链深化承接 college 可选条目）。
 #   H. 量化应用（a50–a57）假定 college 概率统计/优化（c20/c34/c39/c42/c43）与本文件 run2/run6 前置。
+#      **机器化引用**：a50 prereq +[college.c38]（期望/方差/协方差，金融统计基础）。
 # R15 精核补丁批（REVIEW2-master）：新增 a04b 贝叶斯推断与共轭先验（a04 后）、a17b ADMM 与算子分裂
 # （a17 后）、a25b 变分推断与 ELBO（依赖 a25+a41，插 a41 后、run6 前）；a12 扩完整 KKT；a46 补
 # 单位根/差分与 ARIMA 整合阶。高斯过程归属（评审 C③）：GP 概念在 a44（布朗运动与扩散初步）内介绍，
 # 归属"时间序列与随机过程"run，更完整的 GP 回归视角不在本蓝图主线（扩展候选）。
 # 【模型档位】R12 基础档：college/ai → think（运行期由 ai/tier 决策链保证）；requires_thinking 字段在
 #   ai 学段作为"精核建议标注"（true=理论/推导/建模深档，false=计算/工具/讨论类可快档），不改变运行期默认档。
+# 说明：跨学段引用在 audit 计为 cross_refs（方向=前序学段才合法）；目标条目未落地 → cross_gaps 提示
+# （不阻塞：生成时该引用被剔除、学习由学段顺序兜底，见 service/selfextend 缺口提示）。
 level: ai
 entries:
   - id: ai.a01
@@ -111,7 +120,7 @@ entries:
     title: 凸集与凸函数
     topic: 凸优化与数值优化
     objectives: ["凸集定义与保凸运算", "凸函数判定（一阶/二阶条件）", "常见凸函数类与强凸性"]
-    prereqs: []
+    prereqs: [college.c20]
     difficulty: 2
     requires_thinking: true
   - id: ai.a12
@@ -230,7 +239,7 @@ entries:
     title: 谱分解与奇异值分解（SVD）
     topic: 矩阵分析与正则化
     objectives: ["实对称矩阵的谱分解", "SVD 的存在性与几何意义", "Moore-Penrose 伪逆"]
-    prereqs: [ai.a26]
+    prereqs: [ai.a26, college.c34b]
     difficulty: 3
     requires_thinking: true
   - id: ai.a28
@@ -244,7 +253,7 @@ entries:
     title: 矩阵微分与梯度计算
     topic: 矩阵分析与正则化
     objectives: ["标量对向量/矩阵求导的布局", "常用矩阵微分恒等式", "链式法则在模型求导中的应用"]
-    prereqs: [ai.a27]
+    prereqs: [ai.a27, college.c18]
     difficulty: 3
     requires_thinking: true
   - id: ai.a30
@@ -278,7 +287,7 @@ entries:
     title: 高维几何直觉与集中不等式
     topic: 高维概率与统计学习理论
     objectives: ["高维球的体积与维数灾难直觉", "Hoeffding/Bernstein 不等式", "集中不等式在估计中的应用"]
-    prereqs: []
+    prereqs: [college.c39]
     difficulty: 3
     requires_thinking: true
   - id: ai.a35
@@ -350,7 +359,7 @@ entries:
     title: 泊松过程与马尔可夫链
     topic: 时间序列与随机过程
     objectives: ["泊松过程的定义与性质", "离散/连续时间马尔可夫链", "平稳分布与极限行为"]
-    prereqs: [ai.a42]
+    prereqs: [ai.a42, college.c43b]
     difficulty: 3
     requires_thinking: true
   - id: ai.a45
@@ -401,7 +410,7 @@ entries:
     title: 金融数学基础（收益与分布）
     topic: 量化应用
     objectives: ["收益率/对数收益与分布假设", "期望/方差/协方差矩阵的作用", "金融数据的统计特征（肥尾/波动聚集）"]
-    prereqs: []
+    prereqs: [college.c38]
     difficulty: 2
     requires_thinking: true
   - id: ai.a51

@@ -80,3 +80,28 @@ def test_generate_sequence_anchor_covered(tmp_path):
     covered = [r for r in results if r.status == "covered"]
     assert covered, [r.status for r in results]
     assert results[0].status in ("covered", "exists")  # anchor 已在库 → 不落盘
+
+
+def test_resolve_prereqs_cross_level_translation():
+    """R14 后续#1：跨学段前置解析——未落地剔除、已落地翻译成落地 id、锚点目标用锚点 id。"""
+    from app.content.pipeline import _resolve_prereqs
+    from app.content.roadmap import RoadmapEntry, all_entries
+
+    entry = RoadmapEntry(id="ai.t9", title="t", level="ai", topic="t", prereqs=["college.c20"])
+    # 未落地（college.c20 内容不在库）→ 剔除（学段顺序兜底，生成器不声明悬空边）
+    out = _resolve_prereqs(entry, amap={}, registry=all_entries(), known=set(), level="ai")
+    assert out == []
+    # 已落地 → 保留落地 id（生成节点 prereq 指向真实内容）
+    out2 = _resolve_prereqs(entry, amap={}, registry=all_entries(), known={"college.c20"}, level="ai")
+    assert out2 == ["college.c20"]
+    # 跨学段目标带锚点 → 用锚点真实节点 id
+    fake_reg = {
+        "college.x9": ("college", RoadmapEntry(id="college.x9", title="x", level="college", topic="t", anchors=["middle.0201"])),
+    }
+    entry2 = RoadmapEntry(id="ai.t8", title="t", level="ai", topic="t", prereqs=["college.x9"])
+    out3 = _resolve_prereqs(entry2, amap={}, registry=fake_reg, known={"middle.0201"}, level="ai")
+    assert out3 == ["middle.0201"]
+    # 同文件锚点覆盖翻译行为保持
+    entry3 = RoadmapEntry(id="ai.t7", title="t", level="ai", topic="t", prereqs=["primary.s05"])
+    out4 = _resolve_prereqs(entry3, amap={"primary.s05": "primary.0101"}, registry={}, known=set(), level="ai")
+    assert out4 == ["primary.0101"]
