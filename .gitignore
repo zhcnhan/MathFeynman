@@ -39,3 +39,6 @@ _dsh-local/
 
 # 本地进度数据库备份（绝不推送）
 backend/data/
+
+# 个人简历等无关文件夹
+resume/
