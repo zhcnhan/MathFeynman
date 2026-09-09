@@ -164,6 +164,31 @@ def spawn_auto_regen(node_id: str, user_id: str = "local") -> dict[str, Any]:
     return {"action": "regenerating", "node_id": node_id, "message": "已提交复核；auto 内容将自动重生成替换（完成后可查看处理结果）"}
 
 
+def _fail_node_feedback(node_id: str, user_id: str, err: Exception) -> None:
+    """后台异常兜底：把该节点 pending/regenerating 反馈标为 failed 并写原因（杜绝无限待复核）。"""
+    try:
+        from .. import models
+        from ..db import SessionLocal
+
+        with SessionLocal() as db:
+            rows = (
+                db.query(models.Feedback)
+                .filter(
+                    models.Feedback.node_id == node_id,
+                    models.Feedback.user_id == user_id,
+                    models.Feedback.status.in_(("pending", "regenerating")),
+                )
+                .all()
+            )
+            reason = f"自动重生成异常：{type(err).__name__}: {str(err)[:200]}"
+            for r in rows:
+                r.status = "failed"
+                r.result = reason
+            db.commit()
+    except Exception:
+        pass
+
+
 def _worker(node_id: str, user_id: str) -> None:
     from ..db import SessionLocal
 
@@ -171,8 +196,8 @@ def _worker(node_id: str, user_id: str) -> None:
         with SessionLocal() as wdb:
             _regenerate_node_now(wdb, user_id, node_id, drafter=None)
             wdb.commit()
-    except Exception:  # 后台失败不炸请求线程
-        pass
+    except Exception as e:  # 后台失败：标记 failed 留痕（不静默吞掉导致无限 pending）
+        _fail_node_feedback(node_id, user_id, e)
 
 
 def _start_or_run_regen(db: Session, user_id: str, node_id: str, *, wait: bool, drafter) -> dict[str, Any]:
@@ -192,8 +217,8 @@ def _start_or_run_regen(db: Session, user_id: str, node_id: str, *, wait: bool, 
             with SessionLocal() as wdb:
                 _regenerate_node_now(wdb, user_id, node_id, drafter=drafter)
                 wdb.commit()
-        except Exception:
-            pass
+        except Exception as e:  # 后台失败：标记 failed 留痕
+            _fail_node_feedback(node_id, user_id, e)
 
     threading.Thread(target=_run, daemon=True).start()
     return {"action": "regenerating", "node_id": node_id, "message": "已启动后台重生成替换（完成后可在复核队列查看结果）"}

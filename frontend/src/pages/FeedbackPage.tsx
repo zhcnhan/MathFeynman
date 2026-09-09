@@ -47,23 +47,43 @@ export default function FeedbackPage() {
       {err && <div className="banner error">{err}</div>}
       <div className="card">
         <button className="btn" onClick={() => void load()}>刷新</button>
-        {items.map((f) => (
-          <div key={f.id} className="item" style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <div style={{ width: 120 }} className="dim">{f.node_id}</div>
-            <div style={{ width: 60 }}>
-              <span className="badge">{KIND_LABEL[f.kind] ?? f.kind}</span>
+        <div className="dim" style={{ margin: "6px 0" }}>
+          auto 内容在待复核/失败状态可直接点「重试处理」：会按节点自动重生成替换并清零反馈；失败会写明原因，不再无限待复核。
+        </div>
+        {items.map((f) => {
+          const retryable = f.status === "pending" || f.status === "failed";
+          const retry = async () => {
+            setErr("");
+            try {
+              await api.post(`/feedback/${f.id}/regen`, undefined);
+              await load();
+            } catch (e) {
+              setErr(String(e));
+            }
+          };
+          return (
+            <div key={f.id} className="item" style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <div style={{ width: 120 }} className="dim">{f.node_id}</div>
+              <div style={{ width: 60 }}>
+                <span className="badge">{KIND_LABEL[f.kind] ?? f.kind}</span>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div>{f.message}</div>
+                {f.result && <div className="dim">{f.result}</div>}
+              </div>
+              <div style={{ width: 130 }}>
+                <span className={`badge ${f.status === "regenerated" ? "ok" : f.status === "failed" ? "bad" : ""}`}>
+                  {STATUS_LABEL[f.status] ?? f.status}
+                </span>
+              </div>
+              <div style={{ width: 90 }}>
+                {retryable && (
+                  <button className="btn" onClick={() => void retry()}>重试处理</button>
+                )}
+              </div>
             </div>
-            <div style={{ flex: 1 }}>
-              <div>{f.message}</div>
-              {f.result && <div className="dim">{f.result}</div>}
-            </div>
-            <div style={{ width: 130 }}>
-              <span className={`badge ${f.status === "regenerated" ? "ok" : f.status === "failed" ? "bad" : ""}`}>
-                {STATUS_LABEL[f.status] ?? f.status}
-              </span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
