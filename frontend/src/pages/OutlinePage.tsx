@@ -332,11 +332,10 @@ export default function OutlinePage() {
                                 <button style={{ padding: "4px 10px" }} onClick={() => genContent(u.id)} disabled={busy}>
                                   懒生成内容
                                 </button>{" "}
-                                {pv?.open && (
-                                  <button style={{ padding: "4px 10px" }} onClick={() => learnUnit(u.id)} disabled={busy}>
-                                    开始学习
-                                  </button>
-                                )}
+                                <button style={{ padding: "4px 10px" }} onClick={() => learnUnit(u.id)} disabled={busy}
+                                  title={pv?.open ? "开始学习此单元" : "未解锁（需先完成前置单元）"}>
+                                  开始学习
+                                </button>
                               </>
                             )}
                             {u.prereqs.length > 0 && <span className="dim"> 前置 {u.prereqs.length}</span>}
