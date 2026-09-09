@@ -31,7 +31,10 @@ def _err(status: int, code: str, message: str) -> HTTPException:
 
 
 def _outline_err(e: OutlineError) -> HTTPException:
-    return HTTPException(status_code=422, detail={"error": {"code": "validation_error", "message": str(e)}})
+    from .errors_zh import ensure_zh_message
+
+    return HTTPException(status_code=422, detail={"error": {
+        "code": "validation_error", "message": ensure_zh_message(str(e), status_code=422)}})
 
 
 def _subject_summary(db: Session, subj) -> dict:
@@ -123,12 +126,18 @@ def get_outline(subject_id: str, db: Session = Depends(get_db)) -> dict:
 
 
 def _unit_payloads(items: list[dict]) -> list[OutlineUnit]:
+    from pydantic import ValidationError
+
+    from .errors_zh import pydantic_summary_zh
+
     units: list[OutlineUnit] = []
     for i, item in enumerate(items):
         try:
             units.append(OutlineUnit(**item))
+        except ValidationError as e:
+            raise _err(422, "validation_error", f"第 {i + 1} 个单元数据不合法：{pydantic_summary_zh(e)}") from e
         except Exception as e:
-            raise _err(422, "validation_error", f"单元[{i}] 非法: {e}") from e
+            raise _err(422, "validation_error", f"第 {i + 1} 个单元数据不合法，请检查必填项与格式后重试（{type(e).__name__}）") from e
     return units
 
 

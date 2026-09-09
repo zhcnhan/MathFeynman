@@ -4,8 +4,11 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import (
     campaign,
@@ -20,6 +23,12 @@ from .api import (
     selfextend,
     session as session_api,
     subjects,
+)
+from .api.errors_zh import (
+    ensure_zh_message,
+    has_zh,
+    http_zh_message,
+    pydantic_summary_zh,
 )
 from .config import get_settings
 from .db import SessionLocal, init_db
@@ -72,6 +81,93 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# 对外错误中文化（docs/13 §2 绝对要求 2026-09-09 起）：
+# 任何对前端可见的错误 message 必须为中文（含原因+提示）；英文原文/堆栈只进日志。
+# ---------------------------------------------------------------------------
+_CODE_BY_STATUS = {
+    400: "bad_request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not_found",
+    409: "conflict",
+    422: "validation_error",
+    429: "rate_limited",
+    500: "internal_error",
+    502: "bad_gateway",
+    503: "service_unavailable",
+}
+_ZH_CATEGORY = {
+    "KeyError": "数据缺失",
+    "IndexError": "数据越界",
+    "TypeError": "类型异常",
+    "ValueError": "值异常",
+    "AttributeError": "状态异常",
+    "sqlite3.OperationalError": "数据库繁忙",
+    "IntegrityError": "数据冲突",
+    "sqlalchemy.exc.OperationalError": "数据库繁忙",
+    "AiCallError": "AI 服务异常",
+    "OSError": "文件或读写异常",
+    "PermissionError": "权限异常",
+}
+
+
+def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
+    """仓库错误契约（docs/06 §4 / 前端 api.ts）：body = {"detail": {"error": {code,message}}}。"""
+    return JSONResponse(
+        status_code=status_code,
+        content={"detail": {"error": {"code": code, "message": message}}},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error_zh(request, exc: RequestValidationError) -> JSONResponse:
+    """入参校验失败（FastAPI 自动 422）→ 中文提示（字段中文名映射，docs/13 §2）。"""
+    del request
+    return _error_response(422, "validation_error", pydantic_summary_zh(exc))
+
+
+@app.exception_handler(StarletteHTTPException)
+@app.exception_handler(HTTPException)
+async def _http_error_zh(request, exc: HTTPException) -> JSONResponse:
+    """统一 HTTPException 出口：已结构化（{detail:{error:{code,message}}} 且 message 中文）直接
+    透传；否则（Starlette 默认/未中文化 detail）按状态给中文兜底，原始 detail 只进日志。"""
+    del request
+    detail = exc.detail
+    if isinstance(detail, dict):
+        err = detail.get("error")
+        if isinstance(err, dict):
+            code = str(err.get("code") or _CODE_BY_STATUS.get(exc.status_code, "error"))
+            message = str(err.get("message") or "")
+            if has_zh(message):
+                return _error_response(exc.status_code, code, message)
+            logger.warning("HTTP %s（detail 非中文，已按兜底文案响应）: %s", exc.status_code, message)
+            return _error_response(exc.status_code, code,
+                                   ensure_zh_message(message, status_code=exc.status_code))
+        raw = str(detail)
+    else:
+        raw = str(detail) if detail else ""
+    if has_zh(raw):
+        # 语义已中文但未走 error 结构的响应 → 归一为约定结构
+        return _error_response(exc.status_code, _CODE_BY_STATUS.get(exc.status_code, "error"), raw)
+    if raw:
+        logger.warning("HTTP %s（detail 英文/缺失，已中文化）: %s", exc.status_code, raw)
+    return _error_response(exc.status_code, _CODE_BY_STATUS.get(exc.status_code, "error"),
+                           http_zh_message(exc.status_code, raw=raw))
+
+
+@app.exception_handler(Exception)
+async def _unhandled_error_zh(request, exc: Exception) -> JSONResponse:
+    """未捕获异常 → 500 中文（类别 + 查日志提示）；完整 traceback 只进服务端日志。"""
+    logger.exception("Unhandled %s at %s %s", type(exc).__name__, request.method, request.url.path)
+    name = type(exc).__name__
+    category = _ZH_CATEGORY.get(name, "系统处理")
+    return _error_response(
+        500, "internal_error", f"服务器内部错误（{category}），详情见日志，请稍后重试。"
+    )
+
 
 api = APIRouter(prefix="/api")
 

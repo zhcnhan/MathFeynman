@@ -22,10 +22,14 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.message === null) return this.props.children;
+    // docs/13 §2：渲染错误若为英文（JS 运行时原生文案）不裸显，给中文人话（原文留控制台）
+    const shown = /[\u4e00-\u9fff]/.test(this.state.message)
+      ? this.state.message
+      : "页面发生未知错误，请刷新重试（详情见浏览器控制台）。";
     return (
       <div className="card error" role="alert">
         <h1>页面渲染出错</h1>
-        <p>错误信息：{this.state.message}</p>
+        <p>错误信息：{shown}</p>
         <p className="dim">请记录地址栏 URL 与控制台输出（有助于定位偶发"找不到页面"）。</p>
         <div className="input-row">
           <button className="primary" onClick={() => window.location.reload()}>刷新重试</button>

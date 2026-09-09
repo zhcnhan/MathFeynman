@@ -1216,3 +1216,46 @@ source:auto/纠错/熔断/token 限额语义；地图/费曼/复习按 (subject,
 **回归**：pytest = **250 passed + 1 skipped**（245+1 基线 + 新增 5，不降）；content validate 24/47；
 git 提交（R19 块1）。
 
+---
+
+## 32. R19 后续批 · 块 2：对外错误中文化（docs/13 §2 绝对要求 · 2026-09-09）
+
+**规格**：全 API 错误统一中文人话——所有 HTTPException/校验错误的 message 为中文（含原因+可操作
+提示；英文/原始 pydantic 文案逐一翻译，原文只进日志）；main.py 全局异常处理器（未捕获 → 500 中文
+"类别+查日志"不暴露 traceback；RequestValidationError → 中文含字段中文名映射）；前端 api.ts 按状态
+中文兜底；新增 test_errors_zh.py 抽查各层；全仓库 raise 英文 message 扫描清零。
+
+**改动清单**
+1. `backend/app/api/errors_zh.py`（新）：FIELD_ZH 字段中文名映射 + pydantic/RequestValidationError
+   摘要（type 规则→中文：missing→缺少字段、type→格式错误、literal/enum→取值不在允许范围等）+
+   HTTP 状态中文兜底 + ensure_zh_message（无中文即兜底）。
+2. `backend/app/main.py`：注册三个全局处理器（保留仓库契约 body={detail:{error:{code,message}}}）：
+   - RequestValidationError → 422 validation_error（字段中文名+类型规则，不暴露 pydantic 原文）；
+   - HTTPException（含 Starlette 默认 404/未中文化 detail）→ 已结构化中文直接透传，否则状态中文
+     兜底（原始 detail 只进日志）；
+   - 未捕获 Exception → 500 internal_error"服务器内部错误（类别），详情见日志，请稍后重试"
+     （完整 traceback 只进 logger.exception；类别中文映射）。
+3. `backend/app/api/subjects.py`：_outline_err ensure_zh；_unit_payloads 用 pydantic_summary_zh
+   （字段中文）替代原始英文 validation 文本。
+4. 全仓库扫描（AST：raise 处首 ASCII 大写 message）：仅 4 处为 ASCII 缩写开头（AI/MVP + 中文
+   主体）——语义中文，无需翻译；judge/NotationError 等面向用户的中文提示已在 service 层确认。
+5. `frontend/src/api.ts`：fetch 异常 → network_error 中文；状态码中文兜底表（404/409/422/500…）；
+   非中文 message 判定（无 CJK 且 ASCII 开头）→ 兜底文案；兼容 {"detail":{...}} 与 {"error":{...}}
+   双包装；SSE 流错误同样兜底。ErrorBoundary：渲染异常英文原文不裸显（中文人话，原文留控制台）。
+6. `backend/tests/test_errors_zh.py`（新 ×6）：404 学科/404 未知路由（不得裸 Not Found）/
+   409 越级 start invalid_state/422 入参（缺 label、类型错 node_id=123）/422 手动单元 payload/
+   500 mock（独立 TestClient raise_server_exceptions=False；message 含类别中文、无英文堆栈与
+   内部细节）——统一断言 message 含中文字符且不含英文堆栈 token。
+7. docs：docs/13 §2 中文化条款（架构未提交改动）随块 2 提交入库。
+
+**回归**：pytest = **256 passed + 1 skipped**（250+1 基线 + test_errors_zh 6，不降；见 §32 提交说明
+实测）；content validate 24/47；npm run build（tsc+vite）通过；git 提交（R19 块2）。
+
+**疑点（挂待架构裁决）**
+1. 错误体保持既有仓库契约 {"detail":{"error":{code,message}}}（前端 api.ts 双包装兼容）——
+   与 docs/06 §1"错误统一 {error:{code,message}}"的文档表述（无 detail 外壳）存在差异；本实现按
+   既有 HTTPException 实际序列化形态落地并同步前端兼容，建议 docs/06 §1 补一句"实际响应包在
+   detail 内"或由架构统一为扁平 error（改动会牵动既有测试/前端，另行裁决）。
+2. 500 类别映射为小型字典（KeyError/ValueError/DB 忙/AI 等），未知类型一律归"系统处理"不暴露
+   英文类名；如需细分可扩映射表。
+

@@ -1,4 +1,5 @@
 // 后端客户端（docs/06）：统一 JSON、错误契约 {error:{code,message}}。
+// docs/13 §2 错误中文化：后端无文案/网络错误时前端给中文兜底，绝不裸显英文。
 export interface ApiErrorBody {
   error: { code: string; message: string };
 }
@@ -11,23 +12,64 @@ export class ApiError extends Error {
   }
 }
 
+const ZH_FALLBACK: Record<number, string> = {
+  400: "请求不合法，请检查输入内容。",
+  401: "未授权访问，请确认配置后重试。",
+  403: "没有权限执行此操作。",
+  404: "请求的资源不存在，请刷新后重试。",
+  409: "操作与当前状态冲突，请按提示完成前置条件后再试。",
+  422: "请求参数不合法，请检查输入。",
+  429: "请求过于频繁，请稍后重试。",
+  500: "服务器开小差了，请稍后重试。",
+  502: "服务暂时不可用，请稍后重试。",
+  503: "服务暂时不可用，请稍后重试。",
+};
+
+function zhFallback(status?: number): string {
+  if (status && ZH_FALLBACK[status]) return ZH_FALLBACK[status];
+  return "网络异常或服务不可达，请检查连接后重试。";
+}
+
+function looksEnglish(message: string): boolean {
+  // 无中文字符且主体为 ASCII 字母的 message 视为"未中文化"，交给兜底（后端契约已要求中文）
+  const hasCJK = /[\u4e00-\u9fff]/.test(message);
+  if (hasCJK) return false;
+  return /^[A-Za-z]/.test(message.trim());
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const started = performance.now();
-  const res = await fetch(`/api${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...init,
+    });
+  } catch (e) {
+    console.warn(`[api] ${init?.method ?? "GET"} ${path} -> network error`, e);
+    throw new ApiError("network_error", zhFallback());
+  }
   if (!res.ok) {
     let code = "http_error";
-    let message = `HTTP ${res.status}`;
+    let message = "";
     try {
-      const body = (await res.json()) as ApiErrorBody;
-      code = body.error?.code ?? code;
-      message = body.error?.message ?? message;
+      const body = (await res.json()) as ApiErrorBody | { detail?: ApiErrorBody };
+      // 兼容两种包装：{"detail": {"error": ...}}（仓库契约）或扁平 {"error": ...}
+      const eb = (body as any)?.detail?.error ?? (body as any)?.error;
+      code = eb?.code ?? code;
+      message = eb?.message ?? "";
     } catch {
-      /* 非 JSON 错误体 */
+      /* 非 JSON 错误体 → 按状态兜底 */
     }
-    console.warn(`[api] ${init?.method ?? "GET"} ${path} -> ${res.status} code=${code} in ${Math.round(performance.now() - started)}ms`, message);
+    if (!message || looksEnglish(message)) {
+      // 后端缺失/未中文化文案 → 前端中文兜底（docs/13 §2）
+      message = zhFallback(res.status);
+      console.warn(
+        `[api] ${init?.method ?? "GET"} ${path} -> ${res.status} code=${code} message=${message} (前端兜底)`
+      );
+    } else {
+      console.warn(`[api] ${init?.method ?? "GET"} ${path} -> ${res.status} code=${code} in ${Math.round(performance.now() - started)}ms`, message);
+    }
     throw new ApiError(code, message);
   }
   const data = (await res.json()) as T;
@@ -60,13 +102,17 @@ export async function postStepStream(
     body: JSON.stringify({ session_id: sessionId, action, payload }),
   });
   if (!res.ok) {
-    throw new ApiError("stream_http_error", `HTTP ${res.status}`);
+    throw new ApiError("stream_http_error", zhFallback(res.status));
   }
   const ctype = res.headers.get("content-type") ?? "";
   if (!ctype.includes("text/event-stream")) {
     // 服务端未能进入流模式（回退整体 JSON 或错误体）
     const body = await res.json().catch(() => null);
-    if (body && body.error) throw new ApiError(body.error.code, body.error.message);
+    if (body && body.error) {
+      const msg = body.error.message ?? "";
+      if (msg && !looksEnglish(msg)) throw new ApiError(body.error.code, msg);
+      throw new ApiError(body.error.code ?? "stream_http_error", zhFallback());
+    }
     return body as StepResponse;
   }
   if (!res.body) throw new ApiError("stream_empty", "无响应体");
