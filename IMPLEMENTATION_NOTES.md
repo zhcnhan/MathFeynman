@@ -29,11 +29,16 @@
 
 ## 1. 待架构裁决疑点
 
+> 清理说明（Phase C C6）：本节早期条目已随 docs/09 裁决史（R1–R23）逐一闭合；**当前"待架构
+> 裁决"以各批次节内「疑点（挂待架构裁决）」为准**（最新：§40–§45 与 docs/14 §7 未决/待细化）。
+> 早期 M3"无 key 冒烟未执行"记录已过时：配 LLM_API_KEY 后真模型冒烟（test_live_ai）与 Phase C
+> 真模型验收（test_phase_c_live，行星科学 10 单元 AI 内容）均已实测通过（§44）。
+
 1. **M3 真模型冒烟未执行**：本环境无 `LLM_API_KEY`。ai/provider（OpenAI 兼容 chat + JSON
    提取 + pydantic 校验 + ≤2 重试 + ai_logs）、OpenAICompatibleGateway（调用点 1/2/4/6/7/8）
    及"坏 JSON/断网降级不脏状态"均已单测覆盖（含 401 即停）；docs/08 M3 的"真实调用 DeepSeek"
    验收需用户提供 key（写入 .env 后运行 `pytest tests/test_live_ai.py`，测试已就绪）。
-   按实现规则不阻塞推进，先记档。
+   按实现规则不阻塞推进，先记档。→ **已闭合（真模型冒烟/验收可跑，见上清理说明）**
 
 ## 0.5 M2 落地增补（架构内微调记录）
 
