@@ -187,6 +187,23 @@ class TestDeriveAndMigration:
         first_open = next(u for u in primary_units if u["open"])
         assert first_open["id"] == "primary.s01" and first_open["status"] == "todo"
 
+    def test_derive_from_corrupted_prev_outline_no_500(self, db_env):
+        """928c400/25c5a42 复审：旧大纲文件损坏（空 title 等）→ 派生降级为无旧版，
+        全量干净重派生（258 单元）并原子覆盖，绝不 500/挂起。"""
+        db = db_env
+        path = st.subject_dir("math") / "outline.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # 模拟损坏旧大纲（结构非法：单元缺 id、title 为空）
+        path.write_text("subject: math\nunits:\n- title: ''\n", encoding="utf-8")
+        with pytest.raises(Exception):  # 前置确认：该文件确实损坏（读必报 OutlineError）
+            st.get_outline("math")
+        roadmaps, docs = _hermetic_outline()
+        doc = derive_math_outline(db, roadmaps=roadmaps, lib_docs=docs)  # 不得抛 500
+        assert len(doc.units) == 258 and doc.status == "active"
+        # 覆盖后的文件可正常读取
+        got = st.get_outline("math")
+        assert got is not None and len(got.units) == 258
+
 
 class TestApiAndCoupling:
     def test_regenerate_math_outline_via_api(self, app_client):

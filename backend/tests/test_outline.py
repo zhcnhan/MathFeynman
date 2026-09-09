@@ -215,6 +215,20 @@ class TestOutlineStore:
         with pytest.raises(OutlineError):
             st.create_subject(db, label="Bad", subject_id="UPPER-BAD")
 
+    def test_chinese_label_auto_ascii_id(self, outline_env):
+        """69916c5/5b49a8a：中文标签自动回退 ASCII id（s-<hash>）；数字开头 id 可用。"""
+        from app.outline import store as st
+
+        db = outline_env
+        row = st.create_subject(db, label="世界史", description="")
+        assert row.id.startswith("s-") and len(row.id) == 10  # s- + 8 hex
+        # ASCII 数字/字母混合标签 → 直接 slug（允许数字开头）
+        row2 = st.create_subject(db, label="111 数学基础", description="")
+        assert row2.id == "111"
+        # 显式数字开头 id（5b49a8a：111 这类）
+        row3 = st.create_subject(db, label="数字学科", subject_id="111-2")
+        assert row3.id == "111-2"
+
 
 # ---------- API 集成（共享 app_client：math preset 由 lifespan 注册） ----------
 def _mk_units(prefix: str):
@@ -234,6 +248,20 @@ class TestSubjectsApi:
         if o is not None:
             assert o["schema_version"] == 1 and o["source"] == "roadmap"
             assert o["units"] >= 258
+
+    def test_chinese_and_numeric_id_create_not_422(self, app_client):
+        """69916c5/5b49a8a：中文 label 自动 ASCII id、数字开头 subject_id 均成功（不 422）。"""
+        r = app_client.post("/api/subjects", json={"label": "世界史"})
+        assert r.status_code == 201, r.text
+        assert r.json()["id"].startswith("s-")
+        r = app_client.post("/api/subjects", json={"label": "数字学科", "subject_id": "111"})
+        assert r.status_code == 201, r.text
+        assert r.json()["id"] == "111"
+        # 清理
+        app_client.delete(f"/api/subjects/{r.json()['id']}")
+        for s in app_client.get("/api/subjects").json()["subjects"]:
+            if s["id"].startswith("s-") and s["kind"] == "custom":
+                app_client.delete(f"/api/subjects/{s['id']}")
 
     def test_preset_outline_put_forbidden(self, app_client):
         r = app_client.put("/api/subjects/math/outline", json={"units": _mk_units("math")})

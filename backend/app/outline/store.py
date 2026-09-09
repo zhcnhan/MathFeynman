@@ -148,10 +148,13 @@ def create_subject(
 
 
 def _slugify(label: str) -> str:
-    s = re.sub(r"[^0-9a-zA-Z\u4e00-\u9fff]+", "-", label.strip()).strip("-").lower()
-    # 中文标签 → 无 ASCII 可映射时回退空；调用方要求显式 id
+    """ASCII 化学科 id 草稿：仅保留 a-z0-9 与连字符（允许数字开头，5b49a8a 语义）。
+
+    中文字符直接剥离（中文/纯符号名称 → 空 → 调用方走稳定 s-<hash> 回退）。
+    """
+    s = re.sub(r"[^0-9a-z]+", "-", label.strip().lower()).strip("-")
     s = re.sub(r"-{2,}", "-", s)
-    if not re.match(r"^[a-z][a-z0-9-]*$", s or "-"):
+    if not re.match(r"^[a-z0-9][a-z0-9-]*$", s or "-"):
         return ""
     return s[:32]
 

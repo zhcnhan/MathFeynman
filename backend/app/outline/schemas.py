@@ -65,7 +65,9 @@ class OutlineUnit(BaseModel):
     """大纲单元条目（docs/14 §2.1：标题/目标≤3/概念标签集/前置/难度/分组/锚点可选）。"""
 
     id: str
-    title: str = ""
+    # title 必填且不可为空：pydantic v2 缺省不校验默认值 → 不给空默认，杜绝"空 title 静默入库"
+    # （架构侧 928c400/25c5a42 同源治理）。
+    title: str
     objectives: list[str] = Field(default_factory=list)
     concept_tags: list[str] = Field(default_factory=list)  # A2：概念标签集（归一化）
     group: str = ""  # 关卡组（学段 / 主题组）

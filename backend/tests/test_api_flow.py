@@ -473,6 +473,47 @@ def test_feynman_three_fails_relearn(client):
     assert any(e["type"] == "relearn_notice" for e in last["events"])
 
 
+def test_feynman_relearn_then_relearn_again_submit_200(client):
+    """R17 回归（原盲区）：费曼 3 轮不过 → 回炉 → 重学（练习）→ 再次进入费曼提交
+    必须 200（轮次已清零，不再 409 "轮次已达上限"锁死）。"""
+    _reset_node("middle.0102")
+    sess, pr = start_practice(client, "middle.0102")
+    sid = sess["session"]["id"]
+    # 1) 练习全对进费曼，连败 3 轮 → 回炉 explain
+    for _ in range(12):
+        if pr["step"] == "feynman":
+            break
+        ex = pr["payload"]["exercise"]
+        ans = canonical_answer("middle.0102", ex["exercise_id"], ex["seed"])
+        pr = submit(client, sid, {"exercise_id": ex["exercise_id"], "params_seed": ex["seed"], "user_answer": ans})
+    assert pr["step"] == "feynman"
+    for _ in range(3):
+        r = client.post("/api/session/step", json={"session_id": sid, "action": "feynman_submit",
+                                                   "payload": {"transcript": _fail_transcript()}})
+        assert r.status_code == 200, r.text
+        pr = r.json()
+        if pr["step"] == "explain":
+            break
+    assert pr["step"] == "explain"  # 回炉
+    # 2) 重学：讲解→例题→练习全对 → 再次进入费曼
+    assert client.post("/api/session/step", json={"session_id": sid, "action": "next"}).json()["step"] == "example"
+    pr = client.post("/api/session/step", json={"session_id": sid, "action": "next"}).json()
+    assert pr["step"] == "practice"
+    for _ in range(12):
+        if pr["step"] == "feynman":
+            break
+        ex = pr["payload"]["exercise"]
+        ans = canonical_answer("middle.0102", ex["exercise_id"], ex["seed"])
+        pr = submit(client, sid, {"exercise_id": ex["exercise_id"], "params_seed": ex["seed"], "user_answer": ans})
+    assert pr["step"] == "feynman", pr["step"]
+    # 3) 再次费曼提交（含核心概念 → 离线桩判过）→ 200 + mastered（R17 锁死回归必现 409）
+    good = "等式性质是两边同加同减、同乘同除非零数仍相等；移项就是等式性质的应用。"
+    r = client.post("/api/session/step", json={"session_id": sid, "action": "feynman_submit",
+                                               "payload": {"transcript": good}})
+    assert r.status_code == 200, r.text  # R17：不得再 409
+    assert any(e["type"] == "node_mastered" for e in r.json()["events"])
+
+
 def test_model_mode_and_answer_strategy_annotation(client):
     """R12-a：画像 model_mode 默认 smart 可切换；答疑响应标注本次档位。"""
     _reset_node("middle.0101")

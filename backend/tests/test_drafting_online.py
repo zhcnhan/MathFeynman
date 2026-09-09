@@ -142,6 +142,32 @@ def test_ai_draft_failed_after_retry_surfaces_errors():
     assert any("attempt 1" in e for e in results[0].errors)
 
 
+def test_ai_draft_with_symbolic_round_rejected():
+    """39332ad 复审：模板纪律（禁符号取整）——AI 出稿含 round 表达式的模板题
+    必须被 sympy 自检拒绝（status=failed、错误含 broken），绝不入库。"""
+    entry_id = "primary.s01"
+
+    def corrupt_drafter(entry, errors=None):  # noqa: ARG001
+        md = _stub_md(entry_id)
+        # 把答案表达式改为符号取整（round(a/b,2)——violates 模板纪律）
+        mutated = md.replace("answer_expr: a + b", "answer_expr: round(a / b, 2)")
+        assert mutated != md, "stub 模板应含 answer_expr: a + b（测试前提）"
+        return mutated
+
+    result = pl.generate_entry(
+        load_roadmap("primary").by_id()[entry_id],
+        drafter=corrupt_drafter,
+        known_ids=set(),
+    )
+    assert result.status == "failed"
+    assert any("broken" in e for e in result.errors), result.errors
+    # 未落盘：目标 id 无对应 auto 文件
+    from app.content import content_root
+
+    assert not list((stages_dir() / "primary").rglob(f"node_{entry_id.replace('.', '_')}_auto.md"))
+    assert not (content_root() / "_drafts" / f"node_{entry_id.replace('.', '_')}_auto.md").exists()
+
+
 def test_extend_use_ai_true_takes_ai_drafter(monkeypatch):
     """A1：selfextend 在 use_ai=True（有 key）走 AI 出稿分支（make_ai_drafter 命中），产物入库。"""
     import app.ai.drafting as drafting_mod

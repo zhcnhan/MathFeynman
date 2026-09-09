@@ -1183,3 +1183,36 @@ source:auto/纠错/熔断/token 限额语义；地图/费曼/复习按 (subject,
    与 math 侧 R18 测试矩阵同口径（docs/11：交互环节浏览器真人验收，配置 LLM_API_KEY 后由用户在
    /subjects 页实测）。
 
+---
+
+## 31. R19 后续批 · 块 1：吸收架构热修 + 补回归（2026-09-09）
+
+**开机复核**：HEAD=5b49a8a、pytest **245+1**、audit 5 学段全绿（test_roadmap 循环断言）、content
+24/47、git 干净（docs/13 中文化条款未提交改动随块 2 提交）。
+
+**逐项复审结论（吸收批）**
+1. 39332ad（出稿模板纪律：禁 round/floor/ceil/abs/mod 符号取整、估算题改 fixed）——语义正确，
+   pipeline 自检层天然拦截；**补回归**：AI 出稿含 `answer_expr: round(a / b, 2)` → generate_entry
+   status=failed、错误含 broken、零落盘（test_drafting_online）。
+2. 1374145（pipeline 写盘注入 source:auto）+ 928c400/25c5a42（损坏 outline 读取降级全量重派生；
+   空 title 修复）——语义正确；**补回归**：math 大纲文件损坏（缺 id/空 title）→ derive 降级无旧版、
+   干净重派生 258 并原子覆盖、不 500（test_math_outline）；schemas.OutlineUnit **title 改为必填**
+   （pydantic v2 缺省不校验默认值 → 杜绝"空 title 静默入库"，与 25c5a42 同源治理）。
+3. 838ea89（conftest hermetic 排除运行期 *_auto）——与 Phase A 测试机制一致（副本隔离 + 模块级
+   purge），确认无需改动。
+4. e7d8f0b（R17：回炉/重进费曼轮次清零）——代码已吸收（_feynman_reset 两回炉点 + _enter_feynman
+   防御）；**补 E2E**：3 轮不过→回炉→重学（练习全对）→再次费曼提交 200 + mastered，不再 409
+   （test_api_flow）。
+5. d9f9b3d（纠错人工分支提示中文"仅记录不自动改"）——UI 文案确认中文、语义仅标记 reviewed 不动
+   人工内容，✅。
+6. 8f9da55（OutlinePage：math regenerate 直接派生落盘、勿按候选 problems 解析）——确认修的是
+   A4 本批 UI 缺陷（math regenerate 响应无 ok/problems，前端按候选解析即崩），语义正确 ✅。
+7. a7ba29f（大纲分组由单元 group 前端派生，后端无顶层 groups 字段）——OutlineDoc 无顶层 groups
+   （python property 不落 JSON），前端派生正确 ✅。
+8. 69916c5+5b49a8a（中文标签自动 ASCII id 回退 s-<hash>；subject id 允许数字开头）——已吸收并
+   **对齐 slugify 规则**（允许数字开头、剥离中文）；**补回归**：中文 label 建学科成功（id=s-<hash>）、
+   数字开头显式 id（111）成功、混合 ASCII 标签 slug=111，均不 422（store + API 两层）。
+
+**回归**：pytest = **250 passed + 1 skipped**（245+1 基线 + 新增 5，不降）；content validate 24/47；
+git 提交（R19 块1）。
+
