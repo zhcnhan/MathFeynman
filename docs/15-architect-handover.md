@@ -9,7 +9,8 @@
 3. 读 `docs/13`（Euler 交接，含行为公约：docs 唯一事实源、中文错误绝对要求、每步回归、git 提交）。
 4. 读 `IMPLEMENTATION_NOTES.md`（实现运行日志，最新到 §3x）与 `USER_FEEDBACK.md`。
 5. 其余 docs/01–12 按需精读（判题/状态机/AI 集成/总序/蓝图）。
-6. **基线验证**：`pytest backend/tests` 期望 **258 passed + 1 skipped**（此后随新批上升）；
+6. **基线验证**：`pytest backend/tests` 期望 **291 passed + 2 skipped（离线；2 skipped=真模型冒烟，
+   需 MF_ALLOW_LIVE_AI=1 + LLM_API_KEY）**（此后随新批上升）；
    `content validate` 绿；audit 5 学段全绿（27/31/81/59/60）；git 干净。
 7. 与用户确认身份后，追加本文件"会话续接"记录（时间 + 基线）。
 
@@ -19,17 +20,24 @@
 - 把关 Euler：每批回来先独立复跑（pytest/audit/validate/git），再给裁决（R 号）与放行。
 - 维护规则常青：docs 唯一事实源；错误必须中文；Euler 每里程碑 git 提交；范围内改动前先改文档。
 
-## 3. 当前状态（截至 2026-09-09）
-- 产品：通用费曼教练（docs/14）已过 Phase A（A1–A4），数学=preset（总 Outline 258 单元），
-  通用学科端到端（行星科学）真人验证通过；Euler 侧三块吸收批 + 中文化已完成（258+1）。
-- 基线：pytest 258+1；audit 5 学段全绿；docs 14 篇（R1–R22）；git 提交含最近 8812995。
+## 3. 当前状态（截至 2026-09-09 · Phase C 收尾）
+- 产品：通用费曼教练（docs/14）已过 Phase A（A1–A4，R19）与 Phase B（B1–B5，R23）；
+  数学=preset（总 Outline 258 单元）；品牌 YanHui（颜回）全科教练；中文化（docs/13 §2）生效。
+- **Phase C（C1–C5）已完成（Euler 汇报收尾中）**：C1 外部检索 provider 抽象（默认未启用 +
+  可配自托管 SearXNG；LLM 候选整理 + select 抓公开网页正文入库）；C2 pypdf PDF 分页/分节
+  入库；C3 学科停用 subject.enabled 过滤（图谱/仪表盘/地图/复习）+ 学科管理收敛 UI；C4 backlog
+  （heuristic 选项乱序+answer_index、PUT 405 复查留档）；C5 回归 + 真模型验收（行星科学 10 单元
+  AI 内容 + 材料可追溯来源）。实现记录：IMPLEMENTATION_NOTES §40–§44。
+- 基线：pytest **291 passed + 2 skipped（离线）**；audit 5 学段全绿；content validate 26/49；
+  git 提交链 PhaseC C1→C2→C3→C4→C5→（C6 收尾文档批）。docs/14 §8.1/§7、docs/06/07 已随批同步。
 - **进行中/待办（最重要）**：
-  a) 已向用户给 Euler 派 **Phase B 整合工单（B1 学科化真内容·行星科学试点 → B2 题目多样 →
-     B3 内容来源策略+材料层 → B4 学科移除可恢复·math 不再特殊 → B5 回归验收）**，文本在
-     用户手中，**待用户粘给 Euler**；用户读 docs/14 §8–§10 与 docs/09 R22 可获得规格源。
-  b) R21 档位联动讲解缓存已实现（b660949）；其回归用例补入下一 Euler 批次清单。
+  a) 裁决 Euler Phase C 汇报（C1–C6 独立汇报文本在用户手中）——预期出 R24 裁决（含 NOTES
+     §40–§44 疑点：检索 provider 扩展位、PDF 仅 pypdf 文本层、soft 移除清全量进度语义、
+     跨单元 AI 题面去重、405 未复现环境记录等）；
+  b) 真人浏览器验收清单（NOTES §44/§45 与 docs/13 §3）——含真实 SearXNG 端到端、PDF 上传 UI、
+     材料可追溯重生成、math 停用/重启用 UI 演示；
   c) 数学内容（roadmap 到段精核/内容懒生成）持续治理项照旧。
-- 待裁决空档：无（R22 已清）；新裁决从 **R23** 起。
+- 待裁决空档：Phase C 疑点集中在本批汇报（NOTES §40–§44 各节"待架构裁决"）；新裁决从 **R24** 起。
 
 ## 4. 常见口径（前车之鉴，直接沿用）
 - 错误响应体嵌套 `{detail:{error:{code,message 中文}}}`；500 不裸堆栈（docs/06/13）。

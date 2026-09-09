@@ -11,9 +11,9 @@
 ### 图谱与仪表盘
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/graph` | 全图（节点+边+状态），前端渲染图谱 |
+| GET | `/graph` | 全图（节点+边+状态），前端渲染图谱（C3：停用学科内容节点/边按 subject.enabled 隐藏） |
 | GET | `/nodes/{node_id}` | 节点元数据 + content 摘要（不含答案） |
-| GET | `/dashboard` | 今日复习队列、当前推荐节点、累计统计、断点清单（捡拾结果） |
+| GET | `/dashboard` | 今日复习队列、当前推荐节点、累计统计、断点清单（捡拾结果）；C3：推荐/统计/复习仅在启用学科节点内收敛（停用学科隐藏） |
 
 ### 学科与大纲（docs/14 Phase A A1 起；math 为预置学科，通用学科=用户自建）
 | 方法 | 路径 | 说明 |
@@ -32,14 +32,15 @@
 | POST | `/subjects/{subject_id}/progress/recompute` | 幂等重算概念掌握证据（= 数学历史掌握迁移入口；A2） |
 | POST | `/subjects/{subject_id}/progress/reset` | 显式重置学科进度（清概念层 + 学科内容掌握；body `{mode: all}`；A2） |
 | GET / PUT | `/subjects/{subject_id}/policy` | 内容来源策略（ai/import/web/mixed，默认 ai；B3） |
-| POST | `/subjects/{subject_id}/materials/upload` | 本地导入文本 → 本地引用库（B3） |
-| GET | `/subjects/{subject_id}/materials` | 引用材料列表（B3） |
+| POST | `/subjects/{subject_id}/materials/upload` | 本地导入文本 → 本地引用库（B3；粘贴文本入口保留） |
+| POST | `/subjects/{subject_id}/materials/upload-pdf` | **PDF/文档上传**（multipart：title? + file）→ pypdf 分页/分节文本 → 引用库（kind=pdf；≤20MB 等限制、失败中文 422；C2） |
+| GET | `/subjects/{subject_id}/materials` | 引用材料列表（含 kind：local/web/pdf 与源文件名；B3+C2） |
 | DELETE | `/subjects/{subject_id}/materials/{material_id}` | 删除单条材料（B3） |
-| POST | `/subjects/{subject_id}/materials/search` | 联网候选清单（外部检索后端 Phase C；离线/未接入给提示；B3） |
-| POST | `/subjects/{subject_id}/materials/select` | 勾选候选 → 本地化引用（摘要入库，不整本下载；B3） |
+| POST | `/subjects/{subject_id}/materials/search` | 联网候选清单（C1 provider 抽象：默认未启用 → `{items:[], note:中文提示, backend:{configured:false}}`（UI 标注"未配置检索后端"）；配 SearXNG → 检索 →（配 LLM_API_KEY）LLM 整理候选） |
+| POST | `/subjects/{subject_id}/materials/select` | 勾选候选 → 本地化引用；`items[].fetch=true` 时抓取该公开网页正文入库（text/html、大小上限；失败回落摘要；不整本下载书籍）（B3+C1） |
 | POST | `/subjects/{subject_id}/enable` | 重新启用被移除（停用）学科（B4） |
-| GET | `/subjects?include_removed=1` | 含停用学科列表（管理"移除可恢复"；B4） |
-| DELETE | `/subjects/{subject_id}?hard=true` | 学科移除：默认=停用（隐藏+清进度，大纲/内容/roadmap 留盘可恢复）；`hard=true` 仅 custom 连同文件删除（math 拒 hard）（B4/R22） |
+| GET | `/subjects?include_removed=1` | 含停用学科列表（管理"移除可恢复"；B4/C3） |
+| DELETE | `/subjects/{subject_id}?hard=true` | 学科移除：默认=停用（隐藏+清进度——**math 亦清其全部学段内容节点进度**，大纲/内容/roadmap 留盘可恢复）；`hard=true` 仅 custom 连同文件删除（math 拒 hard）（B4/R22/C3） |
 
 ### 学习会话
 | 方法 | 路径 | 说明 |

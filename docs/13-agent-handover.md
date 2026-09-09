@@ -42,14 +42,20 @@
   新增/改动端点都要满足；sample 级测试锁定。
 
 ## 3. 当前活动工单（新实例的第一个任务）
-> 历史批次（…R18、docs/14 Phase A A1–A4）已完成并 git 提交（基线 **pytest 245+1**、audit 5
-> 学段全绿、content 24/47、subject=math 总 Outline 258 单元已建、通用学科闭环 E2E 已锁）；
-> 详见 IMPLEMENTATION_NOTES §9–§30、docs/09 R7–R19。
+> 历史批次（R1–R23、docs/14 Phase A A1–A4、Phase B B1–B5、**Phase C C1–C5**）已完成并
+> git 提交（基线 **pytest 291 passed + 2 skipped（离线默认）**、audit 5 学段全绿
+> （27/31/81/59/60）、content 26/49、subject=math 总 Outline 258 单元已建、通用学科闭环 E2E 已锁）；
+> 详见 IMPLEMENTATION_NOTES §9–§44、docs/09 R1–R23。
 
-1. **docs/14 Phase A 已验收（R19）**，当前状态：**待真人浏览器验收**（/subjects：math 预置大纲、
-   自建学科 起草→采纳→懒生成→进度/重置；配 LLM_API_KEY 后验证真模型起草与单元内容出稿）。
-2. 后续派发视用户验收与需求：Phase B（docs/14 §4：评估扩展/题目块/学科化出稿与 rubric；
-   含 R19 backlog 项）。
+1. **docs/14 Phase A 已验收（R19）、Phase B 已验收（R23）、Phase C C1–C5 完成**（NOTES §40–§44）：
+   C1 外部检索后端 provider 抽象（默认未启用 + 可配自托管 SearXNG + LLM 候选 + select 抓正文）、
+   C2 PDF/文档解析（pypdf 分页/分节 kind:pdf）、C3 学科停用过滤 UI + 学科管理收敛、C4 backlog
+   （heuristic 单选乱序+answer_index 同步 / PUT 405 复查留档）、C5 回归与真模型验收（行星科学
+   10 单元 AI 内容 + 材料可追溯来源实测通过）。**C6 汇报收尾（本批）**；剩架构侧裁决与真人
+   浏览器验收（验收清单见 NOTES §44 与 docs/08 M5 剩余真人项）。
+2. 后续派发视用户验收与需求：docs/14 §7 待细化项（大纲 schema 升级、标签归一策略细化、题目
+   交互块落地顺序/信息架构、AI 起草跨单元题面去重等）与数学内容持续治理（roadmap 到段精核/
+   内容懒生成）。
 3. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"；涉及 docs/02/03/05/06/07/14 的语义
    变更在实现时顺带同步。
 
@@ -59,6 +65,9 @@
 - 测试内容根已隔离（conftest 会话级临时副本）；真模型冒烟需 `MF_ALLOW_LIVE_AI=1`。
 - `.env`（仓库根，git 忽略）：LLM_API_KEY 等；`MF_AUTO_EXTEND=1` 控制全自动续关；
   `LLM_MAX_TOKENS_PER_DAY=0` 不限额。
-- 当前基线（最近核实）：pytest **245 passed + 1 skipped**；audit 5 学段全绿
-  （27/31/81/59/60）；content validate 视本地 auto 内容量（人工锚点 13 + 运行期 auto）；
-  git 仓库不含 data/、_drafts、resume/。当前工单见 §3（Phase A 已验收 → 真人验收/Phase B 待派）。
+- 当前基线（最近核实，2026-09-09 Phase C 收尾）：pytest **291 passed + 2 skipped**
+  （293 collected；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
+  均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60）；
+  content validate **26/49**（真实库，随运行期 auto 增补；测试 hermetic 基线 13 人工节点不变）；
+  git 仓库不含 data/、_drafts、resume/。品牌：YanHui（颜回）全科教练。当前工单见 §3
+  （Phase A/B/C1–C5 完成 → 架构裁决/真人验收待收尾）。

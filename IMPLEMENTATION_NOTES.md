@@ -1718,3 +1718,40 @@ content validate 26/49 全绿；audit 5 学段不变；npm run build 通过（�
 3. 真实 SearXNG 端到端（search 候选 → select 抓正文）需用户自托管实例后按 .env 配置复验；
    代码路径已 mock 锁定（C1）。
 
+---
+
+## 45. docs/14 Phase C · C6：汇报与文档同步（2026-09-09 · Phase C 收尾）
+
+**文档同步（本批）**
+- `docs/06` §1：材料端点表更新（upload-pdf、search 的 C1 provider 语义 + backend 状态、select
+  fetch、materials 列表 kind/源文件名）；/graph 与 /dashboard 标注 C3 停用过滤；DELETE
+  subject 行补"soft 移除对 math 亦全量清学段内容进度"语义。
+- `docs/14`：§7 #5（检索后端未决项）→ 已落地（C1/C2 provider 抽象 + PDF 解析，含冷门学科
+  可信度口径）；§8 追加 **8.1 Phase C 落地**（C1 检索/抓取边界、C2 PDF、C3 学科管理收敛 +
+  .env 键）；§4 Phase C 标注 C1–C5 完成。
+- `docs/07` §2.5：学科与大纲管理 UI（SubjectsPage 分组管理、OutlinePage 学科管理卡
+  ——来源策略/文本与 PDF 上传/材料列表删除/联网候选检索勾选；检索未配置提示；停用感知）。
+- `.env.example`：检索后端（MF_SEARCH_PROVIDER/MF_SEARXNG_URL 等）与 PDF 限制（MF_PDF_*）样例。
+- `docs/13` §3/§4、`docs/15` §1/§3：基线/品牌数字刷新（pytest **291+2（离线）**、audit
+  27/31/81/59/60、content 26/49、Phase A/B/C1–C5 状态、R24 待裁决口径）。
+- 本 NOTES §39（会话续接）→ §40–§45 为 Phase C 六步记录（每步独立 git 提交，标注 PhaseC）。
+
+**Phase C 汇总可验收点（用户/架构）**
+1. C1：Outline 页"学科管理"检索框 → 未配置时见"未配置检索后端"+中文提示；配置 SearXNG 后
+   检索出候选 → 勾选 → 入库（网页正文可追溯）；LLM 整理候选理由（配 key）。
+2. C2：上传小 PDF → 引用库出现 PDF 材料（分页文本）；超限/非 PDF 中文报错；粘贴文本仍在。
+3. C3：学科列表启用/已移除两组管理与"重新启用"；math 停用 → 仪表盘顶部提示 + 地图/图谱空、
+   内容不可学、重启不复活；重启用恢复；custom 连同文件删除（math 拒绝）。
+4. C4：启发式选择题选项乱序（正项不恒第 1 项）且判题同步；PUT outline 反复采纳无 405。
+5. C5：`MF_ALLOW_LIVE_AI=1 pytest backend/tests/test_phase_c_live.py` 真模型验收通过（行星科学
+   10 单元 AI 内容 + 文本/PDF 材料可追溯来源）；全量离线 291+2、content 26/49、audit 全绿。
+
+**疑点（挂待架构裁决，C6 汇总）**
+1. 检索 provider 目前仅 SearXNG 一种（扩展位已留 KNOWN_PROVIDERS）；托管/公共 API 候选待裁。
+2. fetch_page_text 未解析 robots/noindex 元（仅用户勾选 + text/html + 大小上限）；
+   PDF 不做 OCR（扫描版走 OCR/文本粘贴）。
+3. 跨单元/跨轮次题面去重对 AI 起草未强制（B1#3 曾裁可选）；soft 移除"清 preaset 全量内容进度"
+   为 docs/14 §9 语义强化（超集 B4）；PUT outline 405 未复现按环境留档。
+4. docs/14 §7 其余待细化项（大纲 schema 升级迁移、标签归一化更细、题目交互块与信息架构、
+   里程碑/首领单元语义等）维持"未决/待细化"清单，不在本批范围。
+
