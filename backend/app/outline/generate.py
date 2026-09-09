@@ -81,6 +81,24 @@ def _obj_lines(unit: OutlineUnit) -> list[str]:
     return [o for o in (unit.objectives or []) if str(o).strip()][:5]
 
 
+def _shuffle_single(options: list[str], seed_key: str) -> tuple[list[str], int]:
+    """single_choice 选项**确定性打乱**并同步 answer_index（R23 B1#1 · Phase C C4）。
+
+    - 种子 = sha1(seed_key)（unit.id + 题 id）→ 同单元/同大纲结构下选项序可复现（内容幂等）；
+    - 消除"正项恒第 1 项"的做题套路；选项序与判题 answer_index 一一同步（B1 起 judge 按
+      编号/文本比对，UI 按 options 顺序渲染）。
+    """
+    import random
+
+    n = len(options)
+    if n <= 1:
+        return list(options), 0
+    seed = int(hashlib.sha1(seed_key.encode("utf-8")).hexdigest()[:8], 16)
+    order = list(range(n))
+    random.Random(seed).shuffle(order)
+    return [options[i] for i in order], order.index(0)
+
+
 def heuristic_exercises(unit: OutlineUnit, *, sibling_tags: list[str], max_ex: int = 5) -> list[ExerciseDoc]:
     """离线确定性出题：3–5 道、≥2 题型、题面去重。
 
@@ -113,10 +131,12 @@ def heuristic_exercises(unit: OutlineUnit, *, sibling_tags: list[str], max_ex: i
                         prompt=f"判断题：本单元要求掌握的核心概念包括「{local_tags[0]}」。",
                         answer_bool=True, check=CheckDoc(mode="boolean_judgment")))
     if tags and distractors:
+        opts, idx = _shuffle_single([tags[0]] + distractors[:3],
+                                    seed_key=f"{unit.id}:choose-tag")
         add("选择：以下哪一项属于本单元核心概念？",
             ExerciseDoc(id="choose-tag", kind="fixed", difficulty=min(unit.difficulty + 1, 3),
                         prompt=f"选择题：下列概念中属于本单元「{unit.title}」的是哪一项？",
-                        options=[tags[0]] + distractors[:3], answer_index=0,
+                        options=opts, answer_index=idx,
                         check=CheckDoc(mode="single_choice")))
     if fill_pool:
         add("填空：请写出本单元核心概念之一。",
@@ -138,11 +158,12 @@ def heuristic_exercises(unit: OutlineUnit, *, sibling_tags: list[str], max_ex: i
         opts = [obj] + [o for o in objectives if o != obj][:2] or ["无需掌握"]
         if len(opts) < 2:
             opts = opts + ["以上都不需要"]
+        opts, idx = _shuffle_single(opts, seed_key=f"{unit.id}:choose-obj-{i}")
         add(f"选择：与目标「{phrase}…」对应的学习要求是？",
             ExerciseDoc(id=f"choose-obj-{i}", kind="fixed",
                         difficulty=min(unit.difficulty + 1, 3),
                         prompt=f"选择题：关于本单元目标「{phrase}…」，正确的理解是？",
-                        options=opts, answer_index=0,
+                        options=opts, answer_index=idx,
                         check=CheckDoc(mode="single_choice")))
     if len(exercises) < 3:  # 兜底（标签/目标极少）
         add("判断：学完本单元后应能用自己的话简要复述主题。",

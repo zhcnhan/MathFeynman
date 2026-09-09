@@ -128,3 +128,64 @@ class TestOfflineHeuristicNotBroken:
             assert rr.json()["status"] == "created"
         finally:
             app_client.delete(f"/api/subjects/{sid}")
+
+
+class TestHeuristicChoiceShuffle:
+    """Phase C C4（R23 B1#1）：heuristic 单选选项确定性乱序 + answer_index 同步。
+
+    - 同单元/同大纲结构两次出稿 → 选项序与答案下标完全一致（确定性种子，内容幂等）；
+    - 每个 single_choice 的 options[answer_index] == 该题正确项（一致性）；
+    - 多单元抽样下正确项不恒为第 1 项（消除"永远选第一项"做题套路）。
+    """
+
+    TAGS = [
+        "行星", "类地行星", "气态巨行星", "轨道", "自转与公转", "卫星", "太阳系", "小行星带",
+        "彗星", "地外行星", "引力", "天文单位",
+    ]
+
+    def _sample_units(self):
+        from app.outline.schemas import OutlineUnit
+
+        units = []
+        for i in range(1, 13):
+            t0 = self.TAGS[i - 1]
+            t1 = self.TAGS[i % len(self.TAGS)]
+            tags = [t0, t1] if t0 != t1 else [t0, f"概念{i}"]
+            units.append(OutlineUnit(
+                id=f"c4.u{i:02d}", title=f"行星科学 · 第 {i} 讲", group="主线",
+                objectives=[f"掌握 {t0} 的核心要点并能举例说明",
+                            f"能解释 {t1} 与相邻概念的关系"],
+                concept_tags=tags,
+            ))
+        return units
+
+    def _run_once(self):
+        from app.outline.generate import heuristic_exercises
+
+        out: dict[str, list[tuple]] = {}
+        for unit in self._sample_units():
+            t0 = unit.concept_tags[0]
+            siblings = [x for x in self.TAGS if x != t0][:6]
+            exs = heuristic_exercises(unit, sibling_tags=siblings)
+            for e in exs:
+                if e.check.mode != "single_choice":
+                    continue
+                if e.id == "choose-tag":
+                    assert e.options[e.answer_index] == t0, (unit.id, e.options, e.answer_index)
+                elif e.id.startswith("choose-obj-"):
+                    i = int(e.id.rsplit("-", 1)[1])
+                    assert e.options[e.answer_index] == unit.objectives[i], \
+                        (unit.id, e.options, e.answer_index)
+                out.setdefault(unit.id, []).append(
+                    (e.id, e.answer_index, tuple(e.options))
+                )
+        return out
+
+    def test_deterministic_consistent_and_not_always_first(self):
+        first = self._run_once()
+        second = self._run_once()
+        assert first == second  # 确定性：同输入两次出稿完全一致
+        idxs = [ai for unit in first.values() for (_id, ai, _opts) in unit]
+        assert len(idxs) >= 10
+        assert any(i != 0 for i in idxs), f"正确项应随种子分布（不应恒第 1 项）: {idxs}"
+

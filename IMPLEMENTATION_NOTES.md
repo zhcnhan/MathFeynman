@@ -1636,3 +1636,41 @@ content validate 26/49 全绿；audit 5 学段不变；npm run build（tsc+vite�
 3. 图谱/仪表盘过滤为 API 层（前端各页消费同一数据源）；前端不再单独维护节点过滤逻辑
    （防两处漂移）——"图谱页"当前未在 UI 直连，/graph 过滤仍生效（文档/测试兜底）。
 
+---
+
+## 43. docs/14 Phase C · C4：backlog 小项（2026-09-09）
+
+**规格**：R23 B1#1 + B5 #5 留档 + 工单 C4——heuristic 单选选项乱序 + answer_index 同步
+（确定性种子）；PUT outline 偶发 405 复查路由注册顺序加固（不可复现则记录环境）；
+fill_text aliases 同义集小扩展（可选）。
+
+**改动清单**
+1. `outline/generate.py`：新增 `_shuffle_single(options, seed_key)`——single_choice 选项
+   **确定性打乱**（种子 = sha1(unit.id + 题 id)）并同步返回 answer_index（原正确项新下标）；
+   两处构造点（choose-tag / choose-obj-i）接入。语义：
+   - 同单元/同大纲结构重出稿选项序可复现（内容幂等，入库/自检不受影响）；
+   - 消除 B1 疑点 1"正项恒第 1 项"做题套路；UI 按 options 顺序渲染、judge 按
+     answer_index 比对——选项序与判题完全同步。
+2. PUT outline 405 复查：
+   - 路由健康复查结论：subjects 路由内 GET/PUT 同路径并存合法（FastAPI 按方法分派），
+     api 内无重复 /subjects/* 前缀；**本环境不可复现 405**（记录环境/处理，B5 #5 关闭为
+     "未复现 + 注册/行为双守卫"）；
+   - 守卫：`test_route_put_outline.py`——① OpenAPI schema 含 put+get 路径（注册缺失即失败，
+     避开 FastAPI 嵌套 _IncludedRouter 的表示差异）；② live 反复采纳/整份重生成 outline
+     PUT 全 200 + GET/validate 不失效。
+3. fill_text aliases **可选小扩展：不做**（决定留档）——judge_fill_text 已支持 expected+aliases
+   精确归一；再扩"语义同义"需学科级词典，超出 MVP 且引入误判风险（docs/14 §7#3 治理项）。
+4. 测试：`test_unit_content_gen.py` + TestHeuristicChoiceShuffle（新 ×1）——多单元抽样下
+   每个 single_choice `options[answer_index]` == 正确项（一致性）、两次出稿逐位一致（确定性）、
+   抽样中正确项下标存在 ≠0（不恒第 1 项）；`test_route_put_outline.py`（新 ×2）。
+
+**回归**：pytest = **291 passed + 1 skipped**（292 collected；288+1 基线 + 新增 3，不降）；
+content validate 26/49 全绿；audit 5 学段不变；npm run build 通过（前端未动）；git 提交（PhaseC C4）。
+
+**疑点（挂待架构裁决）**
+1. PUT outline 405 未能复现：按"记录环境"处理（B5 #5）——测试进程内未复现；若用户端复现请
+   提供复现步骤（URL/动作/DevTools 网络面板请求方法与实际到达方法），怀疑方向=本地代理/
+   服务中间层改写请求方法或旧 bundle 缓存（docs/09 R23 留档口径）。
+2. 确定性种子基于"单元 id + 题 id"：单元结构重排（同 id 换标签/目标）会改变选项序——属
+   预期（内容随大纲变化重出稿），重生成幂等性仍由"同输入同输出"保证（测试锁定）。
+
