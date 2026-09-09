@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 
@@ -50,6 +50,7 @@ type MaterialItem = {
   url: string;
   kind: string;
   file: string;
+  filename?: string;
 };
 
 type SearchCandidate = {
@@ -94,6 +95,35 @@ export default function OutlinePage() {
   const [searchRes, setSearchRes] = useState<SearchResult | null>(null);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [searchBusy, setSearchBusy] = useState(false);
+  // C2：PDF 上传（pypdf 分页/分节入库）
+  const pdfFileRef = useRef<HTMLInputElement>(null);
+
+  const uploadPdf = async () => {
+    const inp = pdfFileRef.current;
+    const f = inp?.files?.[0];
+    if (!f) {
+      setErr("请先选择要上传的 PDF 文件");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const fd = new FormData();
+      if (matTitle.trim()) fd.append("title", matTitle.trim());
+      fd.append("file", f);
+      const r = await api.upload<{ id: string; title: string; pages: number; filename: string }>(
+        `/subjects/${id}/materials/upload-pdf`, fd
+      );
+      setMsg(`PDF 已解析入库「${r.title}」（${r.pages} 页，分页文本可作为参考来源）`);
+      if (inp) inp.value = "";
+      await loadMaterials();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const loadMaterials = async () => {
     try {
@@ -447,6 +477,19 @@ export default function OutlinePage() {
                   onChange={(e) => setMatText(e.target.value)}
                   style={{ width: "100%", minHeight: 56, border: "1px solid #c5cdd6", borderRadius: 8, padding: 8, font: "inherit" }} />
 
+        {/* C2：PDF 上传（分页/分节 → 引用库 kind:pdf；保留文本粘贴入口） */}
+        <div className="input-row" style={{ gap: 8, margin: "8px 0" }}>
+          <input type="file" accept=".pdf,application/pdf" ref={pdfFileRef} disabled={busy}
+                 style={{ flex: 1 }} />
+          <button className="primary" disabled={busy} onClick={() => void uploadPdf()}>
+            上传 PDF → 引用库
+          </button>
+        </div>
+        <div className="dim" style={{ fontSize: 12 }}>
+          PDF ≤20MB，解析为分页/分节文本入库（kind=PDF，来源可追溯）；扫描图片版请先 OCR 或改用文本粘贴；
+          仅上传自有/授权资料，不整本下载书籍。
+        </div>
+
         {/* 引用材料列表（可删除） */}
         {materials.length > 0 && (
           <div style={{ marginTop: 8 }}>
@@ -457,6 +500,7 @@ export default function OutlinePage() {
                   <strong>{m.title}</strong>{" "}
                   <span className="badge">{KIND_LABEL[m.kind] ?? m.kind}</span>{" "}
                   <span className="dim">{m.source}</span>
+                  {m.filename && <div className="dim" style={{ fontSize: 12 }}>文件：{m.filename}</div>}
                   {m.url && <div className="dim" style={{ fontSize: 12, wordBreak: "break-all" }}>{m.url}</div>}
                 </div>
                 <button className="ghost" disabled={busy} style={{ whiteSpace: "nowrap" }}

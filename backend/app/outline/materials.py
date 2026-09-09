@@ -59,12 +59,19 @@ def set_policy(db, subject_id: str, policy: str) -> str:
 
 
 def add_material(db, subject_id: str, *, title: str, text: str, source: str = "本地导入",
-                 url: str = "") -> dict:
-    """本地/联网引用入库（文本必填；分节文本按段落/标题切分存正文）。"""
+                 url: str = "", kind: str | None = None, filename: str = "") -> dict:
+    """本地/联网引用入库（文本必填；分节文本按段落/标题切分存正文）。
+
+    kind ∈ local|web|pdf（缺省按 url 推导：有 url=web、无=local；pdf 由 C2 解析器显式传入）；
+    filename 记录源文件名（PDF/文档导入的展示与追溯）。
+    """
     title = title.strip()
     text = text.strip()
     if not title or not text:
         raise OutlineError("材料标题与正文不能为空")
+    effective_kind = kind or ("web" if url else "local")
+    if effective_kind not in ("local", "web", "pdf"):
+        raise OutlineError(f"材料 kind 非法: {effective_kind!r}")
     entry_id = "mat-" + hashlib.sha1(f"{subject_id}:{title}:{url}:{text[:80]}".encode("utf-8")).hexdigest()[:10]
     p = materials_dir(subject_id) / f"{_slug(title)}-{entry_id[4:]}.md"
     if not p.exists():
@@ -74,13 +81,15 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
             f"title: {title}",
             f"source: {source}",
             f"url: {url}",
-            "kind: " + ("web" if url else "local"),
-            "---",
-            "",
+            f"kind: {effective_kind}",
         ]
+        if filename:
+            meta_lines.append(f"filename: {filename}")
+        meta_lines += ["", "---", ""]
         p.write_text("\n".join(meta_lines) + "\n" + text + "\n", encoding="utf-8")
     return {"id": entry_id, "title": title, "source": source, "url": url,
-            "kind": "web" if url else "local", "file": p.name}
+            "kind": effective_kind, "file": p.name,
+            "filename": filename or p.name}
 
 
 def _parse_entry(p: Path) -> dict | None:
@@ -101,6 +110,7 @@ def _parse_entry(p: Path) -> dict | None:
                 "url": fm.get("url", ""),
                 "kind": fm.get("kind", "local"),
                 "file": p.name,
+                "filename": fm.get("filename", ""),
                 "body": body,
             }
     return None
@@ -113,7 +123,8 @@ def list_materials(db, subject_id: str) -> list[dict]:
         e = _parse_entry(p)
         if e:
             out.append({"id": e["id"], "title": e["title"], "source": e["source"],
-                        "url": e["url"], "kind": e["kind"], "file": e["file"]})
+                        "url": e["url"], "kind": e["kind"], "file": e["file"],
+                        "filename": e.get("filename", "")})
     return out
 
 

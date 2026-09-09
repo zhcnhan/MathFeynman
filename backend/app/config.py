@@ -83,6 +83,17 @@ class Settings:
         default_factory=lambda: float(os.getenv("MF_FETCH_PAGE_TIMEOUT_S", "15") or "15")
     )
 
+    # --- PDF/文档解析（Phase C C2：pypdf，BSD-3-Clause）---
+    pdf_max_bytes: int = field(
+        default_factory=lambda: int(os.getenv("MF_PDF_MAX_BYTES", str(20 * 1024 * 1024)) or "0")
+    )
+    pdf_max_pages: int = field(
+        default_factory=lambda: int(os.getenv("MF_PDF_MAX_PAGES", "400") or "400")
+    )
+    pdf_per_page_max_chars: int = field(
+        default_factory=lambda: int(os.getenv("MF_PDF_PER_PAGE_MAX_CHARS", "8000") or "8000")
+    )
+
     # --- 判题 ---
     judge_max_retry_samples: int = 20  # 模板自检失败重取样上限（docs/04 §4）
 

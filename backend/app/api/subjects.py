@@ -12,7 +12,7 @@
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -391,6 +391,52 @@ def material_delete(subject_id: str, material_id: str, db: Session = Depends(get
 
     if not mat.delete_material(db, subject_id, material_id):
         raise _err(404, "not_found", f"材料不存在: {material_id}")
+
+
+class PdfUploadOut(BaseModel):
+    id: str
+    title: str
+    kind: str
+    source: str
+    url: str
+    file: str
+    filename: str
+    pages: int | None = None
+    chars: int | None = None
+
+
+@router.post("/subjects/{subject_id}/materials/upload-pdf", status_code=201)
+def material_upload_pdf(
+    subject_id: str,
+    db: Session = Depends(get_db),
+    title: str = Form(""),
+    file: UploadFile = File(...),
+) -> PdfUploadOut:
+    """PDF/文档上传 → 分页/分节文本 → 引用库（kind: pdf · Phase C C2）。
+
+    大文件/非 PDF/解析失败 → 中文 422（docs/13 §2）；粘贴文本入口（materials/upload）保留。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+    from ..outline.pdfparse import PdfParseError, parse_pdf_bytes
+
+    filename = str(getattr(file, "filename", "") or "")
+    data = file.file.read()
+    try:
+        parsed = parse_pdf_bytes(data, filename=filename)
+    except PdfParseError as e:
+        raise _err(422, "validation_error", str(e)) from e
+    fname_stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    title = (title or "").strip() or fname_stem or "PDF 材料"
+    try:
+        entry = mat.add_material(
+            db, subject_id, title=title, text=parsed["body"],
+            source=f"PDF 导入（{filename or '用户上传'}）", url="",
+            kind="pdf", filename=filename or fname_stem,
+        )
+    except OutlineError as e:
+        raise _outline_err(e) from e
+    return PdfUploadOut(**entry, pages=parsed["pages"], chars=parsed["chars"])
 
 
 class SearchBody(BaseModel):

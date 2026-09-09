@@ -87,6 +87,9 @@ export const api = {
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) }),
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  // C2：文件上传（multipart/form-data；不设 JSON 头）
+  upload: <T>(path: string, form: FormData) =>
+    request<T>(path, { method: "POST", body: form }),
 };
 
 // ---- R12-b：/session/step?stream=1 SSE 客户端 ----

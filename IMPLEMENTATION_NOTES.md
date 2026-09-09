@@ -1553,3 +1553,42 @@ git 提交（PhaseC C1）。
 4. LLM 整理候选仅在配 LLM_API_KEY 时生效且不阻塞（失败回落原始直出）；"候选理由 reason"
    已入 schema 与 UI 展示。
 
+---
+
+## 41. docs/14 Phase C · C2：PDF/文档解析（2026-09-09）
+
+**规格**：docs/14 §8/R22 + 工单 C2——引入轻量解析器（**pypdf**：BSD-3-Clause、纯 Python、
+Python 3.14 兼容）实现 materials 上传 PDF → 分页/分节文本 → 引用库（kind: pdf/source_file）；
+保留粘贴文本入口；限制大文件并中文报错。
+
+**改动清单**
+1. 依赖：`pypdf>=6.0` 入 pyproject（BSD-3-Clause，Py3.14 venv 实测 6.18.0 可装可用）；
+   `python-multipart`（FastAPI 文件/表单上传所必需）。
+2. `outline/pdfparse.py`（新）：`parse_pdf_bytes()`——大小上限（MF_PDF_MAX_BYTES 默认 20MB）、
+   页数上限（MF_PDF_MAX_PAGES 默认 400）、每页文本上限（防畸形页）——超限中文报错；
+   非 PDF（%PDF 头缺失）/损坏/加密 → PdfParseError 中文；0 页/0 文本（扫描图片版）
+   → 提示"未能提取到文本，请 OCR 或文本粘贴"；产出分节 sections（页号+文本）与带
+   【第 N 页】标记的整段正文。
+3. `outline/materials.py`：add_material 支持显式 `kind: local|web|pdf` 与 `filename`
+   （pdf 入库元数据含源文件名）；列表/解析带 kind+filename（旧文件无 filename 字段兼容）。
+4. `api/subjects.py`：`POST /subjects/{sid}/materials/upload-pdf`（multipart：title 可选 +
+   file）→ 解析入库（kind=pdf，source="PDF 导入（文件名）"）；解析/大小错误 → 中文 422。
+5. 前端 `OutlinePage.tsx` 学科管理卡：文件选择 + "上传 PDF → 引用库"（≤20MB 提示、扫描版提示）；
+   材料列表显示类型徽标（文本/网页/PDF）+ 源文件名；api.ts `upload()`（FormData，不设 JSON 头）。
+   粘贴文本入口保留（原 /materials/upload 不变）。
+6. 测试：`backend/tests/test_pdf_upload.py`（新 ×6，hermetic）——构造最小可提取 PDF
+   （pypdf 标准 Helvetica，ASCII）真实走 pypdf 提取（含回读守卫）：上传 2 页 → 201、
+   kind=pdf/pages=2/源文件名留痕、材料文件含【第 1 页】【第 2 页】与正文；非 PDF → 中文 422；
+   超大小上限（env 调小）→ 中文 422；空白页无文本 → 中文 422；粘贴文本入口不回归。
+
+**回归**：pytest = **285 passed + 1 skipped**（286 collected；279+1 基线 + 新增 6，不降）；
+content validate 26/49 全绿；audit 5 学段不变；npm run build（tsc+vite）通过；git 提交（PhaseC C2）。
+
+**疑点（挂待架构裁决）**
+1. pypdf 对扫描图片版 PDF 无 OCR 能力（纯文本层）：提示走"用户先 OCR/文本粘贴"（文档性依赖，
+   不在仓库内做 OCR——本地单机不引重型依赖）。
+2. 每页文本上限/总文件上限为防滥用默认值（20MB/400 页/每页 8000 字符），常量化于 config
+   （MF_* 可调）；超大教材建议用户截取章节上传。
+3. kind 取 pdf（材料表元数据），与"source_file 泛指文档"的差异：当前只支持 PDF 一种二进制
+   文档格式（docx/odt 解析列为候选，需要时再引等价解析器）。
+
