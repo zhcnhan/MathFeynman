@@ -285,9 +285,16 @@ class TestSubjectsApi:
         r = app_client.delete("/api/subjects/math")
         assert r.status_code == 409
 
-    def test_regenerate_placeholder_501(self, app_client):
+    def test_regenerate_returns_draft_candidate(self, app_client):
+        """A4：custom regenerate = 重起草候选（不落盘；采纳 PUT 才 revision+1）。"""
         sid = f"regen{uuid.uuid4().hex[:6]}"
         app_client.post("/api/subjects", json={"label": "R", "subject_id": sid})
         r = app_client.post(f"/api/subjects/{sid}/outline/regenerate")
-        assert r.status_code == 501
+        assert r.status_code == 200
+        body = r.json()
+        assert body["source"] in ("ai", "heuristic")
+        assert len(body["units"]) == 6
+        assert body["base_revision"] == 0
+        # 候选未落盘：大纲仍未建立
+        assert app_client.get(f"/api/subjects/{sid}/outline").status_code == 404
         app_client.delete(f"/api/subjects/{sid}")

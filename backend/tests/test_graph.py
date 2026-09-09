@@ -58,9 +58,16 @@ def test_two_node_cycle_rejected():
         KnowledgeGraph([NodeDef(id="a", prereqs=("b",)), NodeDef(id="b", prereqs=("a",))])
 
 
-def test_illegal_level_rejected():
-    with pytest.raises(GraphError):
-        KnowledgeGraph([NodeDef(id="a", level="moon")])
+def test_illegal_math_level_rejected():
+    """数学命名空间（id 以学段名开头）必须使用合法学段 level（防 typo 静默旁路）。"""
+    with pytest.raises(GraphError, match="学段非法"):
+        KnowledgeGraph([NodeDef(id="primary.x1", level="moon")])
+
+
+def test_generic_level_allowed():
+    """通用学科（docs/14 A4）：内容节点 level = 大纲关卡组标识（非 LEVELS）允许（数学引擎只认 LEVELS）。"""
+    g = KnowledgeGraph([NodeDef(id="pydemo.u01", level="主线")])
+    assert g.has("pydemo.u01")
 
 
 def test_initial_states():

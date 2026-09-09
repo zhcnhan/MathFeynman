@@ -117,6 +117,13 @@ def create_subject(
     """创建自定义学科：注册 DB 行 + 初始化大纲目录（无大纲文件 = 待起草）。"""
     if not label or not label.strip():
         raise OutlineError("学科名称不能为空")
+    if subject_id is not None:
+        from ..domain.graph import LEVELS
+
+        if subject_id in LEVELS or subject_id == PRESET_MATH:
+            raise OutlineError(
+                f"学科 id {subject_id!r} 为保留前缀（学段名/math preset），请换名"
+            )
     sid = subject_id
     if sid is None:
         sid = _slugify(label)
@@ -234,7 +241,7 @@ def add_outline(
             "预置学科大纲由 roadmap 派生治理（docs/14 §5），禁止直接 PUT；"
             "请用派生入口 regenerate_math_outline()"
         )
-    if source not in ("ai", "manual", "hybrid"):
+    if source not in ("ai", "heuristic", "manual", "hybrid"):
         raise OutlineError(f"自定义学科大纲 source 非法: {source!r}")
     prev = get_outline(subject_id)
     revision = (prev.revision + 1) if prev else 1

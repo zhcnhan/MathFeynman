@@ -55,8 +55,20 @@ def _engine_and_infos(db: Session, user_id: str, graph: KnowledgeGraph, mastered
     return eng, infos
 
 
+def _node_allowed(db: Session, user_id: str, node_id: str, infos: dict, eng) -> bool:
+    """统一可学门禁：通用学科（custom 大纲权威）→ outline_gate；其余（math roadmap 总序）→ PathEngine。"""
+    from . import outline_gate
+
+    res = outline_gate.resolve_subject_unit(db, node_id)
+    if res is not None:
+        ok, _ = outline_gate.unit_allowed(db, user_id, res[0], res[1])
+        return ok
+    ok, _ = eng.node_allowed(node_id, **infos[node_id])
+    return ok
+
+
 def recompute_states(db: Session, user_id: str, graph: KnowledgeGraph) -> None:
-    """按当前 mastered/learning 记录 + 蓝图总序重算全部节点状态并落库。"""
+    """按当前 mastered/learning 记录 + 学科门禁（math=roadmap 总序 / custom=大纲）重算全部节点状态。"""
     mastered, learning = _sets(db, user_id)
     eng, infos = _engine_and_infos(db, user_id, graph, mastered)
     for node_id in graph.node_ids:
@@ -65,8 +77,7 @@ def recompute_states(db: Session, user_id: str, graph: KnowledgeGraph) -> None:
         elif node_id in learning:
             state = LEARNING
         else:
-            ok, _ = eng.node_allowed(node_id, **infos[node_id])
-            state = AVAILABLE if ok else LOCKED
+            state = AVAILABLE if _node_allowed(db, user_id, node_id, infos, eng) else LOCKED
         row = db.get(models.UserNode, (user_id, node_id))
         if row is None:
             row = models.UserNode(user_id=user_id, node_id=node_id)
@@ -95,8 +106,7 @@ def state_map(db: Session, user_id: str, graph: KnowledgeGraph, *, now: dt.datet
         elif node_id in learning:
             states[node_id] = LEARNING
         else:
-            ok, _ = eng.node_allowed(node_id, **infos[node_id])
-            states[node_id] = AVAILABLE if ok else LOCKED
+            states[node_id] = AVAILABLE if _node_allowed(db, user_id, node_id, infos, eng) else LOCKED
     return states
 
 
@@ -156,6 +166,9 @@ def mark_mastered(db: Session, user_id: str, node_id: str, graph: KnowledgeGraph
     row.mastered_at = dt.datetime.now(dt.timezone.utc)
     db.flush()
     recompute_states(db, user_id, graph)
+    from . import outline_gate
+
+    outline_gate.refresh_concept_evidence(db, user_id, node_id)  # 通用学科：概念证据实时更新
 
 
 def demote_to_learning(db: Session, user_id: str, node_id: str, graph: KnowledgeGraph, reason: str) -> None:

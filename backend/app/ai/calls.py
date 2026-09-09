@@ -198,6 +198,32 @@ CALL_DRAFT_CONTENT = CallSpec(
     "draft_content", "light", DraftContentIn, DraftContentOut, temperature=0.6, max_retries=2
 )
 
+
+# ---------- 调用点 10：通用学科大纲起草（docs/14 Phase A A4） ----------
+class OutlineDraftIn(BaseModel):
+    brief: str = ""
+
+
+class OutlineDraftUnit(BaseModel):
+    """AI 起草输出的单个大纲单元（终稿由 outline.finalize 收尾：id 化/修剪/校验）。"""
+
+    title: str
+    objectives: list[str] = Field(default_factory=list)
+    concept_tags: list[str] = Field(default_factory=list)
+    group: str = ""
+    prereqs: list[str] = Field(default_factory=list)  # 更早单元本地序（u01…）或既有单元 id
+    difficulty: int = 2
+    requires_thinking: bool = False
+
+
+class OutlineDraftOut(BaseModel):
+    units: list[OutlineDraftUnit] = Field(default_factory=list)
+
+
+CALL_OUTLINE_DRAFT = CallSpec(
+    "outline_draft", "light", OutlineDraftIn, OutlineDraftOut, temperature=0.7, max_retries=2
+)
+
 CALLS: dict[str, CallSpec] = {
     c.name: c for c in (
         CALL_EXPLAIN_NODE,
@@ -209,6 +235,7 @@ CALLS: dict[str, CallSpec] = {
         CALL_FEYNMAN_FOLLOWUP,
         CALL_CLASSIFY_ERROR,
         CALL_DRAFT_CONTENT,
+        CALL_OUTLINE_DRAFT,
     )
 }
 

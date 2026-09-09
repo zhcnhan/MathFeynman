@@ -1123,3 +1123,63 @@ math outline 持续治理项"）；概念层不替代门禁，只做"换大纲�
 4. boss（0199）不是 roadmap 条目 → 不在 math outline 单元内（大纲=学习单元规划，首领属关卡层，
    由 campaign/引擎组达成驱动）；其概念证据经 core_concepts 兜底进概念层（同 A2 疑点 4）。
 
+---
+
+## 30. docs/14 Phase A · A4 子步：通用路径闭环 + 大纲起草/审阅（2026-09-09）
+
+**规格**：docs/14 §2.1/§2.3/§5（开放用户在 UI 自建学科=验收本身）+ 派工单 A4（选择/新建学科 →
+AI 起草大纲（单元级）→ 校验（依赖无环/标签归一）→ 地图预览 → 采纳/改/重生成；懒生成单元内容沿用
+source:auto/纠错/熔断/token 限额语义；地图/费曼/复习按 (subject, unit/concept) 工作；自动化验收用
+临时示例学科跑通：大纲→地图→懒生成单元→费曼评估→重生成大纲进度不丢，不预置正式内容）。
+
+**改动清单**
+1. `backend/app/domain/graph.py`：level 校验语义抽离——仅 math 命名空间（id 以学段名开头）强制
+   level ∈ LEVELS（防数学 typo 旁路）；通用学科内容节点 level=大纲关卡组标识放行（NodeDoc level
+   Literal → str，docs/04 schema 放宽）；test_graph 对应改 2 例（math 命名空间拒 / 通用放行）。
+2. `backend/app/service/outline_gate.py`（新）：通用学科大纲门禁——节点 → (subject,unit)（内容节点
+   id == 大纲单元 id；level 前缀 ∈ LEVELS 的 math 节点不路由）；单元满足 = 内容 mastered 或概念
+   等效（tags ⊆ 已掌握概念）；开放 = 前置单元全部满足（等效即达成不卡后链）；session.start /
+   progress.recompute/state_map 分流（custom→outline_gate，math→PathEngine R18 不变）。
+3. `backend/app/service/progress.py`：mark_mastered 后自动 refresh 概念证据（通用学科等效判定实时；
+   math 节点零开销——resolve 早退）；demote 同源（证据自动收缩）。
+4. `backend/app/outline/generate.py`（新）：通用学科单元内容懒生成——stub 出稿确定性 NodeDoc
+   （讲解稿=目标驱动、练习=fixed+boolean_judgment 语义判断题、费曼默认 4 维 rubric、core_concepts=
+   大纲标签；prereqs=[]：学习顺序权威=大纲门禁，内容不复制依赖防悬空）；落盘
+   stages/<subject>/node_<id>_auto.md（source:auto 可纠错/熔断/隔离）→ refresh+sync_content 幂等。
+5. `backend/app/outline/draft.py`（新）+ ai/calls CALL_OUTLINE_DRAFT（调用点 10，light 档 JSON
+   schema）：起草候选（不落盘）——LLM_API_KEY → OpenAICompatibleProvider 真模型；无 key → 离线
+   启发式（线性骨架，source=heuristic）；服务端兜底修复：id `<sid>.u<n>`、objectives ≤3、prereq 只
+   许引更早/既有单元（剔除非法）、tags 去重 ≤5、校验报告。OUTLINE_SOURCES + heuristic。
+6. `backend/app/api/subjects.py`：POST outline/draft、POST units/{unit_id}/content、regenerate 语义
+   （math=派生 +1；custom=重起草候选不落盘）。前端 `api.put/del` helper。
+7. `frontend`：SubjectsPage（学科列表/新建）、OutlinePage（起草候选预览/采纳/重生成/单元标签局部改
+   PATCH/懒生成内容/重置进度/按组表格状态视图），路由 `/subjects`、`/subjects/:id` + 导航。
+8. `backend/tests/test_generic_subject_e2e.py`（新 ×2，docs/14 §6 自动化验收用临时示例学科）：
+   **Python 入门 全闭环**——创建 → draft 候选（启发式 4 单元）→ 采纳 rev1 → 地图 u01 开放/
+   u02-u04 锁 → 懒生成 u02 内容 → 越级 start 409（大纲门禁）→ 懒生成 u01（幂等 exists）→ 达成
+   u01（mark_mastered 自动刷概念证据）→ u02 解锁 start 200 → 大纲重生成（u01→u01b 改名保留标签）
+   rev2 → u01b 概念等效已掌握、u02 仍开放（前置等效不卡链）、原内容节点 mastered 不动 → 显式重置
+   → 概念清 0、u01b 回 todo；custom 单单元直接可学对照。真打练习/费曼评估交互属浏览器真人验收
+   （docs/11 惯例），引擎侧按 R18 同口径（达成+概念派生确定性闭环）。
+9. docs 同步：docs/06 §1 draft/content/regenerate 端点行（math 派生 vs custom 候选语义）。
+
+**回归**：pytest = **245 passed + 1 skipped**（242+1 基线 + A4 新增/调整 4：graph 语义 2、E2E 2，
+不降）；content validate 24/47 全绿；audit 5 学段不变；npm run build（tsc+vite）通过；git 提交
+（PhaseA A4）。
+
+**疑点（挂待架构裁决）**
+1. 通用学科内容出稿为**确定性 stub**（离线机制演示）；配 LLM_API_KEY 后同一路径换真模型
+   （大纲起草已接 CALL_OUTLINE_DRAFT；单元内容 AI 出稿的学科化讲解/rubric 模板与语义问答题目块
+   属 docs/14 Phase B 范围——本批先锁机制与闭环，不做学科专用 prompt）。
+2. "懒生成单元内容沿用现有流水线（source/auto/纠错/熔断/token 限额）"在通用学科落地为：同一
+   `*_auto` 落盘语义 + 幂等 + sync_content + 纠错反馈/guardrails 表结构已通用（node_id 维度），
+   但**主题熔断/每日 token 限额对通用学科内容的接线**未做（math 侧已有 service/guardrails 按
+   roadmap topic；通用学科熔断粒度=subject 待 Phase B 细化）——列为后续。
+3. outline_gate 每次按 node 读大纲文件 + DB 查概念（本地小文件，性能可接受）；多学科大量节点时
+   可加进程级缓存（key=文件 mtime/revision）——现不引入（测试共享副本避免缓存一致性问题）。
+4. 通用学科内容节点 prereqs=[]（顺序权威=大纲门禁，防大纲重构后内容边悬空）；图谱/复习/会话对
+   内容手写 prereq 的展示语义在通用学科下为"无"——已记录，UI 依大纲显示。
+5. E2E 里"费曼评估"环节以服务层达成（mark_mastered 触发概念证据刷新）替代离线跑完整会话；
+   与 math 侧 R18 测试矩阵同口径（docs/11：交互环节浏览器真人验收，配置 LLM_API_KEY 后由用户在
+   /subjects 页实测）。
+

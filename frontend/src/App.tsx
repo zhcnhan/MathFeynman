@@ -2,9 +2,11 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DashboardPage from "./pages/DashboardPage";
 import FeynmanHistoryPage from "./pages/FeynmanHistoryPage";
+import OutlinePage from "./pages/OutlinePage";
 import ReviewPage from "./pages/ReviewPage";
 import SessionPage from "./pages/SessionPage";
 import SettingsPage from "./pages/SettingsPage";
+import SubjectsPage from "./pages/SubjectsPage";
 
 export default function App() {
   return (
@@ -12,6 +14,7 @@ export default function App() {
       <nav>
         <span className="brand">MathFeynman</span>
         <NavLink to="/" end>仪表盘</NavLink>
+        <NavLink to="/subjects">学科</NavLink>
         <NavLink to="/review">复习</NavLink>
         <NavLink to="/feynman-history">费曼复盘</NavLink>
         <NavLink to="/settings">设置</NavLink>
@@ -21,6 +24,8 @@ export default function App() {
         <ErrorBoundary>
           <Routes>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/subjects" element={<SubjectsPage />} />
+            <Route path="/subjects/:id" element={<OutlinePage />} />
             <Route path="/session/:id" element={<SessionPage />} />
             <Route path="/review" element={<ReviewPage />} />
             <Route path="/feynman-history" element={<FeynmanHistoryPage />} />

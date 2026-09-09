@@ -173,27 +173,33 @@ class SessionService:
             db.flush()
             return self.resume(db, existing.id)
 
-        # R18 总序门禁：仅"进入新节点"受控（既有会话恢复/练习费曼续走不受影响）。
-        # node_allowed 按蓝图总序（service.path）；违反 → 409 invalid_state + 前置提示。
-        from .path import make_engine
+        # 门禁：通用学科（custom）走大纲权威（service.outline_gate）；math 走蓝图总序（service.path）。
+        # 仅"进入新节点"受控（既有会话恢复/练习费曼续走不受影响）。
+        from . import outline_gate
 
-        mastered = {
-            nid
-            for (nid,) in db.query(models.UserNode.node_id)
-            .filter(
-                models.UserNode.user_id == self.user_id,
-                models.UserNode.state == "mastered",
+        res = outline_gate.resolve_subject_unit(db, node_id)
+        if res is not None:
+            ok_gate, missing = outline_gate.unit_allowed(db, self.user_id, res[0], res[1])
+        else:
+            from .path import make_engine
+
+            mastered = {
+                nid
+                for (nid,) in db.query(models.UserNode.node_id)
+                .filter(
+                    models.UserNode.user_id == self.user_id,
+                    models.UserNode.state == "mastered",
+                )
+                .all()
+            }
+            eng = make_engine(mastered, lib=lib)
+            ok_gate, missing = eng.node_allowed(
+                node_id,
+                kind=loaded.doc.kind or "",
+                level=loaded.doc.level or "",
+                topic=loaded.doc.topic or "",
+                prereqs=list(loaded.doc.prereqs or ()),
             )
-            .all()
-        }
-        eng = make_engine(mastered, lib=lib)
-        ok_gate, missing = eng.node_allowed(
-            node_id,
-            kind=loaded.doc.kind or "",
-            level=loaded.doc.level or "",
-            topic=loaded.doc.topic or "",
-            prereqs=list(loaded.doc.prereqs or ()),
-        )
         if not ok_gate:
             raise SessionError(
                 "当前节点尚未解锁（须按课程顺序先学前置）：" + "；".join(missing or ["总序前置未达成"]),

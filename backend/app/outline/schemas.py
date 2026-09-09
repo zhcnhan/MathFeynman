@@ -49,7 +49,7 @@ UNIT_LOCAL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 SUBJECT_KINDS = ("preset", "custom")
 OUTLINE_STATUSES = ("draft", "active")
 UNIT_STATUSES = ("draft", "reviewed")
-OUTLINE_SOURCES = ("roadmap", "ai", "manual", "hybrid")
+OUTLINE_SOURCES = ("roadmap", "ai", "heuristic", "manual", "hybrid")
 
 
 class OutlineError(ValueError):
@@ -124,7 +124,7 @@ class OutlineDoc(BaseModel):
     schema_version: int = OUTLINE_SCHEMA_VERSION
     revision: int = 1
     status: Literal["draft", "active"] = "draft"
-    source: Literal["roadmap", "ai", "manual", "hybrid"] = "manual"
+    source: Literal["roadmap", "ai", "heuristic", "manual", "hybrid"] = "manual"
     unit_id_scope: Literal["entry", "subject"] = "subject"
     generated_at: str = ""
     updated_at: str = ""

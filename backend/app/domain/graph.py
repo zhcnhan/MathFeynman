@@ -54,10 +54,14 @@ class KnowledgeGraph:
         if dup:
             raise GraphError(f"重复节点 id: {sorted(dup)}")
         self._by_id: dict[str, NodeDef] = {n.id: n for n in self.nodes}
-        # 悬空 prereq + 学段合法性
+        # 悬空 prereq + level 命名空间约束（docs/14 Phase A A4 语义）
+        # level：math 学段 ∈ LEVELS；通用学科内容节点的 level = 其大纲关卡组标识（任意非空串）。
+        # 约束：以学段名开头的节点（数学内容命名空间 primary.xxx 等）必须使用合法学段 level，
+        # 防数学内容 typo 静默旁路（学习顺序权威仍在 service/path roadmap 门禁）；其余命名空间放开。
         for n in self.nodes:
-            if n.level and n.level not in LEVELS:
-                raise GraphError(f"节点 {n.id} 学段非法: {n.level!r}")
+            head = n.id.partition(".")[0] if "." in n.id else ""
+            if head in LEVELS and n.level not in LEVELS:
+                raise GraphError(f"节点 {n.id} 学段非法: {n.level!r}（{head} 命名空间须用合法学段）")
             for p in n.prereqs:
                 if p not in self._by_id:
                     raise GraphError(f"节点 {n.id} 的 prereq {p!r} 不存在")

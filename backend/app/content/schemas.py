@@ -120,7 +120,9 @@ class NodeDoc(BaseModel):
 
     id: str
     title: str
-    level: Literal["primary", "middle", "high", "college", "ai"]
+    # level：math 学段 ∈ LEVELS（primary/middle/high/college/ai）；通用学科（docs/14 Phase A）
+    # 内容节点为其大纲关卡组标识（任意非空字符串）——数学引擎只认 LEVELS，其余由 subject 大纲门禁
+    level: str
     topic: str
     prereqs: list[str] = Field(default_factory=list)
     kind: Literal["normal", "boss"] = "normal"  # 关卡首领（综合+费曼综述，docs/10 §2.1）

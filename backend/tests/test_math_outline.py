@@ -198,11 +198,13 @@ class TestApiAndCoupling:
         assert body["revision"] >= 1
         assert len(body["units"]) == 258
 
-    def test_custom_regenerate_still_501(self, app_client):
+    def test_custom_regenerate_drafts_candidate(self, app_client):
+        """A4：custom regenerate = AI/启发式重起草候选（math 除外；math 走 roadmap 派生）。"""
         sid = f"mathx{uuid.uuid4().hex[:6]}"
         app_client.post("/api/subjects", json={"label": "X", "subject_id": sid})
         r = app_client.post(f"/api/subjects/{sid}/outline/regenerate")
-        assert r.status_code == 501
+        assert r.status_code == 200
+        assert r.json()["subject"] == sid and len(r.json()["units"]) == 6
         app_client.delete(f"/api/subjects/{sid}")
 
     def test_generic_level_tier_semantics_locked(self):

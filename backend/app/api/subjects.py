@@ -194,9 +194,12 @@ def patch_unit(subject_id: str, unit_id: str, body: PatchUnitBody,
 
 
 @router.post("/subjects/{subject_id}/outline/regenerate")
-def regenerate_outline(subject_id: str, db: Session = Depends(get_db)) -> dict:
-    """大纲重生成：preset(math) = 由 roadmap 派生/再派生（revision+1，概念标签按 unit id 保留）；
-    通用学科 AI 起草/重生成在 Phase A4 开放。"""
+def regenerate_outline(subject_id: str, db: Session = Depends(get_db),
+                       body: DraftOutlineBody | None = None) -> dict:
+    """大纲重生成：
+    - preset(math)：由 roadmap 派生/再派生（revision+1，概念标签按 unit id 保留）；
+    - custom：重新起草候选（source=ai/heuristic，不落盘；用户审阅后 PUT 采纳 revision+1——
+      docs/14 §2.1 "丢弃重生成"语义）。"""
     row = outline_store.get_subject(db, subject_id)
     if row is None:
         raise _err(404, "not_found", f"学科不存在: {subject_id}")
@@ -205,8 +208,46 @@ def regenerate_outline(subject_id: str, db: Session = Depends(get_db)) -> dict:
 
         doc = derive_math_outline(db, status="active")
         return doc.model_dump(mode="json")
-    raise _err(501, "not_implemented",
-               f"通用学科大纲 AI 起草/重生成在 Phase A4 开放（当前为 custom 学科 {subject_id}）")
+    from ..outline.draft import draft_outline as _draft
+
+    b = body or DraftOutlineBody()
+    return _draft(subject_id, brief=b.brief, count=b.count, group_hint=b.group_hint)
+
+
+class DraftOutlineBody(BaseModel):
+    brief: str = ""          # 学科简介/用户目标（AI 起草输入）
+    count: int = Field(default=6, ge=1, le=30)
+    group_hint: str = ""
+
+
+@router.post("/subjects/{subject_id}/outline/draft")
+def draft_outline(subject_id: str, body: DraftOutlineBody, db: Session = Depends(get_db)) -> dict:
+    """AI/启发式起草大纲候选（不落盘）→ UI 预览 → PUT 采纳（docs/14 §2.1 · A4）。"""
+    row = outline_store.get_subject(db, subject_id)
+    if row is None:
+        raise _err(404, "not_found", f"学科不存在: {subject_id}")
+    if row.kind == "preset":
+        raise _err(409, "conflict", "math preset 大纲由 roadmap 治理（使用 regenerate 派生）")
+    from ..outline.draft import draft_outline as _draft
+
+    return _draft(subject_id, brief=body.brief, count=body.count, group_hint=body.group_hint)
+
+
+@router.post("/subjects/{subject_id}/units/{unit_id}/content")
+def generate_unit_content(subject_id: str, unit_id: str, db: Session = Depends(get_db)) -> dict:
+    """懒生成单元内容（source:auto 落盘 + 库/DB 同步；幂等；docs/14 §2.3 · A4）。
+
+    math preset 内容由 roadmap 流水线治理 → 本端点仅 custom 学科。
+    """
+    row = outline_store.get_subject(db, subject_id)
+    if row is None:
+        raise _err(404, "not_found", f"学科不存在: {subject_id}")
+    from ..outline.generate import generate_unit_content as _gen
+
+    try:
+        return _gen(db, subject_id, unit_id)
+    except OutlineError as e:
+        raise _outline_err(e) from e
 
 
 # ---------- A2：概念层与进度映射（docs/14 §2.2） ----------
