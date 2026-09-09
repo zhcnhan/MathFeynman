@@ -143,25 +143,121 @@ def materials_summaries(db, subject_id: str, *, limit_chars: int = 220) -> list[
 
 
 def search_candidates(db, subject_id: str, query: str) -> dict:
-    """联网候选（外部检索后端属 Phase C；离线/未接后端返回提示，UI 显示"暂无联网检索"）。"""
-    del db, subject_id, query
-    return {
-        "items": [],
-        "note": "联网检索后端未接入（Phase C 设计）；请用「本地导入」上传自有/授权资料，"
-                "或稍后勾选系统预置候选。",
-    }
+    """联网候选（Phase C C1：检索后端 provider 抽象；默认未启用 → 明确中文提示）。
+
+    返回：{items: [{title,url,source,summary,reason?}], note: str, backend: {configured,provider,url}}。
+    - 未配置 provider → 提示"未配置检索后端…可用本地导入"（items 空）；
+    - 配置 SearXNG → 真实检索 →（配 LLM_API_KEY）LLM 整理候选清单 → items。
+    """
+    from ..config import get_settings
+    from . import search as search_svc
+
+    row = outline_store.get_subject(db, subject_id)
+    if row is None:
+        raise OutlineError(f"学科不存在: {subject_id}")
+    settings = get_settings()
+    status = search_svc.provider_status(settings)
+    if not status.get("configured"):
+        return {"items": [], "note": _no_backend_note(status), "backend": status}
+    try:
+        raw = search_svc.search_web(query, settings=settings)
+    except search_svc.SearchBackendError as e:
+        return {"items": [], "note": f"联网检索失败：{e}", "backend": status}
+    if not raw:
+        return {"items": [], "note": "未检索到与查询匹配的候选：可换关键词重试，或使用「本地导入」上传自有/授权资料。",
+                "backend": status}
+    items = _refine_candidates(db, row, query, raw, settings)
+    return {"items": items, "note": "", "backend": status}
 
 
-def select_candidates(db, subject_id: str, items: list[dict]) -> list[dict]:
-    """勾选候选 → 本地化引用（标题/来源/摘要入库；不整本下载）。"""
+def _no_backend_note(status: dict) -> str:
+    provider = status.get("provider") or "none"
+    if provider == "searxng":
+        return ("联网检索后端未配置完成：已选 SearXNG 但缺少实例地址（设 MF_SEARXNG_URL）。"
+                "配置后可用联网候选，或现在用「本地导入」上传自有/授权资料。")
+    return ("联网检索后端未配置（当前无检索 provider）。可选方案：自托管 SearXNG（设 "
+            "MF_SEARCH_PROVIDER=searxng 与 MF_SEARXNG_URL），或先用「本地导入」上传自有/授权资料。")
+
+
+def _refine_candidates(db, subj, query: str, raw: list[dict], settings) -> list[dict]:
+    """LLM 整理候选（配 LLM_API_KEY 时；输出 url 回滤原始集防杜撰；失败/无 key → 原始直出）。"""
+    if not settings.llm_api_key:
+        return raw[: max(1, settings.search_max_items)]
+    try:
+        from ..ai.calls import CALL_SEARCH_CANDIDATES
+        from ..ai.provider import OpenAICompatibleProvider
+        from ..service.ai_sink import make_ai_log_sink
+
+        provider = OpenAICompatibleProvider(
+            api_key=settings.llm_api_key, base_url=settings.llm_base_url,
+            model_heavy=settings.llm_model_heavy, model_light=settings.llm_model_light,
+            log_sink=make_ai_log_sink(),
+        )
+        sys = (
+            "你是资料检索助理。给定一次联网检索的**原始结果清单**与学习者的学科背景，"
+            "挑选最适合作为**学习参考材料**的条目（优先：权威/可读/与学科目标相关），"
+            '输出 JSON：{"items":[{"title","url","source","summary","reason"}]}。'
+            "要求：只从原始结果中挑选（禁止自造 url）；3–8 条；summary 为 1–2 句要点摘要；"
+            "reason 一句说明为何适合做学习材料。"
+        )
+        user = (
+            f"学科：{subj.id}（{subj.label or ''}）\n"
+            f"检索词：{query}\n原始结果：\n"
+            + "\n".join(f"- {r.get('title', '')} | {r.get('url', '')} | {r.get('summary', '')[:200]}"
+                        for r in raw[:12])
+        )
+        outcome = provider.chat_json(
+            CALL_SEARCH_CANDIDATES,
+            [{"role": "system", "content": sys}, {"role": "user", "content": user}],
+            strategy="fast",
+        )
+        valid_urls = {r.get("url") for r in raw}
+        refined = []
+        for it in (outcome.parsed.get("items") or []):
+            url = str(it.get("url") or "").strip()
+            if url not in valid_urls:  # 防 LLM 杜撰来源
+                continue
+            title = str(it.get("title") or "").strip()
+            summary = str(it.get("summary") or "").strip()
+            if not title or not summary:
+                continue
+            refined.append({
+                "title": title,
+                "url": url,
+                "source": str(it.get("source") or next(
+                    (r.get("source", "") for r in raw if r.get("url") == url), "")),
+                "summary": summary,
+                "reason": str(it.get("reason") or ""),
+            })
+        if refined:
+            return refined[: max(1, settings.search_max_items)]
+        return raw[: max(1, settings.search_max_items)]  # LLM 整理失败 → 原始直出
+    except Exception:
+        return raw[: max(1, settings.search_max_items)]  # AI 异常不阻塞检索流
+
+
+def select_candidates(db, subject_id: str, items: list[dict],
+                      *, fetch_pages: bool = False) -> list[dict]:
+    """勾选候选 → 本地化引用（标题/来源/摘要入库；**不整本下载**）。
+
+    fetch_pages=True（用户勾选动作）→ 对 http(s) 公开网页抓正文入库（大小上限/失败回落摘要）；
+    书籍类 URL/非 html 不抓取（PDF 走 C2 用户上传路径）。
+    """
+    from . import search as search_svc
+
     saved = []
     for it in items:
         title = str(it.get("title") or "").strip()
         url = str(it.get("url") or "").strip()
         summary = str(it.get("summary") or "").strip()
-        if not title or not summary:
+        if not title or not (summary or url):
             continue
         text = summary + ("\n（来源：" + url + "）" if url else "")
+        if fetch_pages and url:
+            fetched = search_svc.fetch_page_text(url)
+            if fetched:
+                text = ("（以下为该公开网页正文的本地化摘录，用户勾选抓取：）\n\n"
+                        + fetched + "\n\n【原始候选摘要】\n" + summary)
         saved.append(add_material(db, subject_id, title=title, text=text,
                                   source=str(it.get("source") or url or "联网候选"), url=url))
     if not saved:

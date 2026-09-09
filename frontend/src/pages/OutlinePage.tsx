@@ -43,6 +43,35 @@ const STATUS_CLS: Record<string, string> = {
   draft: "deferred",
 };
 
+type MaterialItem = {
+  id: string;
+  title: string;
+  source: string;
+  url: string;
+  kind: string;
+  file: string;
+};
+
+type SearchCandidate = {
+  title: string;
+  url: string;
+  source: string;
+  summary: string;
+  reason?: string;
+};
+
+type SearchResult = {
+  items: SearchCandidate[];
+  note: string;
+  backend: { configured: boolean; provider: string; url?: string; note?: string };
+};
+
+const KIND_LABEL: Record<string, string> = {
+  local: "文本",
+  web: "网页",
+  pdf: "PDF",
+};
+
 export default function OutlinePage() {
   const { id = "" } = useParams();
   const nav = useNavigate();
@@ -59,11 +88,16 @@ export default function OutlinePage() {
   const [policy, setPolicy] = useState("ai"); // B3：来源策略
   const [matTitle, setMatTitle] = useState("");
   const [matText, setMatText] = useState("");
-  const [materials, setMaterials] = useState<{ id: string; title: string; source: string }[]>([]);
+  const [materials, setMaterials] = useState<MaterialItem[]>([]);
+  // Phase C C1：联网候选清单（provider 状态标注 + 勾选 → 本地化引用）
+  const [searchQ, setSearchQ] = useState("");
+  const [searchRes, setSearchRes] = useState<SearchResult | null>(null);
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [searchBusy, setSearchBusy] = useState(false);
 
   const loadMaterials = async () => {
     try {
-      const r = await api.get<{ materials: { id: string; title: string; source: string }[] }>(
+      const r = await api.get<{ materials: MaterialItem[] }>(
         `/subjects/${id}/materials`
       );
       setMaterials(r.materials);
@@ -71,6 +105,63 @@ export default function OutlinePage() {
       setPolicy(p.source_policy);
     } catch {
       /* 停用/无权限等：静默 */
+    }
+  };
+
+  const deleteMaterial = async (mid: string) => {
+    if (!window.confirm("确认删除该引用材料？（重生成单元时将不再引用）")) return;
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      await api.del(`/subjects/${id}/materials/${mid}`);
+      setMsg("材料已删除");
+      await loadMaterials();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runSearch = async () => {
+    if (!searchQ.trim()) return;
+    setSearchBusy(true);
+    setErr("");
+    setMsg("");
+    setSearchRes(null);
+    try {
+      const r = await api.post<SearchResult>(`/subjects/${id}/materials/search`, { query: searchQ });
+      setSearchRes(r);
+      setChecked({});
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setSearchBusy(false);
+    }
+  };
+
+  const selectChecked = async () => {
+    const items = (searchRes?.items ?? []).filter((_, i) => checked[String(i)]);
+    if (items.length === 0) {
+      setErr("请先勾选至少 1 条候选");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const r = await api.post<{ saved: { title: string; kind: string }[] }>(`/subjects/${id}/materials/select`, {
+        items: items.map((it) => ({ title: it.title, url: it.url, source: it.source, summary: it.summary, reason: it.reason ?? "", fetch: true })),
+      });
+      setMsg(`已本地化入库 ${r.saved.length} 条引用材料（勾选公开网页已抓取正文，可追溯来源）`);
+      setSearchRes(null);
+      setChecked({});
+      await loadMaterials();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -275,9 +366,9 @@ export default function OutlinePage() {
       {err && <div className="banner error">{err}</div>}
       {msg && <div className="banner ok">{msg}</div>}
 
-      {/* B3：内容来源策略 + 材料层（docs/14 §8） */}
+      {/* 学科管理：内容来源策略 + 材料层（docs/14 §8 · Phase B B3 + Phase C C1） */}
       <div className="card">
-        <h2>内容来源与材料（B3）</h2>
+        <h2>学科管理 · 内容来源与材料</h2>
         <div className="input-row" style={{ gap: 10, margin: "6px 0" }}>
           <label className="dim">来源策略</label>
           <select value={policy} disabled={busy} onChange={(e) => void setPolicyNow(e.target.value)}>
@@ -287,19 +378,95 @@ export default function OutlinePage() {
             <option value="mixed">混合</option>
           </select>
         </div>
+
         <div className="dim" style={{ margin: "4px 0" }}>
-          引用材料（{materials.length}）：本地导入后，重生成单元会作为可追溯参考来源注入讲解。
+          引用材料（{materials.length}）：本地导入/联网勾选/PDF 上传入库后，重生成单元会作为
+          可追溯参考来源注入讲解（讲解尾部出现"参考材料（可追溯来源）"）。
         </div>
+
+        {/* 联网候选清单（C1：provider 抽象 + 勾选入库） */}
+        <div style={{ margin: "6px 0" }}>
+          <div className="input-row" style={{ gap: 8 }}>
+            <input placeholder="检索词（如：行星科学 入门教材）" value={searchQ}
+                   onChange={(e) => setSearchQ(e.target.value)}
+                   style={{ flex: 1, padding: 7, borderRadius: 8, border: "1px solid #c5cdd6" }} />
+            <button className="ghost" disabled={busy || searchBusy || !searchQ.trim()}
+                    onClick={() => void runSearch()}>
+              {searchBusy ? "检索中…" : "联网检索 → 候选清单"}
+            </button>
+          </div>
+          {searchRes && (
+            <div style={{ marginTop: 6 }}>
+              {searchRes.backend && !searchRes.backend.configured && (
+                <div className="banner warn">检索后端未配置（当前无检索 provider）。{searchRes.note}</div>
+              )}
+              {searchRes.note && searchRes.backend?.configured && (
+                <div className="dim">{searchRes.note}</div>
+              )}
+              {searchRes.items.length > 0 && (
+                <>
+                  <div className="dim" style={{ margin: "4px 0" }}>
+                    候选 {searchRes.items.length} 条 · 勾选后"本地化入库"（勾选公开网页将抓取正文；
+                    书籍类不整本下载，PDF 请走上传）
+                  </div>
+                  {searchRes.items.map((it, i) => (
+                    <div key={`${it.url}-${i}`} style={{ padding: "3px 0", display: "flex", gap: 8, alignItems: "flex-start" }}>
+                      <input type="checkbox" checked={!!checked[String(i)]}
+                             onChange={(e) => setChecked({ ...checked, [String(i)]: e.target.checked })} />
+                      <div>
+                        <strong>{it.title}</strong>{" "}
+                        <span className="dim">{it.source}</span>
+                        <div className="dim" style={{ fontSize: 12 }}>
+                          {it.summary}
+                          {it.reason && <span> · 理由：{it.reason}</span>}
+                        </div>
+                        <div className="dim" style={{ fontSize: 12, wordBreak: "break-all" }}>{it.url}</div>
+                      </div>
+                    </div>
+                  ))}
+                  <button className="primary" disabled={busy}
+                          onClick={() => void selectChecked()}>
+                    勾选入库（{Object.values(checked).filter(Boolean).length}）
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 本地导入：粘贴文本 */}
         <div className="input-row" style={{ gap: 8, margin: "6px 0" }}>
           <input placeholder="材料标题（如：教材第一章）" value={matTitle} onChange={(e) => setMatTitle(e.target.value)}
                  style={{ flex: 1, padding: 7, borderRadius: 8, border: "1px solid #c5cdd6" }} />
-          <button className="primary" disabled={busy || !matTitle.trim()} onClick={() => void uploadMaterial()}>
+          <button className="primary" disabled={busy || !matTitle.trim() || !matText.trim()}
+                  onClick={() => void uploadMaterial()}>
             导入文本
           </button>
         </div>
         <textarea placeholder="粘贴自有/授权教材文本…（选填更多材料）" value={matText}
                   onChange={(e) => setMatText(e.target.value)}
                   style={{ width: "100%", minHeight: 56, border: "1px solid #c5cdd6", borderRadius: 8, padding: 8, font: "inherit" }} />
+
+        {/* 引用材料列表（可删除） */}
+        {materials.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            {materials.map((m) => (
+              <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                                       padding: "4px 0", borderBottom: "1px solid #eef2f6", gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <strong>{m.title}</strong>{" "}
+                  <span className="badge">{KIND_LABEL[m.kind] ?? m.kind}</span>{" "}
+                  <span className="dim">{m.source}</span>
+                  {m.url && <div className="dim" style={{ fontSize: 12, wordBreak: "break-all" }}>{m.url}</div>}
+                </div>
+                <button className="ghost" disabled={busy} style={{ whiteSpace: "nowrap" }}
+                        onClick={() => void deleteMaterial(m.id)}>
+                  删除
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 起草 / 采纳（无大纲或重生成时） */}

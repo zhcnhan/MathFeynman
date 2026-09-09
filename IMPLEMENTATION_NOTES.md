@@ -1497,3 +1497,59 @@ content validate 24/47；git 提交（PhaseB B4）。
 - 环境：.env 已配 LLM_API_KEY（35 字符，真实模型可用性待 C5 联网实测；测试 conftest 默认离线，
   真模型冒烟需 MF_ALLOW_LIVE_AI=1）；Python 3.14.3 venv；pypdf 6.18.0 已装入 venv（C2 用）。
 
+---
+
+## 40. docs/14 Phase C · C1：外部检索后端 provider 抽象（2026-09-09）
+
+**规格**：docs/14 §8/R22 + 工单 C1——search_candidates 升级为 provider 抽象：默认"未启用"；
+支持至少一种真实检索（**自托管 SearXNG**，免第三方 key，依赖=运行中的 SearXNG 实例 + JSON 输出）；
+检索 →（配 LLM_API_KEY）LLM 生成候选清单 → select 抓公开网页正文 → 本地化引用库；
+robots/版权边界：仍不整本下载书籍，仅公开网页与用户勾选；无 provider 时保持明确中文提示，
+UI 标注"未配置检索后端"。
+
+**改动清单**
+1. `config.py`：检索后端配置（MF_SEARCH_PROVIDER 默认空=未启用 / searxng；MF_SEARXNG_URL；
+   MF_SEARCH_TIMEOUT_S / MF_SEARCH_MAX_ITEMS；MF_FETCH_PAGE_MAX_CHARS / MF_FETCH_PAGE_TIMEOUT_S）。
+2. `outline/search.py`（新）：provider 抽象——
+   - `provider_status()`：configured/provider/url/note（UI 标注数据源）；
+   - `search_web()`：SearXNG JSON API（GET <url>/search?q=&format=json，UA 头；去重/截断）；
+   - `fetch_page_text()`：抓取**用户勾选**的公开网页正文（仅 http(s)/text/html、UA、重定向、
+     大小上限 MF_FETCH_PAGE_MAX_CHARS；script/style 剥离 + 标签去 HTML + unescape + 空白收敛；
+     失败/非 html → None 回落"仅摘要"）；
+   - `SearchBackendError`（中文 message，docs/13 §2）。
+3. `ai/calls.py`：调用点 12 `CALL_SEARCH_CANDIDATES`（light 档 JSON schema：
+   SearchCandidatesIn/Out {items[{title,url,source,summary,reason}]}）。
+4. `outline/materials.py`：
+   - `search_candidates()` 重写：未配置 → `{items:[], note:"联网检索后端未配置…本地导入兜底", backend:{configured:false}}`
+     （note 含"联网检索/未配置"，UI 显示"未配置检索后端"）；配置后 → search_web → LLM 整理/原始直出；
+   - `_refine_candidates()`：配 key 时 CALL_SEARCH_CANDIDATES 整理（**输出 url 回滤原始结果集防
+     杜撰**；AI 异常/无 key → 原始直出不阻塞）；
+   - `select_candidates(..., fetch_pages)`：勾选且 fetch → fetch_page_text 抓正文入库
+     （抓取成功正文=页面文本 + 原摘要留档；失败回落摘要，select 永不因抓取失败而崩）。
+5. `api/subjects.py`：SelectItem 增 `reason`/`fetch` 字段；select 端点按勾选 fetch 抓正文。
+6. 前端 `OutlinePage.tsx`：材料区升级为"学科管理 · 内容来源与材料"——来源策略下拉 +
+   **联网候选**（检索词输入 → 结果候选勾选 → 本地化入库；无 provider 显示中文提示条
+   "检索后端未配置…"）+ 引用材料列表（类型徽标 文本/网页 + 删除）。api.ts：request 兼容
+   FormData（C2 复用）。
+7. 测试：`backend/tests/test_search_provider.py`（新 ×10，hermetic mock）——provider 默认
+   未配置（中文 note + backend.configured=False + UI 标注数据源）；searxng 配置后 search 出候选；
+   后端不可达 → note 中文不 500；无结果提示；LLM 整理（mock refine + 记录 raw）；
+   select fetch 正文入库（含"原始候选摘要"标记）；fetch 失败回落摘要；不带 fetch 旧契约不变；
+   CALL_SEARCH_CANDIDATES 注册。test_materials 既有用例适配通过（note 文案仍含"联网检索"）。
+
+**回归**：pytest = **279 passed + 1 skipped**（280 collected；基线 269+1 + 新增 10，不降）；
+content validate 26/49 全绿；audit 5 学段不变（roadmap 未动）；npm run build（tsc+vite）通过；
+git 提交（PhaseC C1）。
+
+**疑点（挂待架构裁决）**
+1. 检索 provider 首批只实现"自托管 SearXNG"（免 key、隐私可控、用户自装实例）；公共/托管
+   API（必应/Brave/Tavily 等需 key 或 ToS）留作可插拔候选——provider 抽象已留
+   `KNOWN_PROVIDERS` 扩展位，后续加 provider 只需新增分支 + 配置。
+2. SearXNG 要求实例开启 `format=json` 输出（默认允许 JSON）；中文检索建议实例配语言/区域，
+   未配时质量由用户实例决定（文档性依赖，不入代码）。
+3. `fetch_page_text` 只做 text/html 抓取：书籍类整本下载仍被拒（含 PDF 二进制 URL——PDF 走
+   C2 上传路径）；robots 协议未逐条解析（抓取仅限用户**显式勾选**且大小受限，语义符合
+   docs/14 §8"用户勾选→本地化引用"边界；如需 robots.txt/noindex 严格遵从可在 search.py 加层）。
+4. LLM 整理候选仅在配 LLM_API_KEY 时生效且不阻塞（失败回落原始直出）；"候选理由 reason"
+   已入 schema 与 UI 展示。
+

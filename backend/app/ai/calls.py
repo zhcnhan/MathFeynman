@@ -249,6 +249,34 @@ CALL_UNIT_CONTENT = CallSpec(
     temperature=0.5, max_retries=2,
 )
 
+
+# ---------- 调用点 12：联网候选清单整理（docs/14 §8 · Phase C C1） ----------
+class SearchCandidateItem(BaseModel):
+    """整理后的单个候选（url 必须取自检索原始结果——服务端回滤防杜撰）。"""
+
+    title: str
+    url: str = ""
+    source: str = ""
+    summary: str = ""
+    reason: str = ""
+
+
+class SearchCandidatesIn(BaseModel):
+    query: str = ""
+    subject_label: str = ""
+    subject_brief: str = ""
+    results: list[dict] = Field(default_factory=list)  # 检索原始结果（供 LLM 挑选）
+
+
+class SearchCandidatesOut(BaseModel):
+    items: list[SearchCandidateItem] = Field(default_factory=list)
+
+
+CALL_SEARCH_CANDIDATES = CallSpec(
+    "search_candidates", "light", SearchCandidatesIn, SearchCandidatesOut,
+    temperature=0.2, max_retries=1,
+)
+
 CALLS: dict[str, CallSpec] = {
     c.name: c for c in (
         CALL_EXPLAIN_NODE,
@@ -262,6 +290,7 @@ CALLS: dict[str, CallSpec] = {
         CALL_DRAFT_CONTENT,
         CALL_OUTLINE_DRAFT,
         CALL_UNIT_CONTENT,
+        CALL_SEARCH_CANDIDATES,
     )
 }
 

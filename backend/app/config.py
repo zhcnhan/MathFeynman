@@ -59,6 +59,30 @@ class Settings:
         default_factory=lambda: int(os.getenv("LLM_MAX_TOKENS_PER_DAY", "0") or "0")
     )
 
+    # --- 外部检索后端（docs/14 §8 · Phase C C1；默认未启用）---
+    # 默认 "none"（未配置检索后端 → UI 标注 + 明确中文提示）；可配 "searxng"：
+    # 自托管 SearXNG 实例（MF_SEARXNG_URL，如 http://127.0.0.1:8888，需开启 JSON 输出），
+    # 免第三方 key（自托管=用户自有实例；外部公共实例需自行评估可用性/隐私）。
+    search_provider: str = field(
+        default_factory=lambda: (os.getenv("MF_SEARCH_PROVIDER", "") or "").strip().lower()
+    )
+    searxng_url: str = field(
+        default_factory=lambda: (os.getenv("MF_SEARXNG_URL", "") or "").strip().rstrip("/")
+    )
+    search_timeout_s: float = field(
+        default_factory=lambda: float(os.getenv("MF_SEARCH_TIMEOUT_S", "20") or "20")
+    )
+    search_max_items: int = field(
+        default_factory=lambda: int(os.getenv("MF_SEARCH_MAX_ITEMS", "8") or "8")
+    )
+    # 抓取用户勾选公开网页正文的大小上限（字符；防"整本下载/超大页"）
+    fetch_page_max_chars: int = field(
+        default_factory=lambda: int(os.getenv("MF_FETCH_PAGE_MAX_CHARS", "200000") or "200000")
+    )
+    fetch_page_timeout_s: float = field(
+        default_factory=lambda: float(os.getenv("MF_FETCH_PAGE_TIMEOUT_S", "15") or "15")
+    )
+
     # --- 判题 ---
     judge_max_retry_samples: int = 20  # 模板自检失败重取样上限（docs/04 §4）
 

@@ -40,9 +40,10 @@ function looksEnglish(message: string): boolean {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const started = performance.now();
   let res: Response;
+  const isForm = init?.body instanceof FormData;
   try {
     res = await fetch(`/api${path}`, {
-      headers: { "Content-Type": "application/json" },
+      headers: isForm ? undefined : { "Content-Type": "application/json" },
       ...init,
     });
   } catch (e) {

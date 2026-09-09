@@ -411,6 +411,8 @@ class SelectItem(BaseModel):
     url: str = ""
     source: str = ""
     summary: str = Field(min_length=1)
+    reason: str = ""
+    fetch: bool = False  # Phase C C1：勾选即抓取该公开网页正文入库（大小上限/失败回落摘要）
 
 
 class SelectBody(BaseModel):
@@ -419,13 +421,18 @@ class SelectBody(BaseModel):
 
 @router.post("/subjects/{subject_id}/materials/select", status_code=201)
 def material_select(subject_id: str, body: SelectBody, db: Session = Depends(get_db)) -> dict:
-    """勾选候选 → 本地化引用（摘要入库，来源可追溯；不整本下载）。"""
+    """勾选候选 → 本地化引用（摘要入库，来源可追溯；不整本下载）。
+
+    items[].fetch=true（C1：用户勾选动作）→ 抓取 http(s) 公开网页正文入库
+    （robots/版权边界：不整本下载书籍、不抓 PDF 二进制；PDF 走 upload-pdf 用户上传）。
+    """
     _require_enabled(db, subject_id)
     from ..outline import materials as mat
 
     items = [it.model_dump() for it in body.items]
     try:
-        saved = mat.select_candidates(db, subject_id, items)
+        saved = mat.select_candidates(db, subject_id, items,
+                                      fetch_pages=any(it["fetch"] for it in items))
     except OutlineError as e:
         raise _err(422, "validation_error", str(e)) from e
     return {"subject_id": subject_id, "saved": saved}
