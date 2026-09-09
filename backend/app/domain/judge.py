@@ -21,6 +21,8 @@ SUPPORTED_MODES = (
     "symbolic_equivalence",
     "numeric_value",
     "boolean_judgment",
+    "single_choice",
+    "fill_text",
 )
 ALL_MODES = SUPPORTED_MODES + ("ordering", "manual_review")
 
@@ -263,6 +265,80 @@ def judge_boolean_judgment(
         feedback_hint=None if user_bool == expected else f"判断结果应为「{exp_word}」。理由部分请说清依据。",
         expected=None if user_bool == expected else exp_word,
         detail="真值一致" if user_bool == expected else "真值不一致",
+    )
+
+
+# --------------------------------------------------------------------------
+# B2：选择 / 填空（确定性判题；docs/04 §2/Phase B 题目块扩展）
+# --------------------------------------------------------------------------
+def _norm_fill(s: str) -> str:
+    """填空归一：去空白/句末标点 + ASCII 小写（中英文标点宽松）。"""
+    t = str(s).strip().strip("。.!！?？；;，, ")
+    return re.sub(r"\s+", "", t).casefold()
+
+
+def judge_single_choice(
+    user_answer: str,
+    *,
+    options: list[str],
+    answer_index: int,
+    tolerance: float | None = None,
+) -> JudgeResult:
+    """single_choice：作答接受「选项编号（1..n）/字母/选项文本」→ 与 answer_index(0 起) 比对。"""
+    del tolerance
+    if not options or not (0 <= answer_index < len(options)):
+        raise JudgeError("single_choice 需要合法 options 与 answer_index")
+    u = _norm_fill(user_answer)
+    chosen: int | None = None
+    # 编号/字母/文本三种形态（宽松比对）
+    digits = u.rstrip(".")
+    if digits.isdigit():
+        n = int(digits)
+        if 1 <= n <= len(options):
+            chosen = n - 1
+    else:
+        letter = u.lower()
+        if len(letter) == 1 and letter.isalpha():
+            idx = ord(letter) - ord("a")
+            if 0 <= idx < len(options):
+                chosen = idx
+    if chosen is None:
+        for i, opt in enumerate(options):
+            if _norm_fill(opt) == u:
+                chosen = i
+                break
+    if chosen is None:
+        raise NotationError(
+            f"请从选项中选择作答（输入编号 1–{len(options)}、字母或选项文字均可）"
+        )
+    correct = chosen == answer_index
+    return JudgeResult(
+        correct=correct,
+        feedback_hint=None if correct else f"选择不对，再读一遍题目对照每个选项。",
+        expected=None if correct else options[answer_index],
+        detail=f"选择了第 {chosen + 1} 项" + ("（正确）" if correct else "（错误）"),
+    )
+
+
+def judge_fill_text(
+    user_answer: str,
+    *,
+    expected: str,
+    aliases: list[str] | None = None,
+    tolerance: float | None = None,
+) -> JudgeResult:
+    """fill_text：归一化比对标准答案与同义答法（同义归一 MVP=去空白/句末标点+小写）。"""
+    del tolerance
+    cands = [expected] + list(aliases or [])
+    u = _norm_fill(user_answer)
+    if not u:
+        raise NotationError("填空不能为空，请输入答案。")
+    correct = any(_norm_fill(c) == u for c in cands if str(c).strip())
+    return JudgeResult(
+        correct=correct,
+        feedback_hint=None if correct else "答案不完全一致，请对照讲解内容再试。",
+        expected=None if correct else expected,
+        detail="与标准答案一致" if correct else "与标准答案不一致",
     )
 
 

@@ -15,6 +15,8 @@ CHECK_MODES = (
     "symbolic_equivalence",
     "numeric_value",
     "boolean_judgment",
+    "single_choice",
+    "fill_text",
     "ordering",
     "manual_review",
 )
@@ -63,6 +65,8 @@ class CheckDoc(BaseModel):
         "symbolic_equivalence",
         "numeric_value",
         "boolean_judgment",
+        "single_choice",   # B2：选择题（fixed；options+answer_index）
+        "fill_text",       # B2：填空（fixed；expected+aliases）
         "ordering",
         "manual_review",
     ]
@@ -71,16 +75,26 @@ class CheckDoc(BaseModel):
 
 
 class ExerciseDoc(BaseModel):
-    """一个练习条目：kind=template（默认）或 fixed。"""
+    """一个练习条目：kind=template（默认）或 fixed。
+
+    B2 题型扩展（docs/14 §2.5/Phase B·docs/04 §2 同步）：
+    - single_choice：options（选项列表）+ answer_index（0 起正确项下标）；
+    - fill_text：expected（标准答案）+ aliases（可接受同义答法）。
+    fixed 的判题/自检语义见 content/templates `_render_fixed` 与 domain/judge。
+    """
 
     id: str
     kind: Literal["template", "fixed"] = "template"
     difficulty: int = Field(default=1, ge=1, le=3)
     prompt: str = ""  # fixed 题直接用；template 题被 template.prompt 覆盖
     template: Optional[TemplateDoc] = None
-    answer_expr: Optional[str] = None  # fixed 题可选：判题用期望表达式
+    answer_expr: Optional[str] = None  # fixed + 数值/等价类 判题用期望表达式
     answer_bool: Optional[bool] = None  # fixed + boolean_judgment 的期望真值
     equation: Optional[str] = None  # fixed + equation_solution 的方程
+    options: list[str] = Field(default_factory=list)  # single_choice 选项
+    answer_index: Optional[int] = None  # single_choice 正确项下标（0 起）
+    expected: str = ""  # fill_text 标准答案
+    aliases: list[str] = Field(default_factory=list)  # fill_text 可接受同义答法
     check: CheckDoc
     interactive: list[Literal["workbench", "guided", "graph"]] = Field(
         default_factory=lambda: ["workbench"]
@@ -93,6 +107,24 @@ class ExerciseDoc(BaseModel):
         if bad:
             raise ValueError(f"非法 interactive 模式: {bad}")
         return v
+
+    @model_validator(mode="after")
+    def _mode_fields_ok(self) -> "ExerciseDoc":
+        """题型一致性（B2）：single_choice 需 options+answer_index；fill_text 需 expected。"""
+        mode = self.check.mode
+        if self.kind != "fixed":
+            return self
+        if mode == "single_choice":
+            if len(self.options) < 2:
+                raise ValueError(f"练习 {self.id}: single_choice 至少 2 个选项")
+            if self.answer_index is None or not (0 <= self.answer_index < len(self.options)):
+                raise ValueError(f"练习 {self.id}: single_choice 的 answer_index 越界或缺失")
+            if not self.options[self.answer_index].strip():
+                raise ValueError(f"练习 {self.id}: single_choice 正确选项不能为空")
+        elif mode == "fill_text":
+            if not self.expected.strip():
+                raise ValueError(f"练习 {self.id}: fill_text 需要 expected 标准答案")
+        return self
 
 
 # ---------- 费曼 ----------
