@@ -102,7 +102,9 @@ feynman:
 | `symbolic_equivalence` | 表达式等价 | `simplify(a - b) == 0` 或 `equals()` |
 | `numeric_value` | 数值结果 | 代入后 `abs(a-b) < tol` |
 | `boolean_judgment` | 判断对错+理由 | 对错为真值；**理由由 rubric 评估而非全权判对** |
-| `ordering` | 排序/比较 | 数值比较 |
+| `single_choice` | 选择题（Phase B B1/B2） | 固定题 options+answer_index(0 起)；作答接受编号/字母/选项文本，服务端判定 |
+| `fill_text` | 填空题（Phase B B1/B2） | 固定题 expected+aliases（同义答法）；归一化（去空白/句末标点+小写）比对 |
+| `ordering` | 排序/比较 | 数值比较（扩展预留） |
 | `manual_review` | 无法自动判（如作图） | 走费曼式人工/AI rubric 复核队列 |
 
 判题结果统一返回：`{correct: bool, feedback_hint: str|null, expected: str|null, detail: str}`。

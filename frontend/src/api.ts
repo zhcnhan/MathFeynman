@@ -241,6 +241,8 @@ export interface ExerciseView {
   difficulty: number;
   interactive: string[];
   seed: number;
+  /** B2：single_choice 的选项列表（前端渲染用；判题在服务端，不泄 index/答案） */
+  options?: string[];
 }
 
 export interface ProfileData {

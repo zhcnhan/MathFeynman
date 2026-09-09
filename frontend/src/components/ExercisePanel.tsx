@@ -1,5 +1,7 @@
-// 三种交互模式的练习 UI（docs/07 §1）：workbench 必做，guided/graph 一题演示。
-import { useState } from "react";
+// 三种交互模式的练习 UI（docs/07 §1）+ B2 题型控件（docs/14 §2.5）：
+// workbench/guided/graph 沿用既有渲染；按 exercise.mode 提供基础控件——
+// single_choice=点选、fill_text=填空输入、boolean_judgment=对/错按钮、numeric 等走 MathInput。
+import { ReactNode, useState } from "react";
 import { ExerciseView } from "../api";
 import MathInput from "./MathInput";
 import MdMath from "./MdMath";
@@ -26,20 +28,124 @@ export function renderModeOf(exercise: ExerciseView): "workbench" | "guided" | "
   return "workbench";
 }
 
+const MODE_LABEL: Record<string, string> = {
+  single_choice: "选择题",
+  fill_text: "填空题",
+  boolean_judgment: "判断题",
+  numeric_value: "计算题",
+  symbolic_equivalence: "表达式题",
+  equation_solution: "解方程",
+};
+
 export default function ExercisePanel({ exercise, disabled, feedback, onSubmit }: Props) {
+  // B2：按题型渲染基础控件（选择/填空/判断），其余题型沿用交互模式面板
+  if (exercise.mode === "single_choice") {
+    return <ChoiceUI exercise={exercise} disabled={disabled} feedback={feedback} onSubmit={onSubmit} />;
+  }
+  if (exercise.mode === "fill_text") {
+    return <FillUI exercise={exercise} disabled={disabled} feedback={feedback} onSubmit={onSubmit} />;
+  }
+  if (exercise.mode === "boolean_judgment") {
+    return <BooleanUI exercise={exercise} disabled={disabled} feedback={feedback} onSubmit={onSubmit} />;
+  }
   const mode = renderModeOf(exercise);
   return (
     <div className="card exercise">
       <div className="exercise-head">
         <MdMath text={exercise.prompt} />
         <span className="badge">
-          {mode === "graph" ? "图形工具" : mode === "guided" ? "分步引导" : "答题工作台"} · 难度 {exercise.difficulty}
+          {MODE_LABEL[exercise.mode] ?? (mode === "graph" ? "图形工具" : mode === "guided" ? "分步引导" : "答题工作台")} · 难度 {exercise.difficulty}
         </span>
       </div>
       {mode === "workbench" && <WorkbenchUI exercise={exercise} disabled={disabled} feedback={feedback} onSubmit={onSubmit} />}
       {mode === "guided" && <GuidedDemo exercise={exercise} disabled={disabled} feedback={feedback} onSubmit={onSubmit} />}
       {mode === "graph" && <GraphDemo exercise={exercise} disabled={disabled} feedback={feedback} onSubmit={onSubmit} />}
     </div>
+  );
+}
+
+function ShowPromptAndFeedback({
+  exercise,
+  feedback,
+  children,
+}: {
+  exercise: ExerciseView;
+  feedback?: Feedback | null;
+  children: ReactNode;
+}) {
+  return (
+    <div className="card exercise">
+      <div className="exercise-head">
+        <MdMath text={exercise.prompt} />
+        <span className="badge">{MODE_LABEL[exercise.mode] ?? "题目"} · 难度 {exercise.difficulty}</span>
+      </div>
+      {children}
+      {feedback?.verdict === "correct" && <div className="answer">✓ 答对啦，继续加油！</div>}
+      {feedback?.hint && <div className="hint">💡 <MdMath text={feedback.hint} /></div>}
+    </div>
+  );
+}
+
+/** 选择题：点选选项（作答=编号文本，服务端判题，答案不泄） */
+function ChoiceUI({ exercise, disabled, feedback, onSubmit }: Props) {
+  const [chosen, setChosen] = useState<number | null>(null);
+  const options = exercise.options ?? [];
+  return (
+    <ShowPromptAndFeedback exercise={exercise} feedback={feedback}>
+      <div className="input-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+        {options.map((opt, i) => (
+          <button
+            key={i}
+            type="button"
+            disabled={disabled}
+            style={{
+              textAlign: "left",
+              background: chosen === i ? "#bbdefb" : "#fff",
+              border: "1px solid #c5cdd6",
+            }}
+            onClick={() => {
+              setChosen(i);
+              onSubmit(String(i + 1));
+            }}
+          >
+            {i + 1}. {opt}
+          </button>
+        ))}
+        {options.length === 0 && <div className="empty">题目缺少选项（请联系内容维护）</div>}
+      </div>
+    </ShowPromptAndFeedback>
+  );
+}
+
+/** 填空题：单行输入 */
+function FillUI({ exercise, disabled, feedback, onSubmit }: Props) {
+  const [value, setValue] = useState("");
+  return (
+    <ShowPromptAndFeedback exercise={exercise} feedback={feedback}>
+      <div className="ask-box">
+        <textarea
+          value={value}
+          placeholder="请输入答案…"
+          disabled={disabled}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <button type="button" className="primary" disabled={disabled || !value.trim()} onClick={() => onSubmit(value)}>
+          提交
+        </button>
+      </div>
+    </ShowPromptAndFeedback>
+  );
+}
+
+/** 判断题：对/错按钮（复用既有语义） */
+function BooleanUI({ exercise, disabled, feedback, onSubmit }: Props) {
+  return (
+    <ShowPromptAndFeedback exercise={exercise} feedback={feedback}>
+      <div className="input-row">
+        <button type="button" className="primary" disabled={disabled} onClick={() => onSubmit("对")}>对</button>
+        <button type="button" className="ghost" disabled={disabled} onClick={() => onSubmit("错")}>错</button>
+      </div>
+    </ShowPromptAndFeedback>
   );
 }
 

@@ -1337,3 +1337,26 @@ git 提交（R19 块3）。
 3. "原三题相同"在启发式与 AI 路径均已以"题面去重 + 题型多样校验"锁定；跨**轮次**（同单元重
    新生成）是否要求不同题面属可选增强（当前重生成 = force 后由校验保证 ≥3 不重复的稳定题组）。
 
+---
+
+## 35. docs/14 Phase B · B2：题目形式与交互多样化（2026-09-09）
+
+**规格**：docs/14 §2.5/§4 Phase B 前置——练习支持多题型混合（single/fill/boolean/计算式 sympy/
+排序匹配后置）；每题标注题型，ExercisePanel 按题型渲染（点选/填空基础控件先落地）。
+
+**改动清单**
+1. `frontend/src/components/ExercisePanel.tsx`：按 `exercise.mode` 分派基础控件——single_choice
+   点选（按钮 1..n 提交编号）、fill_text 填空输入、boolean_judgment 对/错；数值/表达式/方程走
+   既有 workbench/guided/graph（MathInput）；题型中文标签（选择题/填空题/判断题…）。
+2. `frontend/src/api.ts`：ExerciseView 增 `options?: string[]`（single_choice 渲染；服务端判题，
+   不泄 index/答案）。
+3. 每单元 ≥2 题型 / ≥3 题 / 题面去重的**引擎保证**在 B1 的 validate_generic_content + 生成器
+   落盘前校验，B1 测试已锁定（docs/14 验收项引擎侧）。
+4. docs 同步：docs/04 §3 判题模式表增 single_choice/fill_text（实现要点）；docs/07 §1 增 Phase B
+   题型控件说明。
+5. （后端判题引擎 single_choice/fill_text 与渲染/selfcheck 已在 B1 提交 3ea2798+B1 补齐，故 B2 主体
+   为前端 + docs；无 pytest 计数变化。）
+
+**回归**：pytest = **264 passed + 1 skipped**（与 B1 持平，本步为前端/docs，无新增后端用例）；
+`npm run build`（tsc+vite）通过；content validate 24/47；git 提交（PhaseB B2）。
+
