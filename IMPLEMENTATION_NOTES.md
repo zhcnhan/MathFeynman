@@ -1472,3 +1472,28 @@ content validate 24/47；git 提交（PhaseB B4）。
 5. 测试中偶现 PUT /subjects/{sid}/outline 在特定用例 405（其它模块/进程不可复现，疑似路由顺序
    环境偶发）——已在该用例改 store 落盘规避；若复现需查 FastAPI 路由注册顺序。
 
+---
+
+## 39. 会话续接（2026-09-09 · Phase C 开工）—— 基线复核通过：pytest=269 passed + 1 skipped，content=ok 26 节点/49 练习
+
+**续接前最后已知状态**：
+- 品牌已更名 **YanHui（颜回）**（cffc005 + README bc22176：全科教练定位，数学=预置学科不再以
+  数学导师为名）；库镜像 zhcnhan/YanHui ↔ gengzisama/YanHui（git-mirror 三端，docs/15 §5）。
+- 基线实测：`pytest backend/tests` = **269 passed + 1 skipped**（270 collected，exit 0）；
+  audit 5 学段全绿（primary 27 / middle 31 / high 81 / college 59 / ai 60，经
+  test_roadmap + test_total_order_gate 真实库循环断言，exit 0）；`content validate` =
+  **ok=True nodes=26 exercises=49**；git HEAD=`bc22176`、工作树干净；仓库不含 data/、_drafts、resume/。
+- 里程碑：M0–M5 + docs/11 阶段 1/2/3 + docs/12 总纲 P1–P4 + 蓝图精核补丁 + A/B/C/D 引擎段 +
+  R18 总序权威化 + docs/14 Phase A（A1–A4）+ Phase B（B1–B5，R23 已验收）；docs/09 R1–R23、
+  docs/14 §8–§10（内容源策略/材料层/学科生命周期/行星科学试点）为 Phase C 的依据源。
+- 本会话目标（当前活动工单 = **docs/14 Phase C**，工单文本 C1–C6）：C1 外部检索后端 provider
+  抽象（默认未启用 + 可配自托管 SearXNG + LLM 候选 + select 抓正文入库）；C2 PDF/文档解析
+  （pypdf，分页/分节入库 kind:pdf）；C3 学科停用过滤 UI + 学科管理收敛（仪表盘/地图/图谱/推荐/
+  Session 按 subject.enabled 过滤隐藏）；C4 backlog 小项（heuristic 单选乱序 + answer_index 同步、
+  PUT outline 405 复查、fill_text aliases 小扩展）；C5 回归与验收；C6 汇报与文档同步（docs/06/07/14
+  §7/§8、docs/13 §4 与 docs/15 §3 基线/品牌数字本批末尾刷新）。每步独立汇报 + git 提交标注 PhaseC，
+  每步全量回归不降 + content validate + audit 全绿 + 零残留；错误一律中文（docs/13 §2）。
+- R23 backlog 承接（随 C4）：heuristic 选项乱序 + answer_index 同步；停用学科 UI 过滤随学科管理批次。
+- 环境：.env 已配 LLM_API_KEY（35 字符，真实模型可用性待 C5 联网实测；测试 conftest 默认离线，
+  真模型冒烟需 MF_ALLOW_LIVE_AI=1）；Python 3.14.3 venv；pypdf 6.18.0 已装入 venv（C2 用）。
+
