@@ -128,7 +128,11 @@ def create_subject(
     if sid is None:
         sid = _slugify(label)
         if not sid:
-            raise OutlineError("无法从学科名称生成 id，请显式提供 subject_id")
+            # 中文等无法 ASCII 转写的名称 → 稳定回退 id（s-<label 哈希前 8 位>），
+            # 让"中文名学科"无需用户手填英文 id 即可创建
+            import hashlib
+
+            sid = "s-" + hashlib.sha1(label.strip().encode("utf-8")).hexdigest()[:8]
     base, n = sid, 1
     while db.get(models.Subject, sid) is not None:
         n += 1
