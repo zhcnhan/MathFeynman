@@ -53,6 +53,15 @@ def _migrate_columns(engine) -> None:
         missing.append("ALTER TABLE feedback ADD COLUMN result TEXT NOT NULL DEFAULT ''")
     if "updated_at" not in cols:
         missing.append("ALTER TABLE feedback ADD COLUMN updated_at DATETIME")
+    # B4：subjects 停用标记（"移除可恢复"；旧库缺列补默认启用）
+    try:
+        scol = {c["name"] for c in insp.get_columns("subjects")}
+        if "enabled" not in scol:
+            missing.append("ALTER TABLE subjects ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT 1")
+        if "removed_at" not in scol:
+            missing.append("ALTER TABLE subjects ADD COLUMN removed_at DATETIME")
+    except sa.exc.NoSuchTableError:
+        pass
     for stmt in missing:
         with engine.begin() as conn:
             conn.execute(sa.text(stmt))

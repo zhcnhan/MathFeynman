@@ -100,8 +100,12 @@ def get_subject(db: Session, subject_id: str) -> models.Subject | None:
     return db.get(models.Subject, subject_id)
 
 
-def list_subjects(db: Session) -> list[models.Subject]:
-    rows = db.query(models.Subject).order_by(models.Subject.created_at).all()
+def list_subjects(db: Session, *, include_removed: bool = False) -> list[models.Subject]:
+    """学科列表（默认仅启用；include_removed=True 返回全部含停用，供"移除可恢复"管理）。"""
+    q = db.query(models.Subject)
+    if not include_removed:
+        q = q.filter(models.Subject.enabled.is_(True))
+    rows = q.all()
     # preset 排前（math），其后按创建时间
     rows.sort(key=lambda r: (0 if r.kind == "preset" else 1, r.created_at or datetime.min))
     return rows
@@ -159,53 +163,48 @@ def _slugify(label: str) -> str:
     return s[:32]
 
 
-def delete_subject(db: Session, subject_id: str) -> None:
-    """删除自定义学科（preset 不可删）。
+def delete_subject(db: Session, subject_id: str, *, hard: bool = False) -> models.Subject:
+    """学科移除（docs/14 §9"移除可恢复"，B4）。
 
-    删除前按 **reset 语义清进度**（R19 backlog：delete_subject 进度级联 = 先 reset 再删）：
-    1) 删除该学科内容文件（stages/<subject_id>/，A4 懒生成产物）→ refresh + sync_content
-       （库内对应 Node 行转 disabled，杜绝"subject 已删但通用内容仍可学"的孤儿节点）；
-    2) 清除该学科内容节点的 user_nodes/reviews 行与 (subject) user_concepts/concepts 注册行；
-    3) 删除大纲文件与学科注册行。attempts/sessions 审计留痕不删（A2 重置口径）。
+    - hard=False（默认）＝**停用移除**：任何学科（含 preset math）——从列表隐藏（enabled=False）、
+      清除该学科内容节点的 user_nodes/reviews 与 (subject) user_concepts 概念证据；
+      **大纲/内容文件与（math）roadmap 留盘**，可随时 enable_subject 恢复；启动不复活已移除
+      math（ensure_math_preset 不翻转 enabled）。
+    - hard=True＝**连同文件删除**（仅 custom）：物理移除内容文件（stages/<sid>/ 与大纲/材料目录）
+      + Node 行禁用 + 注册行删除；preset（math）roadmap 受治理不支持 hard（抛 OutlineError）。
+    attempts/sessions 审计留痕不删（A2 重置口径）。
     """
     row = db.get(models.Subject, subject_id)
     if row is None:
         raise OutlineError(f"学科不存在: {subject_id}")
-    if row.kind == "preset":
-        raise OutlineError("预置学科不可删除（可用 A2 显式重置清进度）")
+    if hard and row.kind == "preset":
+        raise OutlineError("预置学科不支持'连同文件删除'（roadmap/大纲受治理留盘；可停用移除）")
 
-    # 0) 先取该学科大纲单元（+锚点）→ 内容节点 id 集（删除清理基准；须在删文件/大纲前计算）
-    outline = get_outline(subject_id)  # 可能为 None（损坏已由其它路径处理）
+    # 0) 大纲单元（+本学科前缀锚点）→ 内容节点 id 集（进度清理基准；soft 时文件保留）
+    outline = get_outline(subject_id)
     unit_ids: set[str] = set()
     if outline is not None:
         unit_ids = {u.id for u in outline.units}
-        # 锚点仅收本学科前缀节点（防误删锚到 math 等其它学科内容的用户进度）
         unit_ids |= {a for u in outline.units for a in u.anchors if a.startswith(f"{subject_id}.")}
 
-    # 1) 内容文件（A4 通用学科产物在 content/stages/<subject_id>/）
-    from ..content import stages_dir
+    if hard:
+        # hard：物理移除内容文件（stages/<sid>/ 懒生成产物）
+        from ..content import stages_dir
 
-    content_dir = stages_dir() / subject_id
-    removed_files = 0
-    if content_dir.exists():
-        for p in content_dir.rglob("*.md"):
-            p.unlink(missing_ok=True)
-            removed_files += 1
-        try:
-            content_dir.rmdir()
-        except OSError:
-            pass
-        try:  # stages 根下空壳目录回收
-            stages_dir().rmdir()
-        except OSError:
-            pass
-        if removed_files:
+        content_dir = stages_dir() / subject_id
+        if content_dir.exists():
+            for p in content_dir.rglob("*.md"):
+                p.unlink(missing_ok=True)
+            try:
+                content_dir.rmdir()
+            except OSError:
+                pass
             from ..service.library import refresh_library, sync_content
 
             refresh_library()
-            sync_content(db)  # Node 行转 disabled（enabled=0，内容消失不留孤儿）
+            sync_content(db)  # Node 行转 disabled
 
-    # 2) 进度清理（reset 语义）：user_nodes/reviews（学科内容节点）+ 概念证据/注册表
+    # 进度/概念证据清理（soft 与 hard 都做；概念注册表 soft 保留可恢复，hard 清除）
     if unit_ids:
         db.query(models.UserNode).filter(
             models.UserNode.node_id.in_(unit_ids),
@@ -216,21 +215,51 @@ def delete_subject(db: Session, subject_id: str) -> None:
     db.query(models.UserConcept).filter(
         models.UserConcept.subject_id == subject_id
     ).delete(synchronize_session=False)
-    db.query(models.Concept).filter(models.Concept.subject_id == subject_id).delete(
-        synchronize_session=False
-    )
+    if hard:
+        db.query(models.Concept).filter(models.Concept.subject_id == subject_id).delete(
+            synchronize_session=False
+        )
 
-    # 3) 大纲文件 + 注册行
-    d = subject_dir(subject_id)
-    if d.exists():
-        for p in d.glob("*.yaml"):
-            p.unlink(missing_ok=True)
-        try:
-            d.rmdir()
-        except OSError:
-            pass  # 非空（残留文件）不阻断；目录留待人工清理
-    db.delete(row)
+    if hard:
+        # 大纲文件 + 材料目录 + 注册行
+        d = subject_dir(subject_id)
+        if d.exists():
+            for p in d.rglob("*.yaml"):
+                p.unlink(missing_ok=True)
+            for p in d.rglob("*.md"):
+                p.unlink(missing_ok=True)
+            try:
+                for sub in list(d.rglob("*"))[::-1]:
+                    sub.rmdir()
+            except OSError:
+                pass
+            try:
+                d.rmdir()
+            except OSError:
+                pass
+        db.delete(row)
+    else:
+        row.enabled = False
+        row.removed_at = datetime.now(timezone.utc)
     db.commit()
+    return row
+
+
+def enable_subject(db: Session, subject_id: str) -> models.Subject:
+    """重新启用被移除的学科（大纲/内容文件留盘即恢复；无大纲者恢复为空待起草）。"""
+    row = db.get(models.Subject, subject_id)
+    if row is None:
+        raise OutlineError(f"学科不存在: {subject_id}")
+    row.enabled = True
+    row.removed_at = None
+    db.commit()
+    return row
+
+
+def is_subject_enabled(db: Session, subject_id: str) -> bool:
+    """学科是否启用（缺省 True：行不存在视为不阻塞；用于会话/门禁分流）。"""
+    row = db.get(models.Subject, subject_id)
+    return row is None or bool(row.enabled)
 
 
 # ---------- 大纲持久化 ----------
@@ -396,6 +425,8 @@ __all__ = [
     "list_subjects",
     "create_subject",
     "delete_subject",
+    "enable_subject",
+    "is_subject_enabled",
     "get_outline",
     "save_outline",
     "validate_outline",

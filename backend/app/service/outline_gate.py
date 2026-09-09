@@ -83,8 +83,28 @@ def _cached_outline(subject_id: str) -> OutlineDoc | None:
     return doc
 
 
-def _subject_ids(db: Session) -> set[str]:
-    return {r.id for r in db.query(models.Subject.id).all()}
+def _subject_ids(db: Session, *, include_removed: bool = False) -> set[str]:
+    """学科 id 集（默认仅启用；include_removed=True 用于停用学科的内容识别/门禁分流）。"""
+    q = db.query(models.Subject.id)
+    if not include_removed:
+        q = q.filter(models.Subject.enabled.is_(True))
+    return {r[0] for r in q.all()}
+
+
+def subject_of_node(db: Session, node_id: str) -> str | None:
+    """节点 → 所属 subject（math=学段前缀；通用=学科前缀（含已停用））。None=未知。"""
+    head, sep, _ = node_id.partition(".")
+    if not sep or not head:
+        return None
+    if head in _MATH_PREFIXES:
+        return "math"
+    if head in _subject_ids(db, include_removed=True):
+        return head
+    return None
+
+
+def is_subject_disabled(db: Session, subject_id: str) -> bool:
+    return not outline_store.is_subject_enabled(db, subject_id)
 
 
 def resolve_subject_unit(db: Session, node_id: str) -> tuple[str, str] | None:
@@ -214,4 +234,6 @@ __all__ = [
     "refresh_concept_evidence",
     "clear_outline_cache",
     "_cached_outline",
+    "subject_of_node",
+    "is_subject_disabled",
 ]

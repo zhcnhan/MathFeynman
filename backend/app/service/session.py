@@ -173,10 +173,17 @@ class SessionService:
             db.flush()
             return self.resume(db, existing.id)
 
-        # 门禁：通用学科（custom）走大纲权威（service.outline_gate）；math 走蓝图总序（service.path）。
+        # 门禁：先判学科停用（B4"移除可恢复"：停用学科不可进入学习），再按学科分流——
+        # 通用学科（custom）走大纲权威（service.outline_gate）；math 走蓝图总序（service.path）。
         # 仅"进入新节点"受控（既有会话恢复/练习费曼续走不受影响）。
         from . import outline_gate
 
+        subj_id = outline_gate.subject_of_node(db, node_id)
+        if subj_id is not None and outline_gate.is_subject_disabled(db, subj_id):
+            raise SessionError(
+                f"学科「{subj_id}」已停用（可从学科页重新启用后继续学习）",
+                code="invalid_state",
+            )
         res = outline_gate.resolve_subject_unit(db, node_id)
         if res is not None:
             ok_gate, missing = outline_gate.unit_allowed(db, self.user_id, res[0], res[1])

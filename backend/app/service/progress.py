@@ -56,9 +56,13 @@ def _engine_and_infos(db: Session, user_id: str, graph: KnowledgeGraph, mastered
 
 
 def _node_allowed(db: Session, user_id: str, node_id: str, infos: dict, eng) -> bool:
-    """统一可学门禁：通用学科（custom 大纲权威）→ outline_gate；其余（math roadmap 总序）→ PathEngine。"""
+    """统一可学门禁：停用学科 → False；通用学科（custom 大纲权威）→ outline_gate；
+    其余（math roadmap 总序）→ PathEngine。"""
     from . import outline_gate
 
+    subj_id = outline_gate.subject_of_node(db, node_id)
+    if subj_id is not None and outline_gate.is_subject_disabled(db, subj_id):
+        return False  # B4：学科停用 → 其内容一律不可学（locked）
     res = outline_gate.resolve_subject_unit(db, node_id)
     if res is not None:
         ok, _ = outline_gate.unit_allowed(db, user_id, res[0], res[1])

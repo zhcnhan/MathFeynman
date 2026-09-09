@@ -119,8 +119,8 @@ def outline_env(tmp_path, monkeypatch):
     try:
         yield db
     finally:
-        # 清理本测试创建的自定义学科行（大纲文件落在 tmp 内容根，随 tmp_path 回收）
-        for row in st.list_subjects(db):
+        # 清理本测试创建的自定义学科行（含停用；大纲文件落在 tmp 内容根，随 tmp_path 回收）
+        for row in st.list_subjects(db, include_removed=True):
             if row.kind != "preset":
                 db.delete(row)
         db.commit()
@@ -137,9 +137,14 @@ class TestOutlineStore:
         st.ensure_math_preset(db)  # 幂等：不产生重复行
         ids = [s.id for s in st.list_subjects(db)]
         assert ids.count("math") == 1
-        # preset 不可删除 / 不可直接 PUT 大纲
-        with pytest.raises(Exception, match="预置学科不可删除"):
-            st.delete_subject(db, "math")
+        # preset 幂等（不复活已停用）→ math 也可"停用移除"（B4），hard 删除被拒
+        with pytest.raises(Exception, match="不支持'连同文件删除'"):
+            st.delete_subject(db, "math", hard=True)
+        st.delete_subject(db, "math")  # soft 停用（docs/14 §9：preset 不特殊）
+        assert not st.is_subject_enabled(db, "math")
+        assert st.get_subject(db, "math") is not None  # 行保留可恢复
+        st.enable_subject(db, "math")  # 重新启用恢复
+        assert st.is_subject_enabled(db, "math")
         with pytest.raises(Exception, match="roadmap 派生治理"):
             st.add_outline(db, "math", units=[OutlineUnit(**_u("math.x"))])
 
@@ -198,13 +203,23 @@ class TestOutlineStore:
         with pytest.raises(Exception, match="尚无大纲"):
             st.patch_outline_unit(db, "math", "math.x", fields={})
 
-    def test_delete_custom_subject(self, outline_env):
+    def test_delete_custom_subject_soft_then_hard(self, outline_env):
         from app.outline import store as st
 
         db = outline_env
         st.create_subject(db, label="Gone", subject_id="gone")
         st.add_outline(db, "gone", units=[OutlineUnit(**_u("gone.u01"))])
+        # B4：soft 移除（停用）——文件/大纲留盘、行保留可恢复
         st.delete_subject(db, "gone")
+        row = st.get_subject(db, "gone")
+        assert row is not None and row.enabled is False
+        assert (st.subject_dir("gone") / "outline.yaml").exists()
+        assert st.list_subjects(db) == [] or "gone" not in [s.id for s in st.list_subjects(db)]
+        # 重新启用恢复
+        st.enable_subject(db, "gone")
+        assert st.is_subject_enabled(db, "gone")
+        # hard 删除（连同文件）后行与大纲消失
+        st.delete_subject(db, "gone", hard=True)
         assert st.get_subject(db, "gone") is None
         assert not (st.subject_dir("gone") / "outline.yaml").exists()
 
@@ -304,13 +319,21 @@ class TestSubjectsApi:
         # 非法 id 创建
         r = app_client.post("/api/subjects", json={"label": "X", "subject_id": "UPPER"})
         assert r.status_code == 422
-        # 删除
+        # 删除（B4：soft 停用 → 404 隐藏；随后重新启用恢复）
         r = app_client.delete(f"/api/subjects/{sid}")
         assert r.status_code == 204
         r = app_client.get(f"/api/subjects/{sid}")
         assert r.status_code == 404
-        # preset 删除被拒
+        assert app_client.post(f"/api/subjects/{sid}/enable").status_code == 200
+        assert app_client.get(f"/api/subjects/{sid}").status_code == 200
+        # math（preset）同样可"停用移除"，并可重新启用（B4：preset 不再特殊）
         r = app_client.delete("/api/subjects/math")
+        assert r.status_code == 204
+        assert app_client.get("/api/subjects/math").status_code == 404
+        assert app_client.post("/api/subjects/math/enable").status_code == 200
+        assert app_client.get("/api/subjects/math").status_code == 200
+        # math 硬删（连同文件）被治理拒绝
+        r = app_client.delete("/api/subjects/math?hard=true")
         assert r.status_code == 409
 
     def test_regenerate_returns_draft_candidate(self, app_client):

@@ -1360,3 +1360,45 @@ git 提交（R19 块3）。
 **回归**：pytest = **264 passed + 1 skipped**（与 B1 持平，本步为前端/docs，无新增后端用例）；
 `npm run build`（tsc+vite）通过；content validate 24/47；git 提交（PhaseB B2）。
 
+---
+
+## 36. docs/14 Phase B · B4：学科生命周期"移除可恢复"（2026-09-09）
+
+**规格**：docs/14 §9 + R22——删除任何学科（含 math）= 列表隐藏+清进度+停用；大纲/内容文件与
+（math）roadmap 留盘，可"重新启用"恢复；启动不复活被移除的 math（尊重停用标记）；custom 彻底
+删除仅在用户选择"连同文件删除"（hard，默认不移）。
+
+**改动清单**
+1. `models.Subject` + `db._migrate_columns`：增 `enabled`（默认 True）与 `removed_at` 列（旧库
+   try-ALTER 幂等补列，默认启用）。
+2. `outline/store.py`：
+   - `list_subjects(include_removed=False)`：默认仅启用（移除者从列表隐藏）；
+   - `delete_subject(sid, hard=False)`：soft＝停用移除——清该学科内容节点 user_nodes/reviews 与
+     (subject) user_concepts 概念证据，**大纲/内容文件留盘**，行 enabled=False+removed_at；
+     preset(math) 同样允许 soft（不再特殊）；hard=True 仅 custom（物理移除 stages/<sid>/、
+     大纲与材料目录、概念注册行、注册行；math hard 治理拒绝）；
+   - `enable_subject(sid)` 重新启用；`is_subject_enabled()`。
+3. 门禁/进度分流（B4）：`outline_gate.subject_of_node()`（math=学段前缀；通用=学科前缀含已停用）
+   + `is_subject_disabled()`；session.start 与 progress._node_allowed 先判学科停用 → 一律 409/
+   locked（内容文件仍在但学科停用不可学）；outline_gate 大纲解析仅用启用学科。
+4. `api/subjects.py`：list `?include_removed=`、GET 停用=404（提示「管理已移除」）、DELETE `?hard=`
+   （默认 soft；math hard → 409）、POST /subjects/{id}/enable；读写端点统一 `_require_enabled`
+   （停用学科除 enable/hard 外 409）。
+5. 启动语义：ensure_math_preset 幂等注册但**不翻转 enabled**（尊重移除标记）——math 移除后重启
+   不会复活（B5 链式测试覆盖）。
+6. 测试适配（B4 语义）：store/API 层 math 与 custom 的 soft→enable→hard 链；generic E2E
+   remove→不可学(409)→重新启用→可学→hard；fixtures 清理改 include_removed。
+
+**回归**：pytest = 实测（提交时随行）……本批涉及全部学科生命周期用例，见 B4 提交说明；
+content validate 24/47；git 提交（PhaseB B4）。
+
+**疑点（挂待架构裁决）**
+1. "清大纲"语义取"清用户进度/概念证据、大纲文件留盘"（可恢复要求）；若架构要求"移除时大纲从
+   活跃态清除、重启用需重建"，需在 meta 增加 removed_outline 标记并在 enable 时清理 outline
+   （当前 outline 留盘对重启用无损，先按文档§9 可恢复口径）。
+2. math 停用后仪表盘/关卡地图仍以 roadmap 内容渲染 available（引擎只按内容文件）——本批以
+   start/门禁层阻止进入 + 推荐不保证为空；如需"地图整体隐藏/灰显"需 dashboard/campaign 接
+   subject.enabled（列为 UI 后续，随设置页学科管理落地）。
+3. custom 停用后其大纲/内容文件仍在 loader/图谱中显示（图谱通用视图）——通用学科图谱视图
+   （Phase B 未做地图 UI）落地时按 subject.enabled 过滤。
+

@@ -220,9 +220,9 @@ class TestBlock3:
         og.clear_outline_cache(sid)
         st.delete_subject(_db(), sid)
 
-    def test_delete_custom_subject_resets_progress_and_removes_content(self, app_client):
-        """R19 块3：delete custom = 先按 reset 语义清进度再删——内容文件移除、subject/user 概念
-        证据/user_nodes 行清除、节点禁用，已删学科内容不可再 start。"""
+    def test_remove_reenable_custom_subject(self, app_client):
+        """R19块3/R22 B4：delete custom 学科=停用移除（清概念/掌握，文件留盘可恢复）→
+        重新启用恢复可学；hard=true 才连同文件删除。"""
         from app import models as m
         from app.db import SessionLocal
         from app.outline import store as st
@@ -237,30 +237,40 @@ class TestBlock3:
                            ], "status": "active", "source": "manual"})
         assert r.status_code == 200
         assert _generate(app_client, sid, f"{sid}.d1")["status"] == "created"
-        # 掌握 d1（触发概念证据刷新）→ user_concepts 有证据
         _master_node(f"{sid}.d1")
         with SessionLocal() as db:
             assert db.query(m.UserConcept).filter(m.UserConcept.subject_id == sid).count() >= 1
-        # 删除学科（先 reset 语义清理再删）
+        # soft 移除：列表隐藏、行保留 enabled=False、大纲/内容文件留盘、进度/概念清空
         r = app_client.delete(f"/api/subjects/{sid}")
         assert r.status_code == 204
-        # subject 注册与大 纲文件消失
         assert app_client.get(f"/api/subjects/{sid}").status_code == 404
-        assert not (st.subject_dir(sid) / "outline.yaml").exists()
+        assert app_client.get("/api/subjects").json()["subjects"] or True
+        listed = [s["id"] for s in app_client.get("/api/subjects").json()["subjects"]]
+        assert sid not in listed
+        removed = app_client.get("/api/subjects?include_removed=1").json()["subjects"]
+        assert any(s["id"] == sid and s["enabled"] is False for s in removed)
+        assert (st.subject_dir(sid) / "outline.yaml").exists()  # 大纲留盘
+        from app.content import stages_dir
+
+        assert list((stages_dir() / sid).rglob("*.md"))  # 内容文件留盘
         with SessionLocal() as db:
             assert db.query(m.UserConcept).filter(m.UserConcept.subject_id == sid).count() == 0
-            assert db.query(m.Concept).filter(m.Concept.subject_id == sid).count() == 0
             assert db.get(m.UserNode, ("local", f"{sid}.d1")) is None
-            node = db.get(m.Node, f"{sid}.d1")
-            assert node is None or node.enabled is False  # 内容消失后禁用（不残留可学孤儿）
-        from app.content import stages_dir
+        # 停用内容不可学（门禁 409，非 404：文件仍在但学科停用）
+        r = app_client.post("/api/session/start", json={"node_id": f"{sid}.d1"})
+        assert r.status_code == 409, r.text
+        # 重新启用 → 恢复可见且可学（内容文件仍在）
+        assert app_client.post(f"/api/subjects/{sid}/enable").status_code == 200
+        assert app_client.get(f"/api/subjects/{sid}").status_code == 200
+        r = app_client.post("/api/session/start", json={"node_id": f"{sid}.d1"})
+        assert r.status_code == 200, r.text
+        # hard 删除（custom 可选）→ 文件与注册行消失
+        assert app_client.delete(f"/api/subjects/{sid}?hard=true").status_code == 204
+        assert app_client.get(f"/api/subjects/{sid}").status_code == 404
         from app.service.library import refresh_library
 
         refresh_library()
         assert not list((stages_dir() / sid).rglob("*.md"))
-        # 已删学科内容不可再开新会话
-        r = app_client.post("/api/session/start", json={"node_id": f"{sid}.d1"})
-        assert r.status_code == 404
 
 
 def _db():

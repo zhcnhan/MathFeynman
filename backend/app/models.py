@@ -38,9 +38,11 @@ class User(Base):
 
 
 class Subject(Base):
-    """学科注册（docs/14 §1 subject 命名空间 · Phase A A1）。
+    """学科注册（docs/14 §1 subject 命名空间 · Phase A A1 / B4 生命周期）。
 
-    kind: preset=预置学科（math，受代码治理）/ custom=用户自建。
+    kind: preset=预置学科（math）/ custom=用户自建；
+    enabled: 停用标记（docs/14 §9"移除可恢复"）——停用=列表隐藏+不可学+进度已清；
+     大纲/内容文件留盘，可随时重新启用；preset 与 custom 语义一致（不再特殊）。
     大纲文档持久于 content/subjects/<id>/outline.yaml（不在本表）。
     """
 
@@ -51,6 +53,8 @@ class Subject(Base):
     kind: Mapped[str] = mapped_column(String(16), default="custom")  # preset|custom
     description: Mapped[str] = mapped_column(Text, default="")
     meta_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)  # B4：停用（移除）标记
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

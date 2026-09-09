@@ -48,6 +48,8 @@ def _subject_summary(db: Session, subj) -> dict:
         "label": subj.label,
         "kind": subj.kind,
         "description": subj.description,
+        "enabled": bool(subj.enabled),  # B4：停用标记（列表默认隐藏停用者）
+        "removed_at": subj.removed_at.isoformat() if subj.removed_at else None,
         "outline": (
             None
             if doc is None
@@ -70,9 +72,19 @@ def _content_ids() -> set[str]:
     return {n.id for n in lib.nodes}
 
 
+def _require_enabled(db: Session, subject_id: str):
+    """学科启用校验（停用学科除 enable/硬删外一律拒绝操作，B4）。"""
+    row = outline_store.get_subject(db, subject_id)
+    if row is None:
+        raise _err(404, "not_found", f"学科不存在: {subject_id}")
+    if not row.enabled:
+        raise _err(409, "conflict",
+                   f"学科「{row.label or subject_id}」已停用；请在学科页「管理已移除」中重新启用后再操作")
+
+
 @router.get("/subjects")
-def list_all(db: Session = Depends(get_db)) -> dict:
-    rows = outline_store.list_subjects(db)
+def list_all(db: Session = Depends(get_db), include_removed: bool = False) -> dict:
+    rows = outline_store.list_subjects(db, include_removed=include_removed)
     return {"subjects": [_subject_summary(db, r) for r in rows]}
 
 
@@ -99,23 +111,36 @@ def create_subject(body: CreateSubjectBody, db: Session = Depends(get_db)) -> di
 @router.get("/subjects/{subject_id}")
 def get_one(subject_id: str, db: Session = Depends(get_db)) -> dict:
     row = outline_store.get_subject(db, subject_id)
-    if row is None:
-        raise _err(404, "not_found", f"学科不存在: {subject_id}")
+    if row is None or not row.enabled:
+        raise _err(404, "not_found",
+                   f"学科不存在或已停用: {subject_id}（重新启用请见列表「管理已移除」）")
     return _subject_summary(db, row)
 
 
 @router.delete("/subjects/{subject_id}", status_code=204)
-def delete_one(subject_id: str, db: Session = Depends(get_db)) -> None:
+def delete_one(subject_id: str, db: Session = Depends(get_db),
+               hard: bool = False) -> None:
+    """学科移除（docs/14 §9）：默认停用（enabled=False、隐藏、清进度、文件留盘可恢复）；
+    hard=true 仅 custom 连同文件删除（含大纲/内容/材料目录）。math 仅可停用移除。"""
     try:
-        outline_store.delete_subject(db, subject_id)
+        outline_store.delete_subject(db, subject_id, hard=hard)
     except OutlineError as e:
         raise _err(409, "conflict", str(e)) from e
 
 
+@router.post("/subjects/{subject_id}/enable")
+def enable_subject(subject_id: str, db: Session = Depends(get_db)) -> dict:
+    """重新启用被移除（停用）的学科（大纲/内容文件留盘即恢复）。"""
+    try:
+        row = outline_store.enable_subject(db, subject_id)
+    except OutlineError as e:
+        raise _err(409, "conflict", str(e)) from e
+    return _subject_summary(db, row)
+
+
 @router.get("/subjects/{subject_id}/outline")
 def get_outline(subject_id: str, db: Session = Depends(get_db)) -> dict:
-    if outline_store.get_subject(db, subject_id) is None:
-        raise _err(404, "not_found", f"学科不存在: {subject_id}")
+    _require_enabled(db, subject_id)
     try:
         doc = outline_store.get_outline(subject_id)
     except OutlineError as e:
@@ -190,8 +215,7 @@ class PatchUnitBody(BaseModel):
 @router.patch("/subjects/{subject_id}/outline/units/{unit_id}")
 def patch_unit(subject_id: str, unit_id: str, body: PatchUnitBody,
                db: Session = Depends(get_db)) -> dict:
-    if outline_store.get_subject(db, subject_id) is None:
-        raise _err(404, "not_found", f"学科不存在: {subject_id}")
+    _require_enabled(db, subject_id)
     try:
         doc = outline_store.patch_outline_unit(
             db, subject_id, unit_id, fields=body.fields, known_content_ids=_content_ids()
@@ -209,9 +233,8 @@ def regenerate_outline(subject_id: str, db: Session = Depends(get_db),
     - preset(math)：由 roadmap 派生/再派生（revision+1，概念标签按 unit id 保留）；
     - custom：重新起草候选（source=ai/heuristic，不落盘；用户审阅后 PUT 采纳 revision+1——
       docs/14 §2.1 "丢弃重生成"语义）。"""
+    _require_enabled(db, subject_id)
     row = outline_store.get_subject(db, subject_id)
-    if row is None:
-        raise _err(404, "not_found", f"学科不存在: {subject_id}")
     if row.kind == "preset":
         from ..outline.math_preset import derive_math_outline
 
@@ -232,9 +255,8 @@ class DraftOutlineBody(BaseModel):
 @router.post("/subjects/{subject_id}/outline/draft")
 def draft_outline(subject_id: str, body: DraftOutlineBody, db: Session = Depends(get_db)) -> dict:
     """AI/启发式起草大纲候选（不落盘）→ UI 预览 → PUT 采纳（docs/14 §2.1 · A4）。"""
+    _require_enabled(db, subject_id)
     row = outline_store.get_subject(db, subject_id)
-    if row is None:
-        raise _err(404, "not_found", f"学科不存在: {subject_id}")
     if row.kind == "preset":
         raise _err(409, "conflict", "math preset 大纲由 roadmap 治理（使用 regenerate 派生）")
     from ..outline.draft import draft_outline as _draft
@@ -248,9 +270,7 @@ def generate_unit_content(subject_id: str, unit_id: str, db: Session = Depends(g
 
     math preset 内容由 roadmap 流水线治理 → 本端点仅 custom 学科。
     """
-    row = outline_store.get_subject(db, subject_id)
-    if row is None:
-        raise _err(404, "not_found", f"学科不存在: {subject_id}")
+    _require_enabled(db, subject_id)
     from ..outline.generate import generate_unit_content as _gen
 
     try:
@@ -269,8 +289,7 @@ def get_progress(subject_id: str, db: Session = Depends(get_db)) -> dict:
 
     等效达成 = 单元概念标签集 ⊆ 已掌握概念（重生成大纲后"进度不丢"的判定基础）。
     """
-    if outline_store.get_subject(db, subject_id) is None:
-        raise _err(404, "not_found", f"学科不存在: {subject_id}")
+    _require_enabled(db, subject_id)
     try:
         return concept_svc.unit_states(db, USER, subject_id)
     except OutlineError as e:
@@ -280,8 +299,7 @@ def get_progress(subject_id: str, db: Session = Depends(get_db)) -> dict:
 @router.post("/subjects/{subject_id}/progress/recompute")
 def recompute_progress(subject_id: str, db: Session = Depends(get_db)) -> dict:
     """幂等重算概念掌握证据（= 数学历史掌握迁移入口：user_nodes.mastered → (subject, concept)）。"""
-    if outline_store.get_subject(db, subject_id) is None:
-        raise _err(404, "not_found", f"学科不存在: {subject_id}")
+    _require_enabled(db, subject_id)
     try:
         report = concept_svc.recompute_subject_concepts(db, USER, subject_id)
         db.commit()
@@ -298,8 +316,7 @@ class ResetProgressBody(BaseModel):
 def reset_progress(subject_id: str, body: ResetProgressBody,
                    db: Session = Depends(get_db)) -> dict:
     """显式重置学科进度（docs/14 §2.2/§0.4）：清概念证据 + 学科内容节点掌握降回 available。"""
-    if outline_store.get_subject(db, subject_id) is None:
-        raise _err(404, "not_found", f"学科不存在: {subject_id}")
+    _require_enabled(db, subject_id)
     try:
         report = concept_svc.reset_subject_progress(db, USER, subject_id)
         db.commit()

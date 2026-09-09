@@ -58,7 +58,7 @@ def env(tmp_path, monkeypatch):
         ).delete(synchronize_session=False)
         db.query(models.Node).filter(models.Node.id == nid).delete(synchronize_session=False)
     del _created[:]  # 重置为快照语义：下次测试从零计数
-    for row in _st.list_subjects(db):
+    for row in _st.list_subjects(db, include_removed=True):
         if row.kind != "preset":
             db.delete(row)
     db.commit()
