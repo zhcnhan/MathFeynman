@@ -73,7 +73,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(code, message);
   }
-  const data = (await res.json()) as T;
+  // 204/空响应（如 DELETE）没有 JSON 体 → 直接返回 undefined
+  if (res.status === 204) {
+    console.debug(`[api] ${init?.method ?? "GET"} ${path} -> 204`);
+    return undefined as T;
+  }
+  const raw = await res.text();
+  let data: T;
+  try {
+    data = raw ? (JSON.parse(raw) as T) : (undefined as T);
+  } catch {
+    data = raw as unknown as T; // 非 JSON 文本原样返回（避免二次抛错）
+  }
   console.debug(`[api] ${init?.method ?? "GET"} ${path} -> 200 in ${Math.round(performance.now() - started)}ms`);
   return data;
 }

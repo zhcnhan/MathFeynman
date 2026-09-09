@@ -5,20 +5,21 @@ revision: 1
 status: active
 source: ai
 unit_id_scope: subject
-generated_at: '2026-09-09T09:27:50+00:00'
-updated_at: '2026-09-09T09:27:50+00:00'
+generated_at: '2026-09-09T11:40:58+00:00'
+updated_at: '2026-09-09T11:40:58+00:00'
 note: ''
 units:
 - id: s-f2decfcf.u01
-  title: 太阳系概览与行星分类
+  title: 太阳系概况与行星分类
   objectives:
-  - 描述太阳系的结构和主要天体类型
-  - 区分类地行星、类木行星和矮行星的特征
+  - 描述太阳系的基本结构，包括行星、矮行星、小行星带等主要天体分布
+  - 对比类地行星与类木行星的关键差异
+  - 识别行星科学的主要研究领域与方法
   concept_tags:
   - 太阳系结构
   - 行星分类
-  - 天体类型
-  group: 基础
+  - 行星科学方法
+  group: 基础概念
   prereqs: []
   difficulty: 1
   requires_thinking: false
@@ -27,19 +28,20 @@ units:
   status: draft
   meta: {}
 - id: s-f2decfcf.u02
-  title: 行星轨道与开普勒定律
+  title: 行星轨道动力学与开普勒定律
   objectives:
-  - 解释开普勒三定律及其在行星运动中的应用
-  - 计算轨道参数并预测行星位置
+  - 解释行星轨道的基本参数与开普勒三定律
+  - 计算简单轨道周期与半长轴的关系
+  - 应用牛顿万有引力定律解释轨道摄动
   concept_tags:
-  - 开普勒定律
   - 轨道力学
-  - 轨道参数
-  group: 基础
+  - 开普勒定律
+  - 引力摄动
+  group: 基础概念
   prereqs:
   - s-f2decfcf.u01
   difficulty: 2
-  requires_thinking: false
+  requires_thinking: true
   anchors: []
   topic: ''
   status: draft
@@ -47,13 +49,14 @@ units:
 - id: s-f2decfcf.u03
   title: 行星内部结构与热演化
   objectives:
-  - 描述行星内部圈层结构及其形成机制
-  - 解释放射性衰变和引力收缩对热演化的影响
+  - 描述行星分层结构（壳、幔、核）的形成机制
+  - 解释放射性衰变与引力势能对行星热演化的影响
+  - 比较不同行星的内部热状态与地质活动的关系
   concept_tags:
-  - 行星内部结构
+  - 行星分层
   - 热演化
-  - 放射性衰变
-  group: 基础
+  - 地质活动
+  group: 行星过程
   prereqs:
   - s-f2decfcf.u01
   difficulty: 2
@@ -63,35 +66,35 @@ units:
   status: draft
   meta: {}
 - id: s-f2decfcf.u04
-  title: 行星表面地质过程
+  title: 行星表面过程与撞击坑定年
   objectives:
-  - 识别撞击坑、火山、构造活动等表面特征
-  - 分析内力和外力地质过程对表面改造的作用
+  - 识别主要的外力地质过程（风、水、冰）作用特征
+  - 解释撞击坑的形态特征与尺寸-频率分布
+  - 运用撞击坑计数方法估算行星表面年龄
   concept_tags:
-  - 撞击坑
-  - 火山作用
-  - 构造运动
   - 表面过程
-  group: 基础
+  - 撞击坑
+  - 地质定年
+  group: 行星过程
   prereqs:
   - s-f2decfcf.u03
   difficulty: 2
-  requires_thinking: false
+  requires_thinking: true
   anchors: []
   topic: ''
   status: draft
   meta: {}
 - id: s-f2decfcf.u05
-  title: 行星大气与气候系统
+  title: 行星大气成分与气候系统
   objectives:
-  - 比较不同行星大气的成分和结构
-  - 解释温室效应、大气环流等气候现象
+  - 比较金星、地球、火星的大气组成与温室效应差异
+  - 描述大气环流与气压带的基本模式
+  - 解释气溶胶和云对行星气候的反馈作用
   concept_tags:
   - 大气成分
-  - 大气环流
+  - 气候系统
   - 温室效应
-  - 气候
-  group: 基础
+  group: 大气科学
   prereqs:
   - s-f2decfcf.u01
   difficulty: 2
@@ -101,18 +104,18 @@ units:
   status: draft
   meta: {}
 - id: s-f2decfcf.u06
-  title: 行星磁场与空间环境
+  title: 行星磁层与太阳风相互作用
   objectives:
-  - 解释行星磁场的产生机制
-  - 描述磁场与太阳风的相互作用及其对行星环境的影响
+  - 描述行星磁场的产生机制（发电机理论）
+  - 比较地球、木星、火星的磁层结构差异
+  - 解释太阳风与大气逃逸的关系
   concept_tags:
-  - 磁场
-  - 太阳风
   - 磁层
-  - 空间环境
-  group: 进阶
+  - 太阳风
+  - 发电机理论
+  group: 空间环境
   prereqs:
-  - s-f2decfcf.u03
+  - s-f2decfcf.u02
   - s-f2decfcf.u05
   difficulty: 3
   requires_thinking: true
@@ -121,36 +124,16 @@ units:
   status: draft
   meta: {}
 - id: s-f2decfcf.u07
-  title: 行星形成与演化理论
+  title: 卫星与环系统
   objectives:
-  - 阐述星云假说和行星吸积过程
-  - 分析行星迁移对太阳系演化的影响
+  - 分类行星卫星（规则/不规则）并解释其成因
+  - 描述土星环的结构与动力学机制
+  - 比较典型卫星（如木卫一、土卫六）的地质特征
   concept_tags:
-  - 星云假说
-  - 吸积
-  - 行星迁移
-  - 演化
-  group: 进阶
-  prereqs:
-  - s-f2decfcf.u02
-  - s-f2decfcf.u03
-  difficulty: 3
-  requires_thinking: true
-  anchors: []
-  topic: ''
-  status: draft
-  meta: {}
-- id: s-f2decfcf.u08
-  title: 系外行星探测与特征
-  objectives:
-  - 掌握凌星法和视向速度法探测系外行星的原理
-  - 比较系外行星与太阳系行星的多样性
-  concept_tags:
-  - 系外行星
-  - 凌星法
-  - 视向速度
-  - 宜居带
-  group: 进阶
+  - 卫星分类
+  - 行星环
+  - 潮汐作用
+  group: 行星系统
   prereqs:
   - s-f2decfcf.u01
   - s-f2decfcf.u02
@@ -160,20 +143,39 @@ units:
   topic: ''
   status: draft
   meta: {}
-- id: s-f2decfcf.u09
-  title: 天体生物学与宜居性
+- id: s-f2decfcf.u08
+  title: 小行星、彗星与早期太阳系
   objectives:
-  - 定义宜居带并评估行星宜居性因素
-  - 讨论生命存在的潜在环境和生物标志
+  - 区分小行星与彗星的物理性质与轨道特征
+  - 解释小行星带和柯伊伯带的形成与演化
+  - 利用陨石和彗星样品推断太阳系早期物质组成
   concept_tags:
-  - 宜居带
-  - 天体生物学
-  - 生物标志
-  - 生命起源
-  group: 进阶
+  - 小行星
+  - 彗星
+  - 太阳系起源
+  group: 太阳系起源
   prereqs:
+  - s-f2decfcf.u01
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}
+- id: s-f2decfcf.u09
+  title: 系外行星探测与宜居性
+  objectives:
+  - 描述主要系外行星探测方法（凌星、径向速度等）
+  - 解释系外行星分类与热木星等特殊类型
+  - 评估行星宜居性的关键因素（液态水、磁场等）
+  concept_tags:
+  - 系外行星
+  - 探测方法
+  - 宜居带
+  group: 前沿交叉
+  prereqs:
+  - s-f2decfcf.u01
   - s-f2decfcf.u05
-  - s-f2decfcf.u08
   difficulty: 3
   requires_thinking: true
   anchors: []
@@ -181,20 +183,20 @@ units:
   status: draft
   meta: {}
 - id: s-f2decfcf.u10
-  title: 行星科学前沿研究方法
+  title: 行星探测任务与未来展望
   objectives:
-  - 概述遥感、质谱、光谱等探测技术
-  - 设计简单的研究方案并分析数据
+  - 总结历史上重要行星探测任务及其科学贡献
+  - 分析当前探测任务（如火星样本返回）的技术挑战
+  - 讨论行星科学未来发展方向（如冰卫星探测）
   concept_tags:
-  - 遥感技术
-  - 光谱分析
-  - 质谱
-  - 探测任务
-  group: 高级
+  - 空间探测
+  - 任务设计
+  - 行星科学前沿
+  group: 前沿交叉
   prereqs:
-  - s-f2decfcf.u04
-  - s-f2decfcf.u06
   - s-f2decfcf.u07
+  - s-f2decfcf.u08
+  - s-f2decfcf.u09
   difficulty: 3
   requires_thinking: true
   anchors: []

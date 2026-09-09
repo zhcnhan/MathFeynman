@@ -373,8 +373,15 @@ function FeynmanView({ payload, submitting, text, setText, onSubmit, onAnswerFol
   return (
     <div className="card feynman">
       <h1>费曼口述环节</h1>
-      {!card && payload?.task_prompt && <MdMath text={`**任务**：${payload.task_prompt}`} />}
+      {payload?.task_prompt && (
+        <div className="task-pinned">
+          <MdMath text={`**本环节任务（一直有效）**：${payload.task_prompt}`} />
+        </div>
+      )}
       {payload?.verdict === "deferred" && <div className="banner warn">{payload.message ?? "评分暂不可用，已记录待人工复核。"}</div>}
+      {isFollowup && (
+        <div className="banner info">💡 你的补充回答会与最初的讲解合并后一起重新评分——请针对追问修正/补全你最初没讲清的地方，而不是另起炉灶。</div>
+      )}
 
       {card ? (
         <div className="score-card">

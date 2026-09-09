@@ -473,6 +473,15 @@ class SessionService:
         if f["rounds_done"] >= MAX_FEYNMAN_ROUNDS:
             raise SessionError("费曼轮次已达上限，请重新学习后再来", code="invalid_state")
 
+        # R25（费曼追问语义）：非首轮提交 = 对"追问"的补充回答 → 评估对象必须是
+        # "最初讲解 + 追问 + 本次补充"的合并稿（否则追问形同摆设、评分永远只盯最初文字）。
+        eval_text = text
+        if f["rounds_done"] > 0 and f.get("last_transcript") and f.get("followup"):
+            eval_text = (
+                f"{f['last_transcript']}\n\n【AI 追问】{f['followup']}\n【我的补充回答】{text}"
+            )
+            f["followup"] = None  # 已并入本轮，避免下轮重复引用
+
         dims = [d.model_dump() for d in node.feynman.rubric.dimensions]
         ctx = FeynmanEvaluateIn(
             session_id=sess.id,
@@ -480,7 +489,7 @@ class SessionService:
             task_prompt=node.feynman.task_prompt,
             rubric_dimensions=dims,
             core_concepts=list(node.core_concepts),
-            transcript=text,
+            transcript=eval_text,
             previous_round=(
                 {
                     "round": f["rounds_done"],
@@ -514,14 +523,14 @@ class SessionService:
             return self._response(db, sess, events=events, extra_payload={"verdict": "deferred", "strategy": decision.strategy})
 
         f["rounds_done"] += 1
-        f["last_transcript"] = text
+        f["last_transcript"] = eval_text
         combined, card = self._combine_scores(node, out.dimension_scores)
         f["last_combined"] = combined
         f["last_scores"].append(card)
         threshold = node.feynman.rubric.pass_threshold
         passed = combined >= threshold
         self._record_feynman_attempt(
-            db, sess, node, text,
+            db, sess, node, eval_text,
             "pass" if passed else "fail",
             round(combined, 3),
             meta={
@@ -551,7 +560,7 @@ class SessionService:
         q_ctx = FeynmanFollowupIn(
             session_id=sess.id,
             node_id=node.id,
-            student_transcript=text,
+            student_transcript=eval_text,
             previous_scores=(f["last_scores"][-1] if f["last_scores"] else []),  # R10：传最近一轮分维卡，非历史列表
             socratic_followups=list(node.feynman.socratic_followups),
         )
