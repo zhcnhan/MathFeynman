@@ -38,17 +38,16 @@
   提交信息标注阶段，便于回滚与 diff。
 
 ## 3. 当前活动工单（新实例的第一个任务）
-> 历史批次（R13 补记 A–D、蓝图修订 A/B/C、总纲 P1–P4、R15 精核补丁、A/B/C/D 引擎段、R18 蓝图
-> 总序权威化）均已完成并 git 提交（基线 **pytest 200+1**、audit 5 学段全绿、content 24/47 上下）；
-> 详见 IMPLEMENTATION_NOTES §9–§25、docs/09 R7–R18。**当前任务是 docs/14 Phase A**：
+> 历史批次（…R18、docs/14 Phase A A1–A4）已完成并 git 提交（基线 **pytest 245+1**、audit 5
+> 学段全绿、content 24/47、subject=math 总 Outline 258 单元已建、通用学科闭环 E2E 已锁）；
+> 详见 IMPLEMENTATION_NOTES §9–§30、docs/09 R7–R19。
 
-1. 读 `docs/14-omnibus-coach.md` 全文（§5 数学迁移、§6 验收口径、§7 待细化），按
-   **Phase A 通用框架**执行：subject/outline 数据模型 + 大纲 AI 生成与审阅 UI + 概念层与
-   进度映射（重生成不丢进度、显式重置）+ **数学迁移为 subject=math preset 并建立数学总
-   Outline + 治理已知问题**（回归不降 200+1）。范围与红线以 docs/14 与架构侧派工单为准。
-2. Phase B/C（docs/14 §4）不在本工单，逐 Phase 派发。
-3. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"，不擅改 docs/14 骨架；涉及既有
-   docs/02/03/06/07 的语义变更在实现时顺带同步。
+1. **docs/14 Phase A 已验收（R19）**，当前状态：**待真人浏览器验收**（/subjects：math 预置大纲、
+   自建学科 起草→采纳→懒生成→进度/重置；配 LLM_API_KEY 后验证真模型起草与单元内容出稿）。
+2. 后续派发视用户验收与需求：Phase B（docs/14 §4：评估扩展/题目块/学科化出稿与 rubric；
+   含 R19 backlog 项）。
+3. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"；涉及 docs/02/03/05/06/07/14 的语义
+   变更在实现时顺带同步。
 
 ## 4. 环境速查（新人必读）
 - 服务：`powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`（前端 5173 / 后端 8000）；
@@ -56,7 +55,6 @@
 - 测试内容根已隔离（conftest 会话级临时副本）；真模型冒烟需 `MF_ALLOW_LIVE_AI=1`。
 - `.env`（仓库根，git 忽略）：LLM_API_KEY 等；`MF_AUTO_EXTEND=1` 控制全自动续关；
   `LLM_MAX_TOKENS_PER_DAY=0` 不限额。
-- 当前基线（最近核实）：pytest **200 passed + 1 skipped**；audit 5 学段全绿
-  （primary 27/middle 31/high 81/college 59/ai 60）；content validate 视本地 auto 内容量
-  （人工锚点 13 + 用户运行期 auto；git 仓库不含 data/ 与 _drafts）。当前活动工单见 §3
-  （docs/14 Phase A）。
+- 当前基线（最近核实）：pytest **245 passed + 1 skipped**；audit 5 学段全绿
+  （27/31/81/59/60）；content validate 视本地 auto 内容量（人工锚点 13 + 运行期 auto）；
+  git 仓库不含 data/、_drafts、resume/。当前工单见 §3（Phase A 已验收 → 真人验收/Phase B 待派）。

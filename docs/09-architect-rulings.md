@@ -325,6 +325,37 @@ primary/middle 架构侧直接精核；college 衔接假设已用 high 实际条
 
 **文档同步**：本裁决；实现按此规格，细化后回填 docs/03/05/06/07 相关小节。
 
+## R19 · docs/14 Phase A 验收裁决（通用教练框架 A1–A4 · 2026-09-09）
+
+架构侧复跑：pytest=245+1（72s exit 0）、audit 5 学段全绿、content 24/47、git 链与汇报吻合、
+产物齐全（outline/{schemas,store,concepts,math_preset,generate,draft}、api/subjects、
+service/outline_gate、content/subjects/math/outline.yaml 258 单元）。**批准全部完成**；
+疑点逐条裁决如下：
+
+- A1：objectives 上限=5（schema）且 AI 起草 ≤3 → ✅；重生成历史仅 git（不落盘归档）→ ✅ MVP；
+  大纲文件=content/subjects + subjects 表为真源 → ✅ 双载语义；delete custom 学科进度级联 →
+  Phase B backlog（删除前先 reset 语义）。
+- A2：概念精确归一 MVP → ✅（aliases/同义合并入 docs/14 §7#3 治理）；core_concepts 兜底 → ✅；
+  显式重置不清 attempt/session 审计 → ✅ 默认口径（如需连清另裁）；boss 概念经 core_concepts 进
+  概念层（证据重复集语义无害）→ ✅ 保留。
+- A3：大纲**单元 status 为转正单一真源**（primary=reviewed、其余=draft）；roadmap 文件头历史注释
+  不动（源文档状态），精核转正时同步 status → ✅；v1 标签渐进覆盖（懒生成常态）→ ✅；
+  level 语义抽离仅"非 LEVELS=fast 基础"锁定，NodeDoc 放宽待 Phase B → ✅ 现范围；
+  boss 不入 outline（首领=关卡层概念，通用学科"里程碑"语义 Phase B 定义）→ ✅。
+- A4：通用内容出稿=确定性 stub、真模型学科化（讲解/rubric 模板/语义题块）属 Phase B → ✅；
+  通用学科主题熔断/token 限额接线 → Phase B 待办；outline_gate 无缓存可接受 → ✅；
+  通用内容 prereqs=[]（顺序权威=大纲门禁）、UI 依大纲展示依赖 → ✅（UI 细化 Phase B）；
+  E2E 以服务层达成替代浏览器费曼 → ✅（真人验收项在 /subjects 实测，配 LLM_API_KEY）。
+- 附加治理（已测试锁定）✅：s27 红线段（s04<s27<s06）、0 掌握起点链=primary.s01、
+  结构重组进度不丢、math 总序门禁（R18）未被 A4 分流破坏。
+
+**给 Euler 的 Phase B backlog（不阻塞，先立档）**：通用学科熔断/token 限额接线；学科化
+讲解出稿与 rubric 模板、语义问答题目块；delete_subject 进度级联（reset 后删）；outline 门禁
+缓存（多学科大量节点时）；通用"里程碑/首领"单元语义；roadmap 文件头注释与大纲 status 统一
+（精核批随转正做）。
+
+**文档同步**：本裁决；docs/13 §3 当前工单已更新（Phase A ✅，待真人验收与 Phase B 派发）。
+
 ---
 
 - 架构侧独立验证（2026-09-08）：11 个内容节点真实存在；Euler 复审回归 136 passed/1 skipped
