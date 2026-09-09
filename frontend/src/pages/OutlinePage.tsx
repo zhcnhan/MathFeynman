@@ -91,12 +91,20 @@ export default function OutlinePage() {
       const path = regen
         ? `/subjects/${id}/outline/regenerate`
         : `/subjects/${id}/outline/draft`;
-      const c = await api.post<{ units: Unit[]; source: string; problems: string[]; ok: boolean }>(
+      const c = await api.post<Record<string, any>>(
         path,
         regen ? undefined : { brief: draftBrief, count: draftCount, group_hint: "" }
       );
-      setCandidate(c);
-      if (!c.ok) setErr("起草候选存在问题：" + c.problems.slice(0, 3).join("；"));
+      if (c && typeof c.ok === "boolean") {
+        // 候选（custom 起草/重起草）：预览后采纳
+        setCandidate(c as any);
+        if (!c.ok) setErr("起草候选存在问题：" + (c.problems || []).slice(0, 3).join("；"));
+      } else {
+        // math preset regenerate = 已直接派生落盘（非候选）→ 刷新展示
+        setCandidate(null);
+        await load();
+        setMsg("大纲已重新生成并落盘（revision 递增）");
+      }
     } catch (e) {
       setErr(String(e));
     } finally {
