@@ -163,6 +163,28 @@ def _slugify(label: str) -> str:
     return s[:32]
 
 
+def _subject_content_node_ids(db: Session, subject_id: str, unit_ids: set[str]) -> set[str]:
+    """该学科全部内容节点 id（进度清理基准）：大纲单元/锚点 ∪ DB 中归属本学科的内容节点。
+
+    - custom：节点 id 前缀 = <subject>.（含锚点/懒生成 auto）；
+    - math（preset）：大纲单元（primary.s05…）与**内容节点**（锚点 primary.0101、
+      boss、auto）id 前缀均为学段名——必须全量纳入，否则"停用=清进度"对预置学科
+      不成立（docs/14 §9 / R22"移除=清进度/大纲留盘可恢复"；C3 语义强化）。
+    """
+    import sqlalchemy as sa
+
+    from ..domain.graph import LEVELS
+
+    ids = set(unit_ids)
+    q = db.query(models.Node.id).filter(models.Node.enabled.is_(True))
+    if subject_id == "math":
+        q = q.filter(sa.or_(*(models.Node.id.like(f"{lv}.%") for lv in LEVELS)))
+    else:
+        q = q.filter(models.Node.id.like(f"{subject_id}.%"))
+    ids.update(r[0] for r in q.all())
+    return ids
+
+
 def delete_subject(db: Session, subject_id: str, *, hard: bool = False) -> models.Subject:
     """学科移除（docs/14 §9"移除可恢复"，B4）。
 
@@ -205,12 +227,13 @@ def delete_subject(db: Session, subject_id: str, *, hard: bool = False) -> model
             sync_content(db)  # Node 行转 disabled
 
     # 进度/概念证据清理（soft 与 hard 都做；概念注册表 soft 保留可恢复，hard 清除）
-    if unit_ids:
+    node_ids = _subject_content_node_ids(db, subject_id, unit_ids)
+    if node_ids:
         db.query(models.UserNode).filter(
-            models.UserNode.node_id.in_(unit_ids),
+            models.UserNode.node_id.in_(node_ids),
         ).delete(synchronize_session=False)
         db.query(models.Review).filter(
-            models.Review.node_id.in_(unit_ids),
+            models.Review.node_id.in_(node_ids),
         ).delete(synchronize_session=False)
     db.query(models.UserConcept).filter(
         models.UserConcept.subject_id == subject_id

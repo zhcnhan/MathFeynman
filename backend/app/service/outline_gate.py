@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Any
+from typing import Any, Iterable
 
 from sqlalchemy.orm import Session
 
@@ -101,6 +101,40 @@ def subject_of_node(db: Session, node_id: str) -> str | None:
     if head in _subject_ids(db, include_removed=True):
         return head
     return None
+
+
+def disabled_subject_ids(db: Session) -> set[str]:
+    """已停用学科 id 集（含 math——其内容以学段前缀标识，C3）。"""
+    return {r[0] for r in db.query(models.Subject.id).filter(models.Subject.enabled.is_(False)).all()}
+
+
+def is_node_subject_disabled(db: Session, node_id: str) -> bool:
+    """节点所属学科是否停用（停用 → 视觉层/引擎一致隐藏；docs/14 §9 · C3）。"""
+    head, sep, _ = node_id.partition(".")
+    if not sep or not head:
+        return False
+    if head in _MATH_PREFIXES:
+        return "math" in disabled_subject_ids(db)
+    return head in disabled_subject_ids(db)
+
+
+def visible_node_ids(db: Session, node_ids: Iterable[str]) -> list[str]:
+    """按 subject.enabled 过滤内容节点（停用学科节点在仪表盘/图谱/推荐/复习一律隐藏）。"""
+    disabled = disabled_subject_ids(db)
+    if not disabled:
+        return list(node_ids)
+    out: list[str] = []
+    for nid in node_ids:
+        head, sep, _ = nid.partition(".")
+        if not sep:  # 无学科前缀的孤立 id → 可视（不归属任何已停用学科）
+            out.append(nid)
+            continue
+        if head in _MATH_PREFIXES:
+            if "math" not in disabled:
+                out.append(nid)
+        elif head not in disabled:
+            out.append(nid)
+    return out
 
 
 def is_subject_disabled(db: Session, subject_id: str) -> bool:
@@ -236,4 +270,7 @@ __all__ = [
     "_cached_outline",
     "subject_of_node",
     "is_subject_disabled",
+    "disabled_subject_ids",
+    "is_node_subject_disabled",
+    "visible_node_ids",
 ]

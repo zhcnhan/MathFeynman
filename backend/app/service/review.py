@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..domain import fsrs as fsrs_domain
 from ..domain.fsrs import FsrsScheduler, ReviewState, RATING_GOOD, should_relearn
+from ..domain.graph import LEVELS
 from .progress import demote_to_learning
 
 STACK_DAYS = 3  # 逾期超 3 天未复习 → 堆积警示（docs/03 §3）
@@ -45,7 +46,14 @@ def due_queue(
     *,
     now: dt.datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """到期复习列表（含堆积警示）。"""
+    """到期复习列表（含堆积警示）。
+
+    C3（docs/14 §9）：已停用学科节点的到期项不展示（移除时进度已被清，此处为
+    视觉层一致性兜底——与图谱/仪表盘口径一致）。
+    """
+    from . import outline_gate as og
+
+    disabled_ids = og.disabled_subject_ids(db)
     now = _naive(now or dt.datetime.now(dt.timezone.utc))
     rows = (
         db.query(models.Review)
@@ -59,6 +67,11 @@ def due_queue(
     )
     out: list[dict[str, Any]] = []
     for r in rows:
+        if disabled_ids:
+            head, sep, _ = r.node_id.partition(".")
+            disabled_math = "math" in disabled_ids and head in LEVELS
+            if not sep or disabled_math or head in disabled_ids:
+                continue
         node = db.get(models.Node, r.node_id)
         due_at = _naive(r.due_at)
         stacked = bool(due_at and due_at + dt.timedelta(days=STACK_DAYS) < now)

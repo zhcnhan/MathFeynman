@@ -23,28 +23,28 @@ interface SubjectItem {
   outline: OutlineSummary | null;
 }
 
+// C3（docs/14 §9 / R23 B4）：学科列表 = 学科管理入口——"启用"与"已移除（可恢复）"分组；
+// 移除/恢复、来源策略与材料管理（大纲页）收敛到同一管理语义（math 不提供"连同文件删除"）。
 export default function SubjectsPage() {
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
   const [label, setLabel] = useState("");
   const [desc, setDesc] = useState("");
   const [subjectId, setSubjectId] = useState("");
-  const [showRemoved, setShowRemoved] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = async (incl: boolean) => {
+  const load = async () => {
     try {
-      const q = incl ? "?include_removed=1" : "";
-      const r = await api.get<{ subjects: SubjectItem[] }>(`/subjects${q}`);
+      const r = await api.get<{ subjects: SubjectItem[] }>("/subjects?include_removed=1");
       setSubjects(r.subjects);
     } catch (e) {
       setErr(String(e));
     }
   };
   useEffect(() => {
-    void load(showRemoved);
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showRemoved]);
+  }, []);
 
   const create = async () => {
     setErr("");
@@ -58,7 +58,7 @@ export default function SubjectsPage() {
       setLabel("");
       setDesc("");
       setSubjectId("");
-      await load(showRemoved);
+      await load();
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -71,7 +71,7 @@ export default function SubjectsPage() {
     setBusy(true);
     try {
       await fn();
-      await load(showRemoved);
+      await load();
       setErr(okMsg); // 复用横幅显示成功提示
     } catch (e) {
       setErr(String(e));
@@ -80,63 +80,93 @@ export default function SubjectsPage() {
     }
   };
 
+  const enabledList = subjects.filter((s) => s.enabled);
+  const removedList = subjects.filter((s) => !s.enabled);
+
+  const SubjectCard = ({ s }: { s: SubjectItem }) => (
+    <div className="card" style={{ opacity: s.enabled ? 1 : 0.72 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Link to={`/subjects/${s.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+          <strong>{s.label}</strong>
+        </Link>
+        <span className={`badge ${!s.enabled ? "deferred" : s.kind === "preset" ? "" : "pass"}`}>
+          {!s.enabled ? "已停用" : s.kind === "preset" ? "预置" : "自建"}
+        </span>
+      </div>
+      <div className="dim">{s.id} · 来源策略 {s.source_policy ?? "ai"}</div>
+      {s.description && <div className="dim">{s.description}</div>}
+      <div className="dim" style={{ marginTop: 6 }}>
+        {s.outline
+          ? `大纲 v${s.outline.revision}（${s.outline.status}/${s.outline.source}）· ${s.outline.units} 单元`
+          : "尚无大纲"}
+      </div>
+      <div className="input-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 6 }}>
+        {s.enabled ? (
+          <>
+            <Link className="button-link" to={`/subjects/${s.id}`}>大纲管理 →</Link>
+            <button className="ghost" disabled={busy}
+                    onClick={() => {
+                      if (window.confirm(`移除学科「${s.label}」？（停用隐藏、清进度；大纲/内容文件留盘可随时重新启用）`)) {
+                        void act(() => api.del(`/subjects/${s.id}`), "✅ 已移除（见下方「已移除」分组，可重新启用）");
+                      }
+                    }}>
+              移除（停用）
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="primary" disabled={busy}
+                    onClick={() => void act(() => api.post(`/subjects/${s.id}/enable`), "✅ 已重新启用（内容/大纲已恢复）")}>
+              重新启用
+            </button>
+            <span className="dim" style={{ fontSize: 12 }}>
+              {s.removed_at ? `移除于 ${String(s.removed_at).slice(0, 10)}` : "已停用"}
+            </span>
+          </>
+        )}
+        {s.kind !== "preset" && (
+          <button className="ghost" disabled={busy}
+                  onClick={() => {
+                    if (window.confirm(`彻底删除「${s.label}」连同全部内容/材料文件？（不可恢复）`)) {
+                      void act(() => api.del(`/subjects/${s.id}?hard=true`), "✅ 已彻底删除");
+                    }
+                  }}>
+            连同文件删除
+          </button>
+        )}
+      </div>
+      {s.kind === "preset" && (
+        <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
+          预置学科（数学）仅可停用/重新启用；内容文件与 roadmap 受治理，不提供"连同文件删除"。
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div>
-      <h1>学科（Subjects）</h1>
+      <h1>学科（Subjects · 管理）</h1>
       {err && <div className={`banner ${err.startsWith("✅") ? "ok" : "error"}`}>{err}</div>}
-      <label className="dim" style={{ marginBottom: 8, display: "inline-flex", gap: 6, alignItems: "center" }}>
-        <input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} />
-        显示已移除（可重新启用）
-      </label>
-      <div className="grid" style={{ marginTop: 8 }}>
-        {subjects.map((s) => (
-          <div key={s.id} className="card" style={{ opacity: s.enabled ? 1 : 0.72 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Link to={`/subjects/${s.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-                <strong>{s.label}</strong>
-              </Link>
-              <span className={`badge ${!s.enabled ? "deferred" : s.kind === "preset" ? "" : "pass"}`}>
-                {!s.enabled ? "已停用" : s.kind === "preset" ? "预置" : "自建"}
-              </span>
-            </div>
-            <div className="dim">{s.id} · 来源策略 {s.source_policy ?? "ai"}</div>
-            {s.description && <div className="dim">{s.description}</div>}
-            <div className="dim" style={{ marginTop: 6 }}>
-              {s.outline
-                ? `大纲 v${s.outline.revision}（${s.outline.status}/${s.outline.source}）· ${s.outline.units} 单元`
-                : "尚无大纲"}
-            </div>
-            <div className="input-row" style={{ marginTop: 8 }}>
-              {!s.enabled ? (
-                <button className="primary" disabled={busy}
-                        onClick={() => void act(() => api.post(`/subjects/${s.id}/enable`), "✅ 已重新启用")}>
-                  重新启用
-                </button>
-              ) : (
-                <button className="ghost" disabled={busy}
-                        onClick={() => {
-                          if (window.confirm(`移除学科「${s.label}」？（停用隐藏、进度清空；文件留盘可随时重新启用）`)) {
-                            void act(() => api.del(`/subjects/${s.id}`), "✅ 已移除（可重新启用）");
-                          }
-                        }}>
-                  移除
-                </button>
-              )}
-              {s.enabled && s.kind !== "preset" && (
-                <button className="ghost" disabled={busy}
-                        onClick={() => {
-                          if (window.confirm(`彻底删除「${s.label}」连同内容文件？（不可恢复）`)) {
-                            void act(() => api.del(`/subjects/${s.id}?hard=true`), "✅ 已彻底删除");
-                          }
-                        }}>
-                  连同文件删除
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
+
+      <h2>启用中</h2>
+      <div className="grid" style={{ marginTop: 4 }}>
+        {enabledList.length === 0 ? (
+          <p className="empty">暂无启用中的学科。可新建自定义学科，或在下方「已移除」中重新启用。</p>
+        ) : (
+          enabledList.map((s) => <SubjectCard key={s.id} s={s} />)
+        )}
       </div>
-      <div className="card">
+
+      <h2 style={{ marginTop: 16 }}>已移除（大纲/内容文件留盘 · 可重新启用）</h2>
+      <div className="grid" style={{ marginTop: 4 }}>
+        {removedList.length === 0 ? (
+          <p className="empty">无已移除学科。</p>
+        ) : (
+          removedList.map((s) => <SubjectCard key={s.id} s={s} />)
+        )}
+      </div>
+
+      <div className="card" style={{ marginTop: 12 }}>
         <h2>新建学科（自定义 · docs/14 通用教练）</h2>
         <div className="input-row" style={{ margin: "6px 0" }}>
           <input placeholder="学科名称（必填）" value={label}

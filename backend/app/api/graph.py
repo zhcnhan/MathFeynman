@@ -15,9 +15,17 @@ USER = "local"
 
 @router.get("/graph")
 def get_graph_api(db: Session = Depends(get_db)) -> dict:
-    """全图（节点+边+用户状态），前端渲染图谱。"""
+    """全图（节点+边+用户状态），前端渲染图谱。
+
+    C3（docs/14 §9/R23 B4#2）：停用学科内容节点按 subject.enabled 过滤隐藏
+    （引擎 409 之外的视觉层一致化——图谱不再展示已停用学科内容）。
+    """
+    from ..service import outline_gate as og
+
     graph = get_graph()
     states = progress.state_map(db, USER, graph)
+    visible = og.visible_node_ids(db, graph.node_ids)
+    visible_set = set(visible)
     return {
         "nodes": [
             {
@@ -28,11 +36,14 @@ def get_graph_api(db: Session = Depends(get_db)) -> dict:
                 "state": states.get(nid, "locked"),
             }
             for nid in graph.node_ids
+            if nid in visible_set
         ],
         "edges": [
             {"node": node_id, "prereq": prereq}
             for node_id in graph.node_ids
+            if node_id in visible_set
             for prereq in graph.prereqs_of(node_id)
+            if prereq in visible_set
         ],
     }
 

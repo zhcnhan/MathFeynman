@@ -17,10 +17,14 @@ router = APIRouter(tags=["dashboard"])
 USER = "local"
 
 
-def _total_order_recommend(states: dict[str, str], graph) -> str | None:
-    """R18：推荐 = 总序允许集（state==available）内 学段 → 图谱层序 → 编号 最小者。"""
+def _total_order_recommend(states: dict[str, str], graph, visible: list[str]) -> str | None:
+    """R18：推荐 = 总序允许集（state==available）内 学段 → 图谱层序 → 编号 最小者。
+
+    C3：仅在**启用学科**的可见节点内推荐（停用学科内容在仪表盘隐藏）。
+    """
     level_index = {lv: i for i, lv in enumerate(LEVELS)}
-    avail = [n for n, s in states.items() if s == AVAILABLE]
+    visible_set = set(visible)
+    avail = [n for n, s in states.items() if s == AVAILABLE and n in visible_set]
     if not avail:
         return None
     return min(
@@ -37,6 +41,8 @@ def _total_order_recommend(states: dict[str, str], graph) -> str | None:
 def get_dashboard(db: Session = Depends(get_db)) -> dict:
     import os
 
+    from ..service import outline_gate as og
+
     ensure_user(db, USER)
     # 内容自续自动触发（docs/10 §2.3）：显式开启 MF_AUTO_EXTEND=1 时才在后台检查
     if os.getenv("MF_AUTO_EXTEND") == "1":
@@ -45,12 +51,15 @@ def get_dashboard(db: Session = Depends(get_db)) -> dict:
         se.run_auto(db, USER)
     graph = get_graph()
     states = progress.state_map(db, USER, graph)
-    mastered = {n for n, s in states.items() if s in (MASTERED, "reviewing")}
-    learning = {n for n, s in states.items() if s == LEARNING}
+    visible = og.visible_node_ids(db, graph.node_ids)  # C3：停用学科节点视觉隐藏
+    visible_set = set(visible)
+    mastered = {n for n, s in states.items() if s in (MASTERED, "reviewing") and n in visible_set}
+    learning = {n for n, s in states.items() if s == LEARNING and n in visible_set}
 
-    cnt = progress.counts(db, USER, graph)
     due = review_svc.due_queue(db, USER)
-    recommended = _total_order_recommend(states, graph)  # R18：总序允许集内推荐
+    # C3：复习/统计同样剔除停用学科（推荐只在可见节点内取）
+    due = [d for d in due if d["node_id"] in visible_set]
+    recommended = _total_order_recommend(states, graph, visible)
     rec_node = graph.get(recommended) if recommended else None
     today = dt.date.today().isoformat()
     today_done = (
@@ -60,6 +69,10 @@ def get_dashboard(db: Session = Depends(get_db)) -> dict:
         .scalar()
         or 0
     )
+    stat_keys = {MASTERED, LEARNING, AVAILABLE, LOCKED}
+    # 计数按可见节点集收敛（全图 state_map 含停用学科锁定节点，须剔除）
+    stats = {k: sum(1 for n in visible if states.get(n) == k) for k in stat_keys}
+    stats["reviewing"] = sum(1 for n in visible if states.get(n) == "reviewing")
     # 断点清单（捡拾=诊断，MVP 不做全流程，docs/08 §1）→ 空
     return {
         "recommended_node": (
@@ -77,10 +90,10 @@ def get_dashboard(db: Session = Depends(get_db)) -> dict:
         "due_reviews": due,
         "breakpoints": [],
         "stats": {
-            "mastered": cnt.get(MASTERED, 0) + cnt.get("reviewing", 0),
-            "learning": cnt.get(LEARNING, 0),
-            "available": cnt.get(AVAILABLE, 0),
-            "locked": cnt.get(LOCKED, 0),
+            "mastered": stats.get(MASTERED, 0) + stats.get("reviewing", 0),
+            "learning": stats.get(LEARNING, 0),
+            "available": stats.get(AVAILABLE, 0),
+            "locked": stats.get(LOCKED, 0),
             "consecutive_days": progress.consecutive_days(db, USER),
             "today_done": today_done,
         },

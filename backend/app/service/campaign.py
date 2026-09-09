@@ -63,9 +63,24 @@ def _stage_defined(level: str) -> bool:
 
 
 def snapshot(db: Session, user_id: str = "local", *, now: dt.datetime | None = None) -> dict[str, Any]:
+    from . import outline_gate as og
+
     graph = get_library().graph
     states = progress_svc.state_map(db, user_id, graph, now=now)
     by_level = _groups_by_level()
+
+    # C3（docs/14 §9/R23 B4#2）：关卡地图按 subject.enabled 过滤——停用学科（含 math）
+    # 的内容节点整体从地图隐藏（引擎 409 之外的视觉层；与图谱/仪表盘口径一致）。
+    visible = set(og.visible_node_ids(db, graph.node_ids))
+    for level in [lv for lv, groups in by_level.items() if groups]:
+        kept: list[Group] = []
+        for g in by_level[level]:
+            g.nodes = [n for n in g.nodes if n.id in visible]
+            if g.nodes:
+                kept.append(g)
+        by_level[level] = kept
+    for lv in [lv for lv, groups in by_level.items() if not groups]:
+        by_level.pop(lv, None)
 
     # 学段解锁：本学段所有已定义组完成（或本学段无内容组）
     stage_unlocked: dict[str, bool] = {}
@@ -77,8 +92,11 @@ def snapshot(db: Session, user_id: str = "local", *, now: dt.datetime | None = N
     next_group_ref: dict | None = None
     next_generating = False
     all_defined_completed = True
+    any_defined = False
     for level in LEVELS:
         groups = by_level.get(level, [])
+        if groups:
+            any_defined = True
         for g in groups:
             for n in g.nodes:
                 if states.get(n.id, "locked") not in MASTERED_OR_REVIEWING:
@@ -118,8 +136,8 @@ def snapshot(db: Session, user_id: str = "local", *, now: dt.datetime | None = N
                 next_group_ref = {"level": level, "topic": g.topic, "key": f"{level}:{g.topic}"}
         level_views.append({"level": level, "unlocked": stage_unlocked[level], "groups": view_groups})
 
-    # 全部已定义组完成 & 后续无内容 → 自续提示
-    if all_defined_completed:
+    # 全部已定义组完成 & 后续无内容 → 自续提示（无任何可见内容时不算"全部通关"）
+    if any_defined and all_defined_completed:
         next_generating = True
     return {
         "levels": level_views,

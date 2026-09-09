@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [campaign, setCampaign] = useState<CampaignData | null>(null);
   const [sx, setSx] = useState<SelfExtendStatus | null>(null);
+  const [mathEnabled, setMathEnabled] = useState<boolean | null>(null);
   const [sxBusy, setSxBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -32,11 +33,14 @@ export default function Dashboard() {
       api.get<DashboardData>("/dashboard"),
       api.get<CampaignData>("/campaign"),
       api.get<SelfExtendStatus>("/selfextend/status"),
+      api.get<{ subjects: { id: string; enabled: boolean }[] }>("/subjects"),
     ])
-      .then(([d, c, s]) => {
+      .then(([d, c, s, subs]) => {
         setDash(d);
         setCampaign(c);
         setSx(s);
+        const math = subs.subjects.find((x) => x.id === "math");
+        setMathEnabled(math ? math.enabled : true);
       })
       .catch((e) => setError((e as Error).message));
   }, []);
@@ -80,6 +84,12 @@ export default function Dashboard() {
   return (
     <div className="dashboard">
       <h1>仪表盘</h1>
+      {mathEnabled === false && (
+        <div className="banner warn">
+          数学（预置学科）已停用：数学学习内容与关卡地图已按停用隐藏（引擎同步拒绝越级学习）。
+          请前往「学科列表 → 已移除」重新启用数学以继续；其它学科不受影响。
+        </div>
+      )}
       <div className="stats-bar">
         <Stat n={s.mastered} label="已掌握" />
         <Stat n={s.available} label="可学" />

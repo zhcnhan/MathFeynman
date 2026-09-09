@@ -1592,3 +1592,47 @@ content validate 26/49 全绿；audit 5 学段不变；npm run build（tsc+vite�
 3. kind 取 pdf（材料表元数据），与"source_file 泛指文档"的差异：当前只支持 PDF 一种二进制
    文档格式（docx/odt 解析列为候选，需要时再引等价解析器）。
 
+---
+
+## 42. docs/14 Phase C · C3：学科停用过滤（视觉层 subject.enabled）+ 学科管理收敛（2026-09-09）
+
+**规格**：docs/14 §9 + 工单 C3（R23 B4#2/#3）——停用学科在 仪表盘/关卡地图/图谱/推荐/复习/
+Session 全部按 subject.enabled 过滤隐藏（引擎 409 之外补视觉层）；学科列表"已移除"分组 +
+重新启用 + custom 连同文件删除 + math 拒绝 hard；来源策略/材料管理/移除/恢复收敛到管理 UI。
+
+**改动清单**
+1. `service/outline_gate.py`：新增 `disabled_subject_ids` / `is_node_subject_disabled` /
+   `visible_node_ids`（math=学段前缀映射；custom=学科前缀；无前缀孤立节点视为可视）——
+   全站"停用学科节点隐藏"的单一数据源。
+2. `api/graph.py`：/graph 节点与边按 visible 过滤（停用学科内容不再进入图谱数据）。
+3. `api/dashboard.py`：推荐仅在可见 available 内取；统计/复习队列剔除停用学科；
+   （原 counts 含全图停用锁定节点 → 改按可见节点集收敛）。
+4. `service/campaign.py`：关卡地图按可见节点过滤分组（math 停用 → 地图整体为空，
+   不再误报"全部通关/下一关生成中"——any_defined 守卫）。
+5. `service/review.py`：due_queue 对停用学科到期行隐藏（一致性兜底）。
+6. `outline/store.py`：**soft 移除进度清理强化**——`_subject_content_node_ids`：math 大纲单元
+   （primary.s05…）与其**内容节点**（锚点 primary.0101、boss、auto）全量纳入清 user_nodes/
+   reviews（此前只清大纲单元 id，preaset"移除=清进度"不完整）；custom 前缀全量同语义。
+7. 前端：
+   - `SubjectsPage.tsx` 重构为**管理页**：启用 / 已移除（可恢复）两分组；每卡片含大纲管理入口、
+     移除（停用）、custom"连同文件删除"（math 不提供并给治理提示）、已移除分组重新启用；
+   - `DashboardPage.tsx`：加载 /subjects 感知 math 停用 → 顶部中文提示条（仪表盘/地图已按停用
+     隐藏；前往学科列表重新启用）；
+   - OutlinePage（C1 起）"学科管理 · 内容来源与材料"卡片 = 来源策略/材料/联网检索/上传/删除的
+     收敛管理入口（C3 定位收敛，UI 已就位）。
+8. 测试：`backend/tests/test_subject_visibility.py`（新 ×3，hermetic）——custom 停用 → 图谱隐藏/
+   不进推荐，重启用恢复；math 停用 → 图谱/关卡地图全隐、start 409、**已掌握锚点行被清**（preaset
+   停用=清进度语义锁定）、到期复习行隐藏（手工插入验证兜底），重启用恢复。
+
+**回归**：pytest = **288 passed + 1 skipped**（289 collected；285+1 基线 + 新增 3，不降）；
+content validate 26/49 全绿；audit 5 学段不变；npm run build（tsc+vite）通过；git 提交（PhaseC C3）。
+
+**疑点（挂待架构裁决）**
+1. math 停用时 Dashboard 地图/图谱为空的表达：仍保留仪表盘页面 + 顶部中文提示条（不含"回退到
+   通用首页"重构——MVP 语义：按需重新启用 math 或使用其它学科大纲页）。如需"首页=全部启用学科
+   混合地图"属产品 IA 议题（docs/14 §7#4 信息架构），另裁。
+2. soft 移除语义强化到"清该学科全部内容节点进度"（含 boss/锚点）：与 docs/14 §9"清进度"一致；
+   B4 旧用例（仅断言文件留盘与 start=409）不受影响，语义超集（B4 疑点 2 关闭）。
+3. 图谱/仪表盘过滤为 API 层（前端各页消费同一数据源）；前端不再单独维护节点过滤逻辑
+   （防两处漂移）——"图谱页"当前未在 UI 直连，/graph 过滤仍生效（文档/测试兜底）。
+
