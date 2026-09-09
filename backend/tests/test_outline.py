@@ -336,6 +336,32 @@ class TestSubjectsApi:
         r = app_client.delete("/api/subjects/math?hard=true")
         assert r.status_code == 409
 
+    def test_math_remove_reenable_chain(self, app_client):
+        """B5 链：math 移除（停用）→ 启动不复活 → 重新启用恢复。"""
+        from app.db import SessionLocal
+
+        r = app_client.delete("/api/subjects/math")
+        assert r.status_code == 204
+        try:
+            assert app_client.get("/api/subjects/math").status_code == 404
+            ids = [s["id"] for s in app_client.get("/api/subjects").json()["subjects"]]
+            assert "math" not in ids
+            # 模拟重启（ensure_math_preset 幂等注册）：不得复活停用的 math
+            with SessionLocal() as db:
+                row = __import__("app.outline.store", fromlist=["store"]).ensure_math_preset(db)
+                db.commit()
+                assert row is not None and row.enabled is False
+            ids2 = [s["id"] for s in app_client.get("/api/subjects").json()["subjects"]]
+            assert "math" not in ids2
+            # 停用期间 math 内容不可进
+            r = app_client.post("/api/session/start", json={"node_id": "primary.0101"})
+            assert r.status_code == 409, r.text
+        finally:
+            # 重新启用恢复
+            r = app_client.post("/api/subjects/math/enable")
+            assert r.status_code == 200
+            assert app_client.get("/api/subjects/math").status_code == 200
+
     def test_regenerate_returns_draft_candidate(self, app_client):
         """A4：custom regenerate = 重起草候选（不落盘；采纳 PUT 才 revision+1）。"""
         sid = f"regen{uuid.uuid4().hex[:6]}"
