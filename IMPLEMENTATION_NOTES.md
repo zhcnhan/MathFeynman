@@ -1020,3 +1020,45 @@ user_nodes/… 不加 subject 列（内容节点隐式归属 math，语义零变
 4. delete_subject 对已产生学习进度的 custom 学科未做进度级联（A2 显式重置语义落地后统一处理；
    当前 custom 无内容闭环，不构成实际风险）。
 
+---
+
+## 28. docs/14 Phase A · A2 子步：概念层与进度映射（2026-09-09）
+
+**规格**：docs/14 §2.2 + 派工单 A2（concept 标签表 + 掌握证据挂 (subject,concept)；单元完成 →
+归一化标签；大纲重生成 → 新单元按概念命中等效已掌握（标绿/可跳过）；显式重置可选；数学历史掌握
+迁移：既有锚点节点/掌握状态 → 概念标签（数学概念归一清单）→ 进度不丢）。
+
+**改动清单**
+1. `backend/app/models.py`：+ Concept（概念注册表，归一化 concept_id PK(subject,concept)）与
+   UserConcept（掌握证据 (user,subject,concept)，evidence_json=证据节点列表，幂等派生非人工）。
+2. `backend/app/outline/concepts.py`（新）：归一化（去空白/ASCII 小写/全角→半角）；大纲标签 →
+   concepts 注册表同步；`content_to_unit`（unit.id 在库/anchors 在库 → 归属单元）；**学科内容节点
+   全集**（preset math=level∈LEVELS ∪ 大纲映射；custom=大纲映射——杜绝跨学科污染）；
+   `recompute_subject_concepts`（user_nodes.mastered → 概念证据全量替换；归属单元 concept_tags
+   非空优先，否则节点 core_concepts 兜底——孤儿/首领/auto 节点历史掌握可确定性归一）；`unit_states`
+   （单元视图：mastered > learning > equivalent(概念命中) > todo；open=前置全部达成，等效=达成，
+   即"等效已掌握可跳过、未命中照学、前置等效即解锁"）；`reset_subject_progress`（显式重置：清
+   (subject) 概念证据 + 学科内容节点 mastered/learning 降回 available + 清复习行 + 全图重算）。
+3. `backend/app/api/subjects.py`：GET /subjects/{sid}/progress、POST …/progress/recompute、
+   POST …/progress/reset；outline PUT/PATCH 落盘后自动 sync 概念注册表。
+4. `backend/tests/test_concepts.py`（新 ×10）：归一化/注册表幂等/大纲重生成后概念证据保留且新单元
+   等效已掌握（结构重组 demo.one→demo.frac 演示"换大纲不丢进度"）；孤儿节点 core_concepts 兜底
+   （math 引擎路径：保存式注入大纲 + 单元结构调整后 math.new1/new2 概念命中 equivalent）；显式重置；
+   math(preset) 重置作用于内容库节点（primary.0101 mastered→available，含进度还原）；API 流程与
+   404。
+5. docs 同步：docs/06 §1 progress/recompute/reset 端点、§3 concepts/user_concepts 表。
+
+**回归**：pytest = **230 passed + 1 skipped**（A1 220+1 基线 + 新增 10，不降）；content validate
+24/47 全绿；audit 5 学段不变；git 提交（PhaseA A2）。
+
+**疑点（挂待架构裁决）**
+1. "等效已掌握"判定 = 单元概念标签集非空且 ⊆ 已掌握概念集。概念粒度/同义合并 MVP = 精确归一匹配
+   （docs/14 §7 #3：更细归一策略列为治理项；跨语言/同义合并可后续加 aliases）。
+2. 数学概念标签数据源：非大纲单元的孤儿人工节点（high.0201、boss 0199 等）与无标签单元的 auto
+   节点以 **节点自身 core_concepts** 兜底归一（"数学概念归一清单"由既有精修 core_concepts 承担，
+   免逐单元人工补标）；大纲单元标签在 A3 math outline 派生时由锚点节点 core_concepts 回填。
+3. 显式重置 scope = 概念证据 + 学科内容节点掌握 + 复习行；**不**清 attempt/session 历史
+   （审计留痕，docs/03 复习降级口径一致）；若需"连历史一并清"另行裁决。
+4. 首领(boss)节点概念由 core_concepts 兜底（如"数与运算首领战"含分数加减等标签）——boss 达成
+   时点已在组全部条目达成后，故其证据为重复集，语义无害；如架构认为 boss 不应产概念可加排除。
+

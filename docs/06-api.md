@@ -24,6 +24,9 @@
 | POST | `/subjects/{subject_id}/outline/validate` | 校验候选大纲（不落盘，返回问题清单，UI 预览用） |
 | PATCH | `/subjects/{subject_id}/outline/units/{unit_id}` | 单元局部改（custom 任意白名单字段；preset 仅 concept_tags 等附加字段） |
 | POST | `/subjects/{subject_id}/outline/regenerate` | AI 起草/重生成（Phase A4 开放；A1 占位 501） |
+| GET | `/subjects/{subject_id}/progress` | 学科进度视图（单元 达成/等效/开放 + 内容节点状态；A2） |
+| POST | `/subjects/{subject_id}/progress/recompute` | 幂等重算概念掌握证据（= 数学历史掌握迁移入口；A2） |
+| POST | `/subjects/{subject_id}/progress/reset` | 显式重置学科进度（清概念层 + 学科内容掌握；body `{mode: all}`；A2） |
 
 ### 学习会话
 | 方法 | 路径 | 说明 |
@@ -114,7 +117,12 @@ reviews      (user_id, node_id, state_json,            -- FSRS 状态
 ai_logs      (id INTEGER PK, call_name, model, tier, prompt_tokens, completion_tokens,
               ok INTEGER, error TEXT, latency_ms, created_at)
 relearn_logs (user_id, node_id, reason TEXT, created_at)   -- mastered→learning 降级留痕
--- Phase A（docs/14）后续表：concepts/user_concepts（概念层掌握证据，A2 落地时同步本文档）
+-- Phase A 概念层（A2 已落地，docs/14 §1/§2.2）：
+concepts     (subject_id, concept_id, label, aliases_json, created_at,
+              PK(subject_id, concept_id))          -- 概念标签注册表（归一化 concept_id）
+user_concepts(user_id, subject_id, concept_id,      -- 掌握证据挂 (subject, concept)
+              evidence_json,  -- 提供证据的内容节点 id 列表（派生，非人工）
+              mastered_at, updated_at, PK(user_id, subject_id, concept_id))
 ```
 
 - **subject 命名空间迁移方案（Phase A A1 已落地，docs/14 §1/§5）**：学科注册 = 新增 `subjects` 表

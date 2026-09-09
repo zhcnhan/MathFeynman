@@ -54,6 +54,41 @@ class Subject(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Concept(Base):
+    """概念标签注册表（docs/14 §1 Concept Layer · Phase A A2）。
+
+    概念 = 学科内可移植的掌握证据挂载点：单元完成 → 归一化概念标签 → 挂 (subject, concept)。
+    concept_id = 归一化后的规范标签（A2 归一规则：去空白 + ASCII 小写 + 全半角统一）；
+    label 保留原始书写；aliases 保留同义合并（docs/14 §7 #3 归一化策略 MVP：精确归一匹配）。
+    """
+
+    __tablename__ = "concepts"
+    __table_args__ = (Index("ix_concepts_label", "subject_id", "label"),)
+
+    subject_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    concept_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    label: Mapped[str] = mapped_column(String(128), default="")
+    aliases_json: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class UserConcept(Base):
+    """用户概念掌握证据（docs/14 §2.2）：掌握证据挂 (subject, concept)。
+
+    evidence_json = 提供证据的内容节点 id 列表（派生自 user_nodes mastered + 大纲单元标签映射，
+    幂等重算，非人工录入）；mastered_at = 最近一次证据成立时间。
+    """
+
+    __tablename__ = "user_concepts"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    subject_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    concept_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    evidence_json: Mapped[list] = mapped_column(JSON, default=list)
+    mastered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class Node(Base):
     __tablename__ = "nodes"
 
@@ -185,6 +220,8 @@ __all__ = [
     "Base",
     "User",
     "Subject",
+    "Concept",
+    "UserConcept",
     "Node",
     "Edge",
     "UserNode",
