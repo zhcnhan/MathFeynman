@@ -58,6 +58,7 @@ ACTIONS = {
     "submit_exercise",
     "request_hint",
     "regen_explain",       # R8：清理 lecture_cache 并重新生成讲解（脏讲解/重新讲解入口）
+    "reissue_after_regen", # R25：内容纠错替换后，一键把正在做的旧题换成新题（带保护）
     "feynman_submit",
     "feynman_answer",      # 别名：对追问的作答（等同 feynman_submit）
     "finish",
@@ -250,6 +251,8 @@ class SessionService:
             return self._act_hint(db, sess, node, payload)
         if action == "regen_explain":
             return self._act_regen_explain(db, sess, node, payload)
+        if action == "reissue_after_regen":
+            return self._act_reissue_after_regen(db, sess, node)
         if action in ("feynman_submit", "feynman_answer"):
             return self._act_feynman(db, sess, node, str(payload.get("transcript", payload.get("answer", ""))), payload)
         if action == "finish":
@@ -264,6 +267,41 @@ class SessionService:
     # ------------------------------------------------------------------
     # 内部：阶段前进
     # ------------------------------------------------------------------
+    def _act_reissue_after_regen(self, db: Session, sess: models.Session, node: NodeDoc) -> dict[str, Any]:
+        """R25 保护式"一键换题"：仅当本节点最近 15 分钟内有成功的内容纠错替换，
+        且当前确在做练习（未达标、有当前题）时才允许；每节点每会话限 2 次，防被当"跳过题"滥用。"""
+        flow = sess.flow_json
+        p = flow["practice"]
+        if flow.get("stage") != "practice":
+            raise SessionError("只有练习阶段可以换题", code="invalid_state")
+        if p.get("passed"):
+            raise SessionError("练习已达标，不能再换题", code="invalid_state")
+        if not p.get("current"):
+            raise SessionError("当前没有待作答题目", code="invalid_state")
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=15)
+        recent = (
+            db.query(models.Feedback)
+            .filter(
+                models.Feedback.node_id == node.id,
+                models.Feedback.status == "regenerated",
+                models.Feedback.updated_at >= cutoff,
+            )
+            .first()
+        )
+        if recent is None:
+            raise SessionError("本节点最近没有刚纠错替换的新内容，暂不能换题", code="invalid_state")
+        used = int(flow.get("regen_reissue_used", 0))
+        if used >= 2:
+            raise SessionError("本节点本轮最多换 2 次题，请继续作答或退出后重进", code="invalid_state")
+        flow["regen_reissue_used"] = used + 1
+        p["current"] = None
+        p["attempts_this"] = 0
+        p["hints_this"] = 0
+        db.flush()
+        return self._response(
+            db, sess, events=[{"type": "question_reissued", "reason": "内容纠错已替换，抽新题"}]
+        )
+
     def _act_next(self, db: Session, sess: models.Session, node: NodeDoc) -> dict[str, Any]:
         flow = sess.flow_json
         stage = flow["stage"]

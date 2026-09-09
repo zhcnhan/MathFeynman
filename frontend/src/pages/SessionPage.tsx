@@ -43,6 +43,7 @@ export default function SessionPage() {
   const [thinkingSince, setThinkingSince] = useState<number | null>(null); // R9 计时
   const [thinkingSecs, setThinkingSecs] = useState(0);
   const [modelMode, setModelMode] = useState<ModelMode>("smart"); // R12
+  const [canReissue, setCanReissue] = useState(false); // R25：内容纠错替换成功后允许一键换题
   const [notice, setNotice] = useState<string | null>(null);
   const didInit = useRef(false);
 
@@ -146,7 +147,8 @@ export default function SessionPage() {
               final = true;
               // 内容已替换：同步一次会话视图，让用户看到最新内容/题目
               await refresh();
-              setNotice("✅ 内容已自动重生成替换。正在做的这题若来自旧内容，请点「结束并查看达标情况」退出后重新进入本节点，即可抽到新题。");
+              setCanReissue(true);
+              setNotice("✅ 内容已自动重生成替换。若正在做的是旧题，可点下方「🔄 换新题」。");
               return;
             }
             if (latest.status === "failed") {
@@ -190,6 +192,7 @@ export default function SessionPage() {
     setError(null);
     const apply = (r: StepResponse) => {
       setResp(r);
+      if (action === "reissue_after_regen") setCanReissue(false);
       setEvents((prev) => [...prev.slice(-6), ...r.events]);
       // 阶段推进时清空交互区
       if (action !== "feynman_submit" && action !== "feynman_answer") {
@@ -296,6 +299,11 @@ export default function SessionPage() {
           {step === "done" && <DoneView payload={payload} onHome={() => nav("/")} onHistory={() => nav("/feynman-history")} />}
 
           <div className="action-row">
+            {step === "practice" && canReissue && !submitting && (
+              <button className="ghost" disabled={submitting} onClick={async () => { await act("reissue_after_regen"); }}>
+                🔄 换新题（已纠错替换）
+              </button>
+            )}
             {step === "practice" && payload.verdict === "wrong" && !exercise?.interactive.includes("guided") && (
               <button className="ghost" disabled={submitting} onClick={() => act("request_hint", { exercise_id: exercise?.exercise_id, user_answer: "" })}>
                 要提示

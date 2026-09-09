@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DashboardPage from "./pages/DashboardPage";
+import FeedbackPage from "./pages/FeedbackPage";
 import FeynmanHistoryPage from "./pages/FeynmanHistoryPage";
 import OutlinePage from "./pages/OutlinePage";
 import ReviewPage from "./pages/ReviewPage";
@@ -18,6 +19,7 @@ export default function App() {
         <SubjectSwitcher />
         <NavLink to="/subjects" end>学科列表</NavLink>
         <NavLink to="/review">复习</NavLink>
+        <NavLink to="/feedback">内容反馈</NavLink>
         <NavLink to="/feynman-history">费曼复盘</NavLink>
         <NavLink to="/settings">设置</NavLink>
       </nav>
@@ -30,6 +32,7 @@ export default function App() {
             <Route path="/subjects/:id" element={<OutlinePage />} />
             <Route path="/session/:id" element={<SessionPage />} />
             <Route path="/review" element={<ReviewPage />} />
+            <Route path="/feedback" element={<FeedbackPage />} />
             <Route path="/feynman-history" element={<FeynmanHistoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
