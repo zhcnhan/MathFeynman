@@ -24,6 +24,7 @@
 | [docs/11-workorder.md](docs/11-workorder.md) | 成长型阶段总工单（分阶段执行，Euler 当前任务） |
 | [docs/12-roadmap-master.md](docs/12-roadmap-master.md) | **课程蓝图总纲**：全学段地图规划、北极星与懒生成 |
 | [docs/13-agent-handover.md](docs/13-agent-handover.md) | **Agent 交接协议**：新 Euler 续接的开机清单与行为公约 |
+| [docs/14-omnibus-coach.md](docs/14-omnibus-coach.md) | **通用费曼学习教练**：多学科架构、概念层、大纲再生成不丢进度 |
 
 ## 不可变决策（改动需先改本文档并重新评审）
 

@@ -1,4 +1,5 @@
 # 13 · Agent 交接与续接协议（Handover & Continuity）
+> 适用范围：范围：流程永续 —— 新 Euler 交接协议（当前活动工单见 §3，docs/14 Phase A）
 
 > 目的：当实现工程师（Euler）会话上下文耗尽/重启新实例时，新实例可在**不依赖旧对话**的
 > 前提下无痛续接。本仓库的全部"记忆"已外置在以下文件中；新实例按本文档的"开机清单"
@@ -37,16 +38,17 @@
   提交信息标注阶段，便于回滚与 diff。
 
 ## 3. 当前活动工单（新实例的第一个任务）
-1. **若上一 Euler 的"blueprint 修订批 A/B/C"尚未完成或未经架构侧核实**：先按
-   `content/roadmap/REVIEW-blueprint.md` + 用户最新批指令完成（改 primary/middle.yaml 的
-   A/B 项 + roadmap.audit 锚点存在性检查 C 项），跑审计更新 ROADMAP_AUDIT.md，全量回归。
-2. **蓝图总纲（docs/12-roadmap-master.md）分阶段 P1→P4**：
-   - P1 high.yaml 全段草案（audit 绿 + 更新 ROADMAP_AUDIT + 3 条锚点级示例草稿）；
-   - P2 college.yaml 全段草案（含与 high 衔接假设）；
-   - P3 ai.yaml 全段草案（含依赖 college 衔接说明，默认 thinking:true）；
-   - P4 high+ 自动入库护栏升级（北极星配套，与 P1 一并评审）；
-   - 每阶段独立汇报；只写蓝图不生成内容；验收见 docs/12 §4。
-3. 疑点：不得改动 docs/12 骨架本身；范围外问题记 IMPLEMENTATION_NOTES 待裁决。
+> 历史批次（R13 补记 A–D、蓝图修订 A/B/C、总纲 P1–P4、R15 精核补丁、A/B/C/D 引擎段、R18 蓝图
+> 总序权威化）均已完成并 git 提交（基线 **pytest 200+1**、audit 5 学段全绿、content 24/47 上下）；
+> 详见 IMPLEMENTATION_NOTES §9–§25、docs/09 R7–R18。**当前任务是 docs/14 Phase A**：
+
+1. 读 `docs/14-omnibus-coach.md` 全文（§5 数学迁移、§6 验收口径、§7 待细化），按
+   **Phase A 通用框架**执行：subject/outline 数据模型 + 大纲 AI 生成与审阅 UI + 概念层与
+   进度映射（重生成不丢进度、显式重置）+ **数学迁移为 subject=math preset 并建立数学总
+   Outline + 治理已知问题**（回归不降 200+1）。范围与红线以 docs/14 与架构侧派工单为准。
+2. Phase B/C（docs/14 §4）不在本工单，逐 Phase 派发。
+3. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"，不擅改 docs/14 骨架；涉及既有
+   docs/02/03/06/07 的语义变更在实现时顺带同步。
 
 ## 4. 环境速查（新人必读）
 - 服务：`powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`（前端 5173 / 后端 8000）；
@@ -54,5 +56,7 @@
 - 测试内容根已隔离（conftest 会话级临时副本）；真模型冒烟需 `MF_ALLOW_LIVE_AI=1`。
 - `.env`（仓库根，git 忽略）：LLM_API_KEY 等；`MF_AUTO_EXTEND=1` 控制全自动续关；
   `LLM_MAX_TOKENS_PER_DAY=0` 不限额。
-- 当前基线（最近核实）：173 passed + 1 skipped；content validate 13 节点/30 练习；
-  primary/middle 蓝图 draft 待精核；high/college/ai 蓝图未建（docs/12 目标）。
+- 当前基线（最近核实）：pytest **200 passed + 1 skipped**；audit 5 学段全绿
+  （primary 27/middle 31/high 81/college 59/ai 60）；content validate 视本地 auto 内容量
+  （人工锚点 13 + 用户运行期 auto；git 仓库不含 data/ 与 _drafts）。当前活动工单见 §3
+  （docs/14 Phase A）。

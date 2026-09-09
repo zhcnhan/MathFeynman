@@ -1,4 +1,5 @@
 # 06 · 后端 API 草案与数据模型
+> 适用范围：范围：API 现状（math 形态端点）。subject 命名空间改造见 docs/14 Phase A
 
 > 供前后端联调与实现参考。签名可微调，但**语义与状态流转必须符合 docs/03、docs/05**。
 > 所有端点默认前缀 `/api`，JSON 通信，错误统一 `{error: {code, message}}`。

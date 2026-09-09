@@ -1,4 +1,5 @@
 # 02 · 总体架构与技术决策（ADR）
+> 适用范围：范围：通用核心架构（分层/ADR）。将随 docs/14 Phase A 泛化（subject/outline/concept 层），勿照搬其中的数学专属实现细节
 
 ## 1. 架构总览
 

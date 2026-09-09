@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>庚子 · 全栈 Web 开发工程师 — 简历</title>
+<style>
+  :root {
+    --accent: #1a5fb4;
+    --accent-light: #eef4fb;
+    --ink: #1f2933;
+    --muted: #5b6b7c;
+    --line: #d9e2ec;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+    color: var(--ink);
+    background: #f2f4f8;
+    line-height: 1.7;
+    font-size: 14px;
+  }
+  .toolbar {
+    max-width: 860px; margin: 18px auto 0; padding: 0 8px; text-align: right;
+  }
+  .toolbar button {
+    font: inherit; color: #fff; background: var(--accent); border: 0; border-radius: 6px;
+    padding: 7px 16px; cursor: pointer;
+  }
+  .toolbar button:hover { background: #134a8f; }
+  .sheet {
+    max-width: 860px; margin: 12px auto 60px; background: #fff;
+    box-shadow: 0 2px 14px rgba(30, 50, 80, .12);
+  }
+  header {
+    background: linear-gradient(135deg, #0f2c52 0%, var(--accent) 70%, #2f7fd0 100%);
+    color: #fff; padding: 34px 48px 26px;
+  }
+  header h1 { font-size: 30px; letter-spacing: 2px; }
+  header .subtitle { font-size: 16px; opacity: .95; margin-top: 6px; font-weight: 500; }
+  header .contact { margin-top: 14px; font-size: 13px; opacity: .92; line-height: 1.9; }
+  header .contact a { color: #cfe3ff; }
+  .placeholder {
+    color: #ffd76a; font-style: normal; white-space: nowrap;
+    border-bottom: 1px dashed rgba(255, 215, 106, .7); padding: 0 2px;
+  }
+  main { padding: 26px 48px 34px; }
+  section { margin-bottom: 24px; }
+  h2 {
+    font-size: 17px; color: var(--accent); letter-spacing: 1px;
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+  }
+  h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  p { margin-bottom: 6px; }
+  ul { padding-left: 1.35em; }
+  li { margin-bottom: 5px; }
+  .profile li::marker { color: var(--accent); }
+
+  table.skills { width: 100%; border-collapse: collapse; }
+  table.skills td {
+    border: 1px solid var(--line); padding: 7px 12px; vertical-align: top; font-size: 13px;
+  }
+  table.skills td:first-child {
+    width: 110px; background: var(--accent-light); font-weight: 600; color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .project { margin-bottom: 18px; }
+  .project-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; }
+  .project-head h3 { font-size: 15.5px; color: #123c70; }
+  .project-head .role { font-size: 12.5px; color: var(--muted); }
+  .project-meta {
+    font-size: 12.5px; color: var(--muted); background: #f7fafd;
+    border-left: 3px solid var(--accent); padding: 5px 10px; margin: 6px 0 8px;
+  }
+  .project-meta a { color: var(--accent); }
+  .project ul { margin-bottom: 4px; }
+  .project li b { color: #0e3a70; font-weight: 600; }
+  .lead { margin-bottom: 6px; }
+
+  .note {
+    font-size: 12px; color: var(--muted); border-top: 1px dashed var(--line);
+    padding-top: 10px; margin-top: 26px; line-height: 1.8;
+  }
+  @media (max-width: 640px) {
+    header, main { padding-left: 24px; padding-right: 24px; }
+  }
+  @media print {
+    body { background: #fff; }
+    .toolbar { display: none; }
+    .sheet { margin: 0; box-shadow: none; max-width: none; }
+    header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    section { page-break-inside: avoid; }
+    h2 { page-break-after: avoid; }
+    .project { page-break-inside: avoid; }
+  }
+  @page { size: A4; margin: 12mm; }
+</style>
+</head>
+<body>
+
+<div class="toolbar no-print">
+  <button onclick="window.print()">🖨️ 打印 / 另存为 PDF</button>
+</div>
+
+<div class="sheet">
+  <header>
+    <h1>庚 子</h1>
+    <div class="subtitle">全栈 Web 开发工程师 · Python + React</div>
+    <div class="contact">
+      <span class="placeholder">[电话]</span> &nbsp;·&nbsp;
+      <span class="placeholder">[邮箱]</span> &nbsp;·&nbsp;
+      <span class="placeholder">[所在城市]</span><br>
+      GitHub: <a href="https://github.com/zhcnhan">github.com/zhcnhan</a> &nbsp;·&nbsp;
+      求职意向：全栈 / Web 开发工程师
+    </div>
+  </header>
+
+  <main>
+
+    <section>
+      <h2>个人简介</h2>
+      <ul class="profile">
+        <li>3~5 年全栈开发经验，习惯从 0 到 1 独立交付完整产品：需求分析 → 架构设计 → 前后端实现 → 部署运维 → 迭代优化，全程文档驱动、测试护航。</li>
+        <li>后端以 Python 生态为主（FastAPI / SQLAlchemy / Pydantic），前端以 React + TypeScript 为主（Vite / Zustand / KaTeX / Three.js），熟悉 Docker、Nginx/OpenResty、systemd、CI 等工程化与部署手段。</li>
+        <li>对 AI 应用工程化有深度实践：LLM 受控集成（Schema 化调用、输出先校验再落库、模型分级路由）、防幻觉内容护栏、知识图谱 + 间隔重复（FSRS）等，擅长设计“确定性系统为主、AI 为辅”的可靠架构。</li>
+        <li>重视工程质量：以设计文档 / ADR 约束实现、以自动测试守护回归；熟练使用 AI 编码工具在受控预算内推进大型项目。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>技能清单</h2>
+      <table class="skills">
+        <tr><td>后端</td><td>Python 3.10+ · FastAPI · SQLAlchemy 2 · SQLite · Pydantic 2 · REST API 设计 · sympy · pytest</td></tr>
+        <tr><td>前端</td><td>TypeScript · React 18 · Vite · Zustand · React Router · KaTeX · Three.js · Tailwind CSS · PWA</td></tr>
+        <tr><td>AI / LLM</td><td>OpenAI 兼容接口接入（DeepSeek 等）· 输出 JSON Schema 约束 · 模型分级路由 · 提示词工程 · 防幻觉 / 质量护栏</td></tr>
+        <tr><td>工程 / 运维</td><td>Git · GitHub Actions CI · Docker / docker-compose · Nginx / OpenResty · systemd · Linux 部署 · CLI 工具 · macOS 应用封装</td></tr>
+      </table>
+    </section>
+
+    <section>
+      <h2>项目经验</h2>
+
+      <div class="project">
+        <div class="project-head">
+          <h3>1. MathFeynman —— AI 数学导师（费曼教学法自适应学习系统）</h3>
+          <span class="role">独立设计开发 · 持续迭代中</span>
+        </div>
+        <div class="project-meta">
+          GitHub: <a href="https://github.com/zhcnhan/MathFeynman">github.com/zhcnhan/MathFeynman</a>
+          &nbsp;｜&nbsp; Python 3.11 / FastAPI / SQLAlchemy 2 / SQLite / sympy / FSRS / React 18 / TypeScript / Vite / KaTeX
+        </div>
+        <p class="lead">本地单机“智能导师系统”(ITS)：以知识图谱组织从小到大的数学内容，教学流程由程序状态机编排，LLM 只在受控槽位生成讲解与评估，帮助用户捡拾知识断点、顺序学习并进阶到 AI / 量化所需的数学。</p>
+        <ul>
+          <li><b>架构设计</b>：以 13 份设计文档 + ADR（产品愿景 / 总体架构 / 领域模型 / 内容格式 / AI 集成规范 / API / UI / MVP 验收 / 课程蓝图总纲等）驱动实现；代码按 domain / ai / service / api / content 严格分层，确定性核心不依赖 LLM 与 UI。</li>
+          <li><b>确定性核心（domain）</b>：知识图谱（DAG）组织小学 → 初中 → 高中 → 大学 → AI 分学段内容与自动内容流水线；sympy 实现数值 / 表达式题自动判题，坚持“凡是可确定性验证的，绝不让 LLM 判断对错”；接入 FSRS-6 官方算法族实现复习调度；掌握度模型 + 用户画像驱动个性化学习。</li>
+          <li><b>AI 受控集成（ai + service）</b>：所有 LLM 调用点定义输入 / 输出 JSON Schema，输出先校验再落库、失败按规范重试或降级；模型按环节分级路由——重推理环节用强模型、轻环节用低成本模型（默认 DeepSeek，base_url / 模型可配置，兼容本地 Ollama）。</li>
+          <li><b>防幻觉质量护栏</b>：讲解注入课程上下文并受概念白名单约束，禁止越级引入未学概念；guardrails 服务以 sympy 校验 + 掌握度 / 费曼通过作内容旁证 + 纠错反馈召回与主题熔断，支撑“运行期零人工审核”的自续内容闭环。</li>
+          <li><b>产品闭环</b>：讲解 → 例题 → 练习（自动判题）→ 费曼口述（按 Rubric 评分并追问）→ 达标 → 进入 FSRS 复习队列；闯关式课程蓝图 + 懒生成内容生产；前端提供工作台 / 分步引导 / 图形工具三种交互模式与 KaTeX 公式渲染。</li>
+          <li><b>工程实践</b>：pytest 自动化测试与里程碑验收清单同步推进（数百条测试持续回归）；通过 AI 编码代理（DeepSeek）在受限预算内分阶段交付，并沉淀 Agent 交接协议与行为公约，支撑长周期项目的可持续推进。</li>
+        </ul>
+      </div>
+
+      <div class="project">
+        <div class="project-head">
+          <h3>2. Toolbox —— 个人开发者工具 Monorepo</h3>
+          <span class="role">独立开发 · MIT 开源</span>
+        </div>
+        <div class="project-meta">
+          GitHub: <a href="https://github.com/zhcnhan/toolbox">github.com/zhcnhan/toolbox</a>
+          &nbsp;｜&nbsp; Python 3.10+ / FastAPI / React 18 / Vite / Tailwind CSS / Framer Motion / Three.js / Docker / GitHub Actions
+        </div>
+        <p class="lead">Monorepo 内含多个自包含、可独立部署的子项目，包含两个完整的前后端分离 Web 应用：</p>
+        <ul>
+          <li><b>Batch Background Remover（批量抠图 Web 服务）</b>：FastAPI 后端 + React 前端。设计<b>插件式抠图引擎架构</b>，8 种引擎统一接口、自由切换：本地 rembg / SAM 1 ViT-L / 图标抠图，云端 Gemini Mask / Kimi（多边形坐标）/ remove.bg / 擦个图 / 自定义，新增引擎只需新增一个 *_engine.py；自研 Gemini Mask 方案——多模态视觉定位 + 本地按原图分辨率切割，支持掩膜 PNG 与多边形坐标两种输出，显著降低 Token 成本。支持批量拖拽处理与一键打包、HTTP 代理（含 Basic 认证）与连通性一键测试；前端玻璃拟态深色主题 + Framer Motion + PWA；提供 Docker / nginx / systemd 一键部署、macOS 桌面启动器与 .app 封装、GitHub Actions CI。</li>
+          <li><b>Format Converter（万能格式转换 Web 服务）</b>：文档（PDF / DOCX / MD / HTML / EPUB / RTF）、图片（JPG / PNG / WEBP / SVG…）、音频、视频、数据（JSON / YAML / CSV / TOML…）5 大类 30+ 格式互转；后端 FastAPI RESTful + python-docx / weasyprint / PyPDF2 / ffmpeg / Pillow 等引擎，前端 React 18 + Three.js 3D 互动角色（多模型切换、拖拽 / 点击 / 睡觉 / 心情系统）、玻璃拟态 UI；Swagger / ReDoc 自动文档；Docker Compose 或 OpenResty + systemd 部署。</li>
+          <li><b>git-mirror（CLI）</b>：任意两个 Git remote 之间双向全量同步（全分支 + 标签），自动凭据管理与多仓库规则，可 crontab 定时执行。</li>
+          <li><b>solar-system（玩具）</b>：单 HTML 零依赖 3D 太阳系模拟器（八大行星 + 冥王星 + 小行星带 + 土星环），可拖拽视角、点击查看行星信息。</li>
+        </ul>
+      </div>
+
+      <div class="project">
+        <div class="project-head">
+          <h3>3. Rental Registry —— 出租房登记信息管理系统</h3>
+          <span class="role">独立开发</span>
+        </div>
+        <div class="project-meta">
+          GitHub: <a href="https://github.com/zhcnhan/rental-registry">github.com/zhcnhan/rental-registry</a>
+          &nbsp;｜&nbsp; 原生 HTML / CSS / JavaScript（零依赖、无构建、离线可用）
+        </div>
+        <p class="lead">面向真实使用场景的工具型产品（为房东 / 中介登记出租房而做）：</p>
+        <ul>
+          <li><b>信息管理</b>：房源地址、押金 / 租金、租户姓名、联系方式、身份证、起止日期等字段化录入；多条记录增删与切换；一键空置标记（表格红色高亮 + 水印醒目）。</li>
+          <li><b>自动生成规范表格</b>：单条登记表 + 横向汇总表，长文本自动换行格式不乱；内置经典蓝 / 清新绿 / 暖橙 / 典雅紫 / 商务灰 5 套配色模板。</li>
+          <li><b>文档导出</b>：基于 docx.js（本地化）生成真正可编辑的 .docx，手机 / 电脑均可打开；PDF 走浏览器原生打印引擎，分页精准不截断；老人阅读模式（大字号、高对比度）适配手机。</li>
+          <li><b>隐私与持久化</b>：数据存浏览器 localStorage；租客数据通过 .gitignore 排除、绝不进入仓库；支持 JSON 备份导出 / 导入。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <h2>工作经历</h2>
+      <p style="font-size:12.5px;color:var(--muted);">占位示例 —— 请用真实经历替换本段（若以开源项目为主要展示，可直接删除本段）。</p>
+      <p><b><span class="placeholder">[公司名称]</span></b> — 全栈开发工程师 ｜ <span class="placeholder">[城市]</span> ｜ <span class="placeholder">[起止时间]</span></p>
+      <ul>
+        <li><span class="placeholder">[一句话说明业务背景与你的职责范围]</span></li>
+        <li><span class="placeholder">[负责的核心系统 / 模块，使用的技术栈]</span></li>
+        <li><span class="placeholder">[代表性业绩（尽量量化，如接口 QPS、页面性能、业务指标提升）]</span></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>教育背景</h2>
+      <p><span class="placeholder">[学校名称]</span> · <span class="placeholder">[专业]</span> · <span class="placeholder">[学历]</span> · <span class="placeholder">[起止时间]</span></p>
+    </section>
+
+    <section>
+      <h2>其他</h2>
+      <ul>
+        <li>GitHub: <a href="https://github.com/zhcnhan">github.com/zhcnhan</a> —— 个人作品集中展示于 toolbox（MIT，多应用 Monorepo）与 MathFeynman，另维护面向真实场景的 rental-registry。</li>
+        <li>保持稳定的开源提交节奏；技术兴趣横跨 Web 全栈、图形 / 3D、AI 应用工程化，习惯把想法做成“小而美、能落地”的工具。</li>
+        <li>可用中英文技术文档交流，具备独立阅读英文技术资料与开源代码的能力。</li>
+      </ul>
+    </section>
+
+    <p class="note">
+      说明：本简历基于 GitHub 公开仓库内容生成（toolbox / MathFeynman / rental-registry）；所有黄色高亮 <span class="placeholder">[占位]</span> 内容（联系方式、工作经历、教育背景等）均来自站外信息，请投递前替换为真实内容。文中未虚构公司经历、学历或量化业绩。
+    </p>
+
+  </main>
+</div>
+
+</body>
+</html>

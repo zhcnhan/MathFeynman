@@ -1,4 +1,5 @@
 # 11 · 成长型阶段总工单（Growth Work Order）
+> 适用范围：范围：历史 · 已完成工单批次（growth 阶段）。当前工单见 docs/13 §3 与 docs/14
 
 > 生效：用户确认（2026-09-08）。执行人：Euler。总纲：docs/10-progression.md；
 > 背景裁决：docs/09（R11/R12 继续有效）。

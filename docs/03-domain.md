@@ -1,4 +1,5 @@
 # 03 · 确定性核心（domain）：知识图谱 / 掌握度 / 复习 / 画像
+> 适用范围：范围：掌握度/FSRS/画像=通用；知识图谱/总序=math-preset 规则（通用大纲/概念层见 docs/14）
 
 > 本章是**纯逻辑规范**。`domain/` 实现零 LLM 依赖、零 FastAPI 依赖，
 > 只依赖 Python 标准库 + 少量纯计算库（sympy 用于判题时除外——判题归 content/service 层调用亦可，
