@@ -12,16 +12,40 @@ interface Props {
   onSubmit: (answer: string) => void;
   hint?: string | null;
   placeholder?: string;
+  /** 草稿键：非空时输入内容会存 localStorage 并在回到同一题时恢复（离开页面不丢答案）。 */
+  draftKey?: string;
 }
 
-export default function MathInput({ exercise, disabled, onSubmit, hint, placeholder }: Props) {
-  const [value, setValue] = useState("");
+function readDraft(key?: string): string {
+  if (!key) return "";
+  try {
+    return localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export default function MathInput({ exercise, disabled, onSubmit, hint, placeholder, draftKey }: Props) {
+  const [value, setValue] = useState(() => readDraft(draftKey));
   const [previewErr, setPreviewErr] = useState<string | null>(null);
 
   useEffect(() => {
-    setValue("");
+    // 换题/换种子时重置为（若有）该题草稿
+    setValue(readDraft(draftKey));
     setPreviewErr(null);
-  }, [exercise.exercise_id, exercise.seed]);
+  }, [exercise.exercise_id, exercise.seed, draftKey]);
+
+  const onInput = (v: string) => {
+    setValue(v);
+    if (draftKey) {
+      try {
+        if (v) localStorage.setItem(draftKey, v);
+        else localStorage.removeItem(draftKey);
+      } catch {
+        /* 忽略 */
+      }
+    }
+  };
 
   const previewHtml = () => {
     const text = value.trim();
@@ -64,7 +88,7 @@ export default function MathInput({ exercise, disabled, onSubmit, hint, placehol
         value={value}
         disabled={disabled}
         onChange={(e) => {
-          setValue(e.target.value);
+          onInput(e.target.value);
           setPreviewErr(null);
         }}
         onKeyDown={(e) => {

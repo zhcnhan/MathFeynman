@@ -27,6 +27,14 @@ export default function Dashboard() {
   const [sxBusy, setSxBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [last, setLast] = useState<{ id: string; node: string } | null>(() => {
+    try {
+      const s = localStorage.getItem("yanhui:last_session");
+      return s ? (JSON.parse(s) as { id: string; node: string }) : null;
+    } catch {
+      return null;
+    }
+  });
 
   useEffect(() => {
     Promise.all([
@@ -98,6 +106,19 @@ export default function Dashboard() {
         <Stat n={s.consecutive_days} label="连续天数" />
         <Stat n={s.today_done} label="今日完成" />
       </div>
+
+      {last && (
+        <div className="card">
+          <h2>继续上次学习</h2>
+          <div className="recommend">
+            <div className="recommend-title">{last.node}</div>
+            <button className="primary" onClick={() => nav(`/session/${encodeURIComponent(last.id)}`)}>
+              回到上次会话 →
+            </button>
+            <button className="ghost" style={{ marginLeft: 8 }} onClick={() => { localStorage.removeItem("yanhui:last_session"); setLast(null); }}>不再显示</button>
+          </div>
+        </div>
+      )}
 
       <div className="grid">
         <section className="card">

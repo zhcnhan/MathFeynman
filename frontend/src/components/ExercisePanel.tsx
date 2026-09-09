@@ -17,6 +17,8 @@ interface Props {
   disabled?: boolean;
   feedback?: Feedback | null;
   onSubmit: (answer: string) => void;
+  /** 草稿前缀（通常=会话 id）：离开页面再回来时恢复正在输入的答案 */
+  draftPrefix?: string;
 }
 
 /** 按 interactive 字段取第一个支持的渲染模式（docs/07 §1 分配规则） */
@@ -37,7 +39,7 @@ const MODE_LABEL: Record<string, string> = {
   equation_solution: "解方程",
 };
 
-export default function ExercisePanel({ exercise, disabled, feedback, onSubmit }: Props) {
+export default function ExercisePanel({ exercise, disabled, feedback, onSubmit, draftPrefix }: Props) {
   // B2：按题型渲染基础控件（选择/填空/判断），其余题型沿用交互模式面板
   if (exercise.mode === "single_choice") {
     return <ChoiceUI exercise={exercise} disabled={disabled} feedback={feedback} onSubmit={onSubmit} />;
@@ -57,7 +59,7 @@ export default function ExercisePanel({ exercise, disabled, feedback, onSubmit }
           {MODE_LABEL[exercise.mode] ?? (mode === "graph" ? "图形工具" : mode === "guided" ? "分步引导" : "答题工作台")} · 难度 {exercise.difficulty}
         </span>
       </div>
-      {mode === "workbench" && <WorkbenchUI exercise={exercise} disabled={disabled} feedback={feedback} onSubmit={onSubmit} />}
+      {mode === "workbench" && <WorkbenchUI exercise={exercise} disabled={disabled} feedback={feedback} onSubmit={onSubmit} draftPrefix={draftPrefix} />}
       {mode === "guided" && <GuidedDemo exercise={exercise} disabled={disabled} feedback={feedback} onSubmit={onSubmit} />}
       {mode === "graph" && <GraphDemo exercise={exercise} disabled={disabled} feedback={feedback} onSubmit={onSubmit} />}
     </div>
@@ -149,8 +151,17 @@ function BooleanUI({ exercise, disabled, feedback, onSubmit }: Props) {
   );
 }
 
-function WorkbenchUI({ exercise, disabled, feedback, onSubmit }: Props) {
-  return <MathInput exercise={exercise} disabled={disabled} hint={feedback?.hint} onSubmit={onSubmit} />;
+function WorkbenchUI({ exercise, disabled, feedback, onSubmit, draftPrefix }: Props) {
+  const draftKey = draftPrefix ? `${draftPrefix}:${exercise.exercise_id}:${exercise.seed}` : undefined;
+  return (
+    <MathInput
+      exercise={exercise}
+      disabled={disabled}
+      hint={feedback?.hint}
+      onSubmit={onSubmit}
+      draftKey={draftKey}
+    />
+  );
 }
 
 const GUIDED_STEPS = [

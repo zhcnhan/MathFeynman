@@ -46,6 +46,7 @@ export default function SessionPage() {
   const [canReissue, setCanReissue] = useState(false); // R25：内容纠错替换成功后允许一键换题
   const [notice, setNotice] = useState<string | null>(null);
   const didInit = useRef(false);
+  const didHydrateDraft = useRef(false); // R25：每会话只恢复一次草稿
 
   // R9：思考计时器（挂起期间每 250ms 刷新秒数）
   useEffect(() => {
@@ -186,6 +187,48 @@ export default function SessionPage() {
   if (error) return <div className="card error">会话不可用：{error} <button onClick={() => nav("/")}>回仪表盘</button></div>;
   if (!resp) return null;
   const { step, payload, session } = resp;
+  const sidNow = session.id;
+
+  // ---- R25：草稿持久化（离开页面回来不丢输入） ----
+  const dkey = (suf: string) => `yanhui:draft:${sidNow}:${suf}`;
+  const saveDraft = (suf: string, v: string) => {
+    try {
+      if (v) localStorage.setItem(dkey(suf), v);
+      else localStorage.removeItem(dkey(suf));
+    } catch {
+      /* 忽略 */
+    }
+  };
+  const setAskDraft = (v: string) => {
+    setQuestion(v);
+    saveDraft("ask", v);
+  };
+  const setFeynDraft = (v: string) => {
+    setFeynmanText(v);
+    saveDraft("feyn", v);
+  };
+
+  useEffect(() => {
+    if (!didHydrateDraft.current) {
+      didHydrateDraft.current = true;
+      try {
+        const ask = localStorage.getItem(dkey("ask"));
+        const fe = localStorage.getItem(dkey("feyn"));
+        if (ask) setQuestion(ask);
+        if (fe) setFeynmanText(fe);
+        // 记录"上次学习"，供仪表盘一键续学
+        const nodeLabel =
+          (payload?.node as { title?: string } | undefined)?.title ?? session.node_id;
+        localStorage.setItem(
+          "yanhui:last_session",
+          JSON.stringify({ id: sidNow, node: nodeLabel, at: Date.now() })
+        );
+      } catch {
+        /* 忽略 */
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sidNow]);
 
   const act = async (action: string, body: Record<string, unknown> = {}) => {
     setSubmitting(true);
@@ -194,10 +237,22 @@ export default function SessionPage() {
       setResp(r);
       if (action === "reissue_after_regen") setCanReissue(false);
       setEvents((prev) => [...prev.slice(-6), ...r.events]);
-      // 阶段推进时清空交互区
+      // 阶段推进时清空交互区；对应草稿一并清除
       if (action !== "feynman_submit" && action !== "feynman_answer") {
         setQuestion("");
         setFeynmanText("");
+        try {
+          localStorage.removeItem(dkey("ask"));
+          localStorage.removeItem(dkey("feyn"));
+        } catch {
+          /* 忽略 */
+        }
+      } else {
+        try {
+          localStorage.removeItem(dkey("feyn")); // 提交即清草稿，下次口述从空开始
+        } catch {
+          /* 忽略 */
+        }
       }
     };
     const run = async () => {
@@ -277,7 +332,7 @@ export default function SessionPage() {
       <div className="session-body">
         <main className="session-main">
           {step === "explain" && (
-            <ExplainView payload={payload} submitting={submitting} question={question} setQuestion={setQuestion}
+            <ExplainView payload={payload} submitting={submitting} question={question} setQuestion={setAskDraft}
               onAsk={() => act("ask_question", { question })}
               onNext={() => act("next")}
               onRegen={() => act("regen_explain")} />
@@ -288,11 +343,11 @@ export default function SessionPage() {
               <div className="progress-bar">
                 连续答对 {progress?.consecutive_correct ?? 0} / {progress?.target ?? 3} · 本轮已出 {progress?.issued ?? 0} 题
               </div>
-              <ExercisePanel exercise={exercise} disabled={submitting} feedback={feedback} onSubmit={submitAnswer} />
+              <ExercisePanel exercise={exercise} disabled={submitting} feedback={feedback} onSubmit={submitAnswer} draftPrefix={sidNow} />
             </div>
           )}
           {step === "feynman" && (
-            <FeynmanView payload={payload} submitting={submitting} text={feynmanText} setText={setFeynmanText}
+            <FeynmanView payload={payload} submitting={submitting} text={feynmanText} setText={setFeynDraft}
               onSubmit={() => act("feynman_submit", { transcript: feynmanText })}
               onAnswerFollowup={() => act("feynman_answer", { answer: feynmanText })} />
           )}
