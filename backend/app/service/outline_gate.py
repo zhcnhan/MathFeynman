@@ -11,10 +11,12 @@
   不卡后链）；
 - 节点可学（allowed）= 其单元 satisfied（复习/快速过）或 open；否则 locked/409。
 
-纯 DB+大纲文件计算：无 LLM/UI 依赖；大纲读取每次实时（文件小、无缓存一致性负担）。
+纯 DB+大纲文件计算：无 LLM/UI 依赖；大纲读取带**进程级 mtime/revision 指纹缓存**
+（R19 块 3：多学科大量节点时避免每次按 node 重读大纲文件；文件变更后指纹失效自动重读）。
 """
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -27,6 +29,58 @@ from ..outline.schemas import OutlineDoc, OutlineError
 
 # 课程内容节点的 subject 前缀 = 学段名的（math）不路由本门禁
 _MATH_PREFIXES = set(LEVELS)
+
+# 进程级大纲缓存：subject_id -> (指纹, OutlineDoc|None)
+# 指纹 = outline.yaml 的 (mtime_ns,size)——文件被原子替换后指纹变化即重读；
+# 显式清空入口 clear_outline_cache() 供长驻进程内外部变更后使用。
+_cache_lock = threading.Lock()
+_outline_cache: dict[str, tuple[str, OutlineDoc | None]] = {}
+
+
+def _outline_path_of(subject_id: str):
+    try:
+        return outline_store.subject_dir(subject_id) / "outline.yaml"
+    except Exception:
+        return None
+
+
+def _fingerprint(path) -> str:
+    try:
+        st = path.stat()
+        return f"{st.st_mtime_ns}:{st.st_size}"
+    except OSError:
+        return ""
+
+
+def clear_outline_cache(subject_id: str | None = None) -> None:
+    """清空大纲进程缓存（subject_id 为空 = 全清；测试/外部文件变更后调用）。"""
+    with _cache_lock:
+        if subject_id is None:
+            _outline_cache.clear()
+        else:
+            _outline_cache.pop(subject_id, None)
+
+
+def _cached_outline(subject_id: str) -> OutlineDoc | None:
+    """读大纲（进程缓存；指纹 = 文件 mtime_ns+size，变更自动重读）。"""
+    path = _outline_path_of(subject_id)
+    fp = _fingerprint(path) if path is not None else ""
+    if not fp:
+        with _cache_lock:
+            _outline_cache.pop(subject_id, None)
+        return None
+    with _cache_lock:
+        cached = _outline_cache.get(subject_id)
+        if cached is not None and cached[0] == fp:
+            return cached[1]
+    doc: OutlineDoc | None = None
+    try:
+        doc = outline_store.get_outline(subject_id)
+    except OutlineError:
+        doc = None
+    with _cache_lock:
+        _outline_cache[subject_id] = (fp, doc)
+    return doc
 
 
 def _subject_ids(db: Session) -> set[str]:
@@ -41,17 +95,14 @@ def resolve_subject_unit(db: Session, node_id: str) -> tuple[str, str] | None:
     subjects = _subject_ids(db)
     if head not in subjects:
         return None
-    outline = outline_store.get_outline(head)
+    outline = _cached_outline(head)
     if outline is None or node_id not in outline.by_id():
         return None
     return head, node_id
 
 
 def _outline_of(subject_id: str) -> OutlineDoc | None:
-    try:
-        return outline_store.get_outline(subject_id)
-    except OutlineError:
-        return None
+    return _cached_outline(subject_id)
 
 
 def _node_states(db: Session, user_id: str, node_ids: set[str]) -> dict[str, str]:
@@ -161,4 +212,6 @@ __all__ = [
     "node_allowed",
     "subject_node_allowed",
     "refresh_concept_evidence",
+    "clear_outline_cache",
+    "_cached_outline",
 ]

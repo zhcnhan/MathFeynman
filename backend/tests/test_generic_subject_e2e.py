@@ -181,3 +181,89 @@ class TestGenericSubjectLoop:
         # 通用节点可学（无前置）
         r = app_client.post("/api/session/start", json={"node_id": f"{sid}.q1"})
         assert r.status_code == 200, r.text
+
+
+class TestBlock3:
+    def test_outline_gate_cache_invalidates_on_regenerate(self, app_client, cleanup_sids):
+        """R19 块3：outline_gate 大纲进程缓存——文件变更（重生成 revision）后指纹失效重读，
+        门禁/单元视图立即反映新大纲，不用手动清缓存。"""
+        from app.db import SessionLocal
+        from app.outline import store as st
+        from app.service import outline_gate as og
+
+        sid = _new_sid("ca")
+        cleanup_sids.append(sid)
+        app_client.post("/api/subjects", json={"label": "C", "subject_id": sid})
+        r = app_client.put(f"/api/subjects/{sid}/outline",
+                           json={"units": [
+                               {"id": f"{sid}.a", "title": "A", "group": "g",
+                                "objectives": ["o"], "concept_tags": ["甲"]},
+                           ], "status": "active", "source": "manual"})
+        assert r.status_code == 200
+        with SessionLocal() as db:
+            # 缓存首读
+            assert og.resolve_subject_unit(db, f"{sid}.a") == (sid, f"{sid}.a")
+            ok, _ = og.unit_allowed(db, "local", sid, f"{sid}.a")
+            assert ok is True
+        # 整份重生成（单元 a → b 改名），revision 递增
+        r = app_client.put(f"/api/subjects/{sid}/outline",
+                           json={"units": [
+                               {"id": f"{sid}.b", "title": "B", "group": "g",
+                                "objectives": ["o"], "concept_tags": ["甲"]},
+                           ], "status": "active", "source": "manual"})
+        assert r.status_code == 200 and r.json()["revision"] == 2
+        with SessionLocal() as db:
+            # 无需手动清缓存：指纹（mtime+size）变化即重读
+            assert og.resolve_subject_unit(db, f"{sid}.a") is None
+            assert og.resolve_subject_unit(db, f"{sid}.b") == (sid, f"{sid}.b")
+            assert og._cached_outline(sid).revision == 2
+        og.clear_outline_cache(sid)
+        st.delete_subject(_db(), sid)
+
+    def test_delete_custom_subject_resets_progress_and_removes_content(self, app_client):
+        """R19 块3：delete custom = 先按 reset 语义清进度再删——内容文件移除、subject/user 概念
+        证据/user_nodes 行清除、节点禁用，已删学科内容不可再 start。"""
+        from app import models as m
+        from app.db import SessionLocal
+        from app.outline import store as st
+
+        sid = _new_sid("del")
+        r = app_client.post("/api/subjects", json={"label": "D", "subject_id": sid})
+        assert r.status_code == 201
+        r = app_client.put(f"/api/subjects/{sid}/outline",
+                           json={"units": [
+                               {"id": f"{sid}.d1", "title": "D1", "group": "g",
+                                "objectives": ["o"], "concept_tags": ["概念X"]},
+                           ], "status": "active", "source": "manual"})
+        assert r.status_code == 200
+        assert _generate(app_client, sid, f"{sid}.d1")["status"] == "created"
+        # 掌握 d1（触发概念证据刷新）→ user_concepts 有证据
+        _master_node(f"{sid}.d1")
+        with SessionLocal() as db:
+            assert db.query(m.UserConcept).filter(m.UserConcept.subject_id == sid).count() >= 1
+        # 删除学科（先 reset 语义清理再删）
+        r = app_client.delete(f"/api/subjects/{sid}")
+        assert r.status_code == 204
+        # subject 注册与大 纲文件消失
+        assert app_client.get(f"/api/subjects/{sid}").status_code == 404
+        assert not (st.subject_dir(sid) / "outline.yaml").exists()
+        with SessionLocal() as db:
+            assert db.query(m.UserConcept).filter(m.UserConcept.subject_id == sid).count() == 0
+            assert db.query(m.Concept).filter(m.Concept.subject_id == sid).count() == 0
+            assert db.get(m.UserNode, ("local", f"{sid}.d1")) is None
+            node = db.get(m.Node, f"{sid}.d1")
+            assert node is None or node.enabled is False  # 内容消失后禁用（不残留可学孤儿）
+        from app.content import stages_dir
+        from app.service.library import refresh_library
+
+        refresh_library()
+        assert not list((stages_dir() / sid).rglob("*.md"))
+        # 已删学科内容不可再开新会话
+        r = app_client.post("/api/session/start", json={"node_id": f"{sid}.d1"})
+        assert r.status_code == 404
+
+
+def _db():
+    from app.db import SessionLocal
+
+    return SessionLocal()

@@ -1259,3 +1259,38 @@ git 提交（R19 块1）。
 2. 500 类别映射为小型字典（KeyError/ValueError/DB 忙/AI 等），未知类型一律归"系统处理"不暴露
    英文类名；如需细分可扩映射表。
 
+---
+
+## 33. R19 后续批 · 块 3：delete custom 先 reset 再删 + outline_gate 大纲缓存（2026-09-09）
+
+**规格**：R19 backlog 挑两条——12) delete custom 学科：先按 reset 语义清概念/内容掌握再删（避免
+悬挂进度与"subject 已删仍可学"的孤儿内容）；13) outline_gate 大纲读取加进程级 mtime/revision 指纹
+缓存（多学科大表性能，简单实现+测试）。
+
+**改动清单**
+1. `backend/app/outline/store.py::delete_subject`（重写）：删除前按 reset 语义清进度——
+   ① 由大纲（单元 id + 本学科前缀锚点）先取内容节点 id 集；
+   ② 删除 content/stages/<subject_id>/ 下懒生成内容文件 → refresh + sync_content（Node 行转
+      disabled，内容消失不留孤儿）；
+   ③ 清除这些节点的 user_nodes/reviews 行与 (subject) user_concepts/concepts 注册行；
+   ④ 删大纲文件 + subjects 注册行；attempts/sessions 审计留痕不删（A2 重置口径）。防误删：锚点
+      仅收本学科前缀节点（不触碰锚到 math 等其它内容的进度）。
+2. `backend/app/service/outline_gate.py`：进程级大纲缓存——指纹 = outline.yaml (mtime_ns,size)，
+   每次读取先 stat 命中指纹复用 OutlineDoc，文件变更自动重读；`clear_outline_cache(subject_id?)`
+   提供显式清空（线程锁保护）；resolve_subject_unit/_outline_of 统一走缓存。
+3. `backend/tests/test_generic_subject_e2e.py`（+2，TestBlock3）：
+   - outline_gate 缓存失效：v1(a) 首读 → 整份重生成 v2(a→b) revision+1 → 无需手动清缓存即反映
+     （resolve a=None、b 命中、revision=2）；
+   - delete custom 先 reset 再删：掌握+概念证据后 DELETE → subject/大纲消失、user_concepts/
+     concepts/user_nodes 清空、内容文件移除且 Node 行禁用、已删内容 start=404。
+
+**回归**：pytest = **258 passed + 1 skipped**（256+1 基线 + 2，不降）；content validate 24/47；
+git 提交（R19 块3）。
+
+**疑点（挂待架构裁决）**
+1. delete 后 Node 行以 disabled（enabled=0）保留（同步机制），不物理删行——与 R18 sync 语义一致、
+   保留审计追溯；如需"物理删除 + 审计仅留 log"另裁。
+2. outline_gate 缓存指纹基于 mtime_ns+size（不解析文件内容）；同 mtime_ns+size 的极端覆盖可能
+   短暂命中旧值（本实现所有大纲写入均经原子替换且 revision 变化改 size，实际不构成风险）；
+   如需更强一致可改为内容 hash 或显式 bust（clear_outline_cache 已提供）。
+

@@ -160,16 +160,67 @@ def _slugify(label: str) -> str:
 
 
 def delete_subject(db: Session, subject_id: str) -> None:
-    """删除自定义学科（preset 不可删）。大纲文件删除；DB 行删除。
+    """删除自定义学科（preset 不可删）。
 
-    进度清理语义：A2 显式重置/删除学科时清概念层与所属内容进度（本版 custom 尚无内容闭环，
-    删除仅移除大纲与注册；若日后 custom 已产生 user_nodes，删除前须先清进度——见 NOTES 疑点）。
+    删除前按 **reset 语义清进度**（R19 backlog：delete_subject 进度级联 = 先 reset 再删）：
+    1) 删除该学科内容文件（stages/<subject_id>/，A4 懒生成产物）→ refresh + sync_content
+       （库内对应 Node 行转 disabled，杜绝"subject 已删但通用内容仍可学"的孤儿节点）；
+    2) 清除该学科内容节点的 user_nodes/reviews 行与 (subject) user_concepts/concepts 注册行；
+    3) 删除大纲文件与学科注册行。attempts/sessions 审计留痕不删（A2 重置口径）。
     """
     row = db.get(models.Subject, subject_id)
     if row is None:
         raise OutlineError(f"学科不存在: {subject_id}")
     if row.kind == "preset":
         raise OutlineError("预置学科不可删除（可用 A2 显式重置清进度）")
+
+    # 0) 先取该学科大纲单元（+锚点）→ 内容节点 id 集（删除清理基准；须在删文件/大纲前计算）
+    outline = get_outline(subject_id)  # 可能为 None（损坏已由其它路径处理）
+    unit_ids: set[str] = set()
+    if outline is not None:
+        unit_ids = {u.id for u in outline.units}
+        # 锚点仅收本学科前缀节点（防误删锚到 math 等其它学科内容的用户进度）
+        unit_ids |= {a for u in outline.units for a in u.anchors if a.startswith(f"{subject_id}.")}
+
+    # 1) 内容文件（A4 通用学科产物在 content/stages/<subject_id>/）
+    from ..content import stages_dir
+
+    content_dir = stages_dir() / subject_id
+    removed_files = 0
+    if content_dir.exists():
+        for p in content_dir.rglob("*.md"):
+            p.unlink(missing_ok=True)
+            removed_files += 1
+        try:
+            content_dir.rmdir()
+        except OSError:
+            pass
+        try:  # stages 根下空壳目录回收
+            stages_dir().rmdir()
+        except OSError:
+            pass
+        if removed_files:
+            from ..service.library import refresh_library, sync_content
+
+            refresh_library()
+            sync_content(db)  # Node 行转 disabled（enabled=0，内容消失不留孤儿）
+
+    # 2) 进度清理（reset 语义）：user_nodes/reviews（学科内容节点）+ 概念证据/注册表
+    if unit_ids:
+        db.query(models.UserNode).filter(
+            models.UserNode.node_id.in_(unit_ids),
+        ).delete(synchronize_session=False)
+        db.query(models.Review).filter(
+            models.Review.node_id.in_(unit_ids),
+        ).delete(synchronize_session=False)
+    db.query(models.UserConcept).filter(
+        models.UserConcept.subject_id == subject_id
+    ).delete(synchronize_session=False)
+    db.query(models.Concept).filter(models.Concept.subject_id == subject_id).delete(
+        synchronize_session=False
+    )
+
+    # 3) 大纲文件 + 注册行
     d = subject_dir(subject_id)
     if d.exists():
         for p in d.glob("*.yaml"):
