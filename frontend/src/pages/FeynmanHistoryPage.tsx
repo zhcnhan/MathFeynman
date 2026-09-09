@@ -1,7 +1,7 @@
 // 费曼复盘（docs/07 §2.3）：回看历史口述与评分（"我当时哪里讲岔了"）。
 // R9：顶部"← 返回 / 回仪表盘"导航；维度 key 中文标签；comment 走 MdMath 渲染。
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, FeynmanHistoryItem } from "../api";
 import { dimLabel } from "../components/feynmanLabels";
 import MdMath from "../components/MdMath";
@@ -28,6 +28,7 @@ export default function FeynmanHistoryPage() {
     return (
       <div className="card">
         <NavBar nav={nav} />
+        <div className="crumbs"><Link to="/feedback">内容纠错记录（内容反馈）→</Link></div>
         <h1>费曼复盘</h1>
         <p className="empty">还没有费曼口述记录 —— 完成一个节点的学习闭环后这里会回放你的每一次口述。</p>
       </div>
@@ -36,6 +37,7 @@ export default function FeynmanHistoryPage() {
   return (
     <div className="history-page">
       <NavBar nav={nav} />
+      <div className="crumbs"><Link to="/feedback">内容纠错记录（内容反馈）→</Link></div>
       <h1>费曼复盘记录</h1>
       {items.map((it) => {
         const dims = (it.meta?.dims as Array<{ key: string; score: number; evidence_quote: string; comment: string }>) ?? [];
