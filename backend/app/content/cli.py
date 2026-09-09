@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:  # pragma: no cover - 非 TTY/不支持时忽略
         pass
-    parser = argparse.ArgumentParser(prog="content", description="MathFeynman 内容库工具")
+    parser = argparse.ArgumentParser(prog="content", description="YanHui 内容库工具")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_val = sub.add_parser("validate", help="全库结构/环/模板/验算检查")

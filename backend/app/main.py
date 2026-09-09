@@ -36,7 +36,7 @@ from .outline import store as outline_store
 from .outline.store import ensure_math_preset
 from .service.library import ensure_user, sync_content
 
-logger = logging.getLogger("mathfeynman")
+logger = logging.getLogger("yanhui")
 settings = get_settings()
 
 
@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="MathFeynman", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="YanHui", version="0.1.0", lifespan=lifespan)
 
 # 本地单机 + vite dev(5173) 跨端口访问后端(8000)
 app.add_middleware(
@@ -174,7 +174,7 @@ api = APIRouter(prefix="/api")
 
 @api.get("/health", tags=["meta"])
 def health() -> dict:
-    return {"ok": True, "app": "MathFeynman", "version": "0.1.0"}
+    return {"ok": True, "app": "YanHui", "version": "0.1.0"}
 
 
 api.include_router(dashboard.router)

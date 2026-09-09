@@ -13,7 +13,7 @@ export default function App() {
   return (
     <div className="layout">
       <nav>
-        <span className="brand">MathFeynman</span>
+        <span className="brand">颜回（YanHui）</span>
         <NavLink to="/" end>仪表盘</NavLink>
         <SubjectSwitcher />
         <NavLink to="/subjects" end>学科列表</NavLink>

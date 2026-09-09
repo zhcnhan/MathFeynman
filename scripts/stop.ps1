@@ -1,4 +1,4 @@
-﻿# 停止 MathFeynman 前后端（读取 .runtime/pids.txt 中记录的 PID）
+﻿# 停止 YanHui 前后端（读取 .runtime/pids.txt 中记录的 PID）
 $ErrorActionPreference = "SilentlyContinue"
 $root = Split-Path -Parent $PSScriptRoot
 $pidFile = Join-Path $root ".runtime\pids.txt"

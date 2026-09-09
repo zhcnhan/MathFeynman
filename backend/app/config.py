@@ -38,7 +38,7 @@ class Settings:
 
     # --- 路径 ---
     db_path: Path = field(
-        default_factory=lambda: _env_path("MF_DB_PATH", "backend/data/mathfeynman.db")
+        default_factory=lambda: _env_path("MF_DB_PATH", "backend/data/yanhui.db")
     )
     content_root: Path = field(
         default_factory=lambda: _env_path("MF_CONTENT_ROOT", "content")

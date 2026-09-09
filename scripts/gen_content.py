@@ -86,7 +86,7 @@ def cmd_topics(args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     _utf8io()
-    parser = argparse.ArgumentParser(prog="gen_content", description="MathFeynman 内容自续流水线")
+    parser = argparse.ArgumentParser(prog="gen_content", description="YanHui 内容自续流水线")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("generate", help="按蓝图主题组批量生成内容")

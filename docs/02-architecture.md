@@ -46,7 +46,7 @@ UI 只能经 API 通信，绝不直连 LLM 或数据库。
 ## 3. 建议目录结构（实现者可按此布局，允许微调但保持分层）
 
 ```
-MathFeynman/
+颜回（YanHui）/
 ├── README.md
 ├── docs/                    # 设计文档（本仓库的规范源头）
 ├── backend/

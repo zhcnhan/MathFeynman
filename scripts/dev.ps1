@@ -1,4 +1,4 @@
-﻿# MathFeynman 一键启动（Windows，docs/02 §4 / docs/08 M0）
+﻿# YanHui 一键启动（Windows，docs/02 §4 / docs/08 M0）
 # 用法:  .\scripts\dev.ps1 [-SkipBrowser] [-SkipInstall]
 param(
     [switch]$SkipBrowser,

@@ -17,7 +17,7 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(e: unknown) {
     // 保留给控制台排查（R9 #6：请用户下次记录浏览器控制台）
-    console.error("[MathFeynman] render error:", e);
+    console.error("[颜回（YanHui）] render error:", e);
   }
 
   render() {

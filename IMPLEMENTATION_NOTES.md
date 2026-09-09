@@ -20,7 +20,7 @@
   （open-spaced-repetition 官方实现，空 learning/relearning steps 使复习项=节点按天排程），
   已入 pyproject 依赖；`domain/fsrs.py` 只做薄封装（状态序列化/降级计数规则），便于日后替换。
 - **venv**：仓库根 `.venv/`（Python 3.14.3），后端 editable 安装；前端 npm。
-- **DB 路径**：默认 `backend/data/mathfeynman.db`（可 `MF_DB_PATH` 覆盖），SQLite WAL。
+- **DB 路径**：默认 `backend/data/yanhui.db`（可 `MF_DB_PATH` 覆盖），SQLite WAL。
 - **判题解析语义**（docs/04 §3 落地细节）：用户解集按"集合语义"比对（重复写同根不算错，
   缺根/多根算错）；数值题作答含符号视为 notation_error 而非判错；tolerance 缺省 1e-9。
 - **M1 判题用例统计**：参数化条目 numeric 14 + equivalence 13 + equation 22 + boolean 12 = **61 ≥ 30**。

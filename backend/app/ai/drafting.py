@@ -30,7 +30,7 @@ def _draft_messages(spec: dict) -> list[dict]:
     system = (
         "你是数学教学内容编辑。本次必须输出 JSON（不要输出 JSON 以外的任何文字），"
         "格式：{\"draft_md\": \"<完整节点 .md 文件内容，作为单个 JSON 字符串>\"}。"
-        "draft_md 内的换行请用 \\n 转义。draft_md 是 MathFeynman content 节点文件，"
+        "draft_md 内的换行请用 \\n 转义。draft_md 是 YanHui content 节点文件，"
         "**必须包含全部必填字段且 key 拼写与本骨架一致**：\n"
         "---\n"
         "id: <蓝图 id>\n"
@@ -117,7 +117,7 @@ def make_ai_drafter(settings=None):
                 "difficulty": entry.difficulty,
                 "requires_thinking": entry.requires_thinking,
                 "format_note": (
-                    "请严格按 MathFeynman content 节点 .md 格式（YAML front-matter + 正文），"
+                    "请严格按 YanHui content 节点 .md 格式（YAML front-matter + 正文），"
                     "含 ≥1 道模板题（check.mode 用 numeric_value 且 answer_expr 可 sympy 验算）"
                     "与 feynman(rubric 四维)。"
                 ),

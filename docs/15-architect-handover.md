@@ -40,5 +40,5 @@
 ## 5. 环境速查
 - 服务 scripts\dev.ps1（前端 5173/后端 8000）；日志 .runtime\backend.err.log。
 - .env：LLM_API_KEY / MF_AUTO_EXTEND / LLM_MAX_TOKENS_PER_DAY；git 三端镜像 git-mirror（GitHub↔Gitee，
-  仓库 zhcnhan/MathFeynman 与 gengzisama/MathFeynman）。
+  仓库 zhcnhan/颜回（YanHui） 与 gengzisama/颜回（YanHui））。
 - 用户是"架构师↔Euler"之间的唯一中继：你给指令文本，用户粘贴；Euler 汇报由用户带回。

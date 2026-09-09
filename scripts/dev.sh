@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MathFeynman 一键启动（macOS/Linux，docs/02 §4）。Windows 用 scripts/dev.ps1。
+# YanHui 一键启动（macOS/Linux，docs/02 §4）。Windows 用 scripts/dev.ps1。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VENV="$ROOT/.venv"
