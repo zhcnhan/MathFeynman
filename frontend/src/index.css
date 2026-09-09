@@ -30,10 +30,12 @@ nav a.active { color: #1565c0; font-weight: 600; border-bottom: 2px solid #1565c
 .banner.warn { background: #fff8e1; color: #7a5b00; }
 .banner.ok { background: #e8f5e9; color: #1b5e20; }
 
-button { font: inherit; border: none; background: #e8edf2; border-radius: 8px; padding: 7px 14px; cursor: pointer; color: #1c2733; }
+button { font: inherit; border: none; background: #e8edf2; border-radius: 8px; padding: 7px 14px; cursor: pointer; color: #1c2733; transition: transform 60ms ease, filter 120ms ease, box-shadow 120ms ease, background 120ms ease; }
 button:hover { filter: brightness(0.97); }
+button:active:not(:disabled) { transform: translateY(1px) scale(0.97); filter: brightness(0.9); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
-button.primary { background: #1565c0; color: #fff; }
+button.primary { background: #1565c0; color: #fff; box-shadow: 0 1px 2px rgb(21 101 192 / 25%); }
+button.primary:active:not(:disabled) { box-shadow: none; }
 button.ghost { background: transparent; border: 1px solid #c5cdd6; }
 .button-link { display: inline-block; margin-right: 8px; color: #1565c0; }
 

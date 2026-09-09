@@ -97,6 +97,29 @@ export default function SessionPage() {
       .catch(() => setNodeMeta(null));
   }, [resp?.session.node_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // R25：草稿持久化——必须在所有提前 return 之前声明（Hooks 顺序恒定）。
+  // resp 就绪后恢复上次输入 + 记录"上次学习"；每会话只恢复一次。
+  useEffect(() => {
+    if (!resp || didHydrateDraft.current) return;
+    didHydrateDraft.current = true;
+    try {
+      const session = resp.session;
+      const dkey = (suf: string) => `yanhui:draft:${session.id}:${suf}`;
+      const ask = localStorage.getItem(dkey("ask"));
+      const fe = localStorage.getItem(dkey("feyn"));
+      if (ask) setQuestion(ask);
+      if (fe) setFeynmanText(fe);
+      const nodeTitle = (resp.payload?.node as { title?: string } | undefined)?.title;
+      localStorage.setItem(
+        "yanhui:last_session",
+        JSON.stringify({ id: session.id, node: nodeTitle ?? session.node_id, at: Date.now() })
+      );
+    } catch {
+      /* 忽略 */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resp]);
+
   // R12：读取并维护全局模型模式（⚡快/自动/🧠深度），切换即时持久化
   useEffect(() => {
     api
@@ -207,28 +230,6 @@ export default function SessionPage() {
     setFeynmanText(v);
     saveDraft("feyn", v);
   };
-
-  useEffect(() => {
-    if (!didHydrateDraft.current) {
-      didHydrateDraft.current = true;
-      try {
-        const ask = localStorage.getItem(dkey("ask"));
-        const fe = localStorage.getItem(dkey("feyn"));
-        if (ask) setQuestion(ask);
-        if (fe) setFeynmanText(fe);
-        // 记录"上次学习"，供仪表盘一键续学
-        const nodeLabel =
-          (payload?.node as { title?: string } | undefined)?.title ?? session.node_id;
-        localStorage.setItem(
-          "yanhui:last_session",
-          JSON.stringify({ id: sidNow, node: nodeLabel, at: Date.now() })
-        );
-      } catch {
-        /* 忽略 */
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sidNow]);
 
   const act = async (action: string, body: Record<string, unknown> = {}) => {
     setSubmitting(true);
@@ -354,9 +355,9 @@ export default function SessionPage() {
           {step === "done" && <DoneView payload={payload} onHome={() => nav("/")} onHistory={() => nav("/feynman-history")} />}
 
           <div className="action-row">
-            {step === "practice" && canReissue && !submitting && (
+            {step === "practice" && canReissue && (
               <button className="ghost" disabled={submitting} onClick={async () => { await act("reissue_after_regen"); }}>
-                🔄 换新题（已纠错替换）
+                {submitting ? "♻️ 换题中…" : "🔄 换新题（已纠错替换）"}
               </button>
             )}
             {step === "practice" && payload.verdict === "wrong" && !exercise?.interactive.includes("guided") && (

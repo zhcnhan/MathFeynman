@@ -28,6 +28,7 @@ const KIND_LABEL: Record<string, string> = {
 export default function FeedbackPage() {
   const [items, setItems] = useState<FeedbackRow[]>([]);
   const [err, setErr] = useState("");
+  const [busyId, setBusyId] = useState<number | null>(null); // 正在"重试处理"的行
   const load = () =>
     api
       .get<{ items: FeedbackRow[] }>("/feedback")
@@ -52,13 +53,18 @@ export default function FeedbackPage() {
         </div>
         {items.map((f) => {
           const retryable = f.status === "pending" || f.status === "failed";
+          const busy = busyId === f.id;
           const retry = async () => {
+            if (busy) return;
             setErr("");
+            setBusyId(f.id); // 立即给出"处理中"反馈，避免按钮无反应感
             try {
               await api.post(`/feedback/${f.id}/regen`, undefined);
               await load();
             } catch (e) {
               setErr(String(e));
+            } finally {
+              setBusyId(null);
             }
           };
           return (
@@ -78,7 +84,9 @@ export default function FeedbackPage() {
               </div>
               <div style={{ width: 90 }}>
                 {retryable && (
-                  <button className="btn" onClick={() => void retry()}>重试处理</button>
+                  <button className="btn" disabled={busy} onClick={() => void retry()}>
+                    {busy ? "♻️ 处理中…" : "重试处理"}
+                  </button>
                 )}
               </div>
             </div>
