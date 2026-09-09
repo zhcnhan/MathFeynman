@@ -291,6 +291,7 @@ def _regenerate_node_now(db: Session, user_id: str, node_id: str, *, drafter=Non
             _mark(db, rows, "failed", f"内容文件已替换但库同步失败：{report.errors[:2]}（请重启服务或人工复核）")
             db.flush()
             return {"action": "failed", "node_id": node_id, "message": "库同步失败，请人工复核。"}
+        _invalidate_stale_practice(db, node_id)  # R25：换题后清掉指向旧题目 id 的进行中练习
         _mark(db, rows, "regenerated", f"已自动重生成替换（第 {len([a for a in attempts if '[attempt' in a]) + 1} 稿通过自动校验；{len(rows)} 条反馈清零）。")
         db.flush()
         return {
@@ -301,6 +302,40 @@ def _regenerate_node_now(db: Session, user_id: str, node_id: str, *, drafter=Non
     finally:
         with _regen_lock:
             _regen_active.discard(node_id)
+
+
+def _invalidate_stale_practice(db, node_id: str) -> None:
+    """R25：内容自动替换后，清掉该节点会话里指向"旧题 id"的进行中练习，
+    使其重新抽到新题（避免渲染不存在题目 id 报错 / 用户看到永不更新的旧题）。"""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from .. import models
+    from ..content.loader import load_library
+
+    lib = load_library()
+    doc = lib.by_id.get(node_id)
+    new_ids = {e.id for e in doc.exercises} if doc else set()
+    rows = (
+        db.query(models.Session)
+        .filter(models.Session.node_id == node_id, models.Session.state == "learning")
+        .all()
+    )
+    for s in rows:
+        flow = s.flow_json
+        if not flow:
+            continue
+        p = flow.get("practice") or {}
+        if flow.get("stage") != "practice" or p.get("passed"):
+            continue
+        cur = p.get("current") or {}
+        if cur.get("exercise_id") and cur["exercise_id"] not in new_ids:
+            p["current"] = None
+            p["attempts_this"] = 0
+            p["hints_this"] = 0
+            flow["practice"] = p
+            s.flow_json = dict(flow)
+            flag_modified(s, "flow_json")
+    db.flush()
 
 
 __all__ = [

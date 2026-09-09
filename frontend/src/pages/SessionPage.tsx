@@ -129,11 +129,12 @@ export default function SessionPage() {
         message: msg,
         exercise_id: exId || null,
       });
-      // auto 节点 → 后台自动重生成替换：轮询复核队列看处理结果（最多 ~15s）
+      // auto 节点 → 后台自动重生成替换：轮询复核队列看处理结果（最多 ~45s）
       if (posted.regen?.action === "regenerating") {
-        setNotice("已提交复核，正在自动重生成替换…");
+        setNotice("已提交复核，正在自动重生成替换…（可能需 1 分钟，内容较复杂时请耐心）");
         const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-        for (let i = 0; i < 10; i++) {
+        let final = false;
+        for (let i = 0; i < 30 && !final; i++) {
           await sleep(1500);
           try {
             const list = await api.get<{ items: Array<{ status: string; result?: string }> }>(
@@ -142,14 +143,19 @@ export default function SessionPage() {
             const latest = list.items[0];
             if (!latest) continue;
             if (latest.status === "regenerated") {
-              setNotice("✅ 已自动重生成替换该节点（纠错已处理）。");
+              final = true;
+              // 内容已替换：同步一次会话视图，让用户看到最新内容/题目
+              await refresh();
+              setNotice("✅ 内容已自动重生成替换。正在做的这题若来自旧内容，请点「结束并查看达标情况」退出后重新进入本节点，即可抽到新题。");
               return;
             }
             if (latest.status === "failed") {
+              final = true;
               setNotice(`❌ 自动重生成失败（原内容保留，待人工）：${(latest.result ?? "").slice(0, 120)}`);
               return;
             }
             if (latest.status === "reviewed") {
+              final = true;
               setNotice("已标记复核（人工节点）。");
               return;
             }
@@ -158,7 +164,10 @@ export default function SessionPage() {
             break; // 轮询失败不再打扰用户
           }
         }
-        setNotice("已提交复核；处理仍在后台进行，可在复核队列查看结果。");
+        if (!final) {
+          await refresh();
+          setNotice("仍在后台处理（预计 1–2 分钟内完成）。完成后重新进入本节点即可看到新题；结果也可在「费曼复盘/内容反馈」处查看。");
+        }
         return;
       }
       if (posted.item?.source === "human") {
