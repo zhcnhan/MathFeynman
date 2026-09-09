@@ -1,6 +1,7 @@
-// 顶部学科切换下拉：math → 原仪表盘（数学地图）；其它学科 → 该学科大纲页。
+// 顶栏学科切换（纯链接式，避免 select 事件歧义）：
+// 数学 → 首页仪表盘；其它学科 → /subjects/<id> 大纲页。
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import { api } from "../api";
 
 interface SubjectItem {
@@ -10,8 +11,6 @@ interface SubjectItem {
 }
 
 export default function SubjectSwitcher() {
-  const nav = useNavigate();
-  const loc = useLocation();
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
 
   useEffect(() => {
@@ -21,34 +20,20 @@ export default function SubjectSwitcher() {
       .catch(() => setSubjects([]));
   }, []);
 
-  // 当前学科：/subjects/:id → id；首页 → math；其余空
-  const m = loc.pathname.match(/^\/subjects\/([^/]+)/);
-  const active =
-    loc.pathname === "/" ? "math" : m ? decodeURIComponent(m[1]) : "";
-
-  const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const v = e.target.value;
-    if (!v) return;
-    nav(v === "math" ? "/" : `/subjects/${encodeURIComponent(v)}`);
-  };
-
   if (!subjects.length) return null;
   return (
-    <span className="subject-switch" style={{ marginLeft: 6 }}>
-      <select
-        value={active}
-        onChange={onChange}
-        style={{ padding: "3px 6px", borderRadius: 6, border: "1px solid #c5cdd6" }}
-        title="切换学科"
-      >
-        <option value="" disabled>学科…</option>
-        <option value="math">数学（预置）</option>
-        {subjects
-          .filter((s) => s.id !== "math")
-          .map((s) => (
-            <option key={s.id} value={s.id}>{s.label}（{s.id}）</option>
-          ))}
-      </select>
+    <span className="subject-switch" style={{ marginLeft: 4 }}>
+      <span className="dim" style={{ fontSize: 12 }}>学科·</span>
+      <NavLink to="/" end style={{ marginRight: 4 }}>
+        数学
+      </NavLink>
+      {subjects
+        .filter((s) => s.id !== "math")
+        .map((s) => (
+          <NavLink key={s.id} to={`/subjects/${encodeURIComponent(s.id)}`} style={{ marginRight: 4 }}>
+            {s.label}
+          </NavLink>
+        ))}
     </span>
   );
 }
