@@ -1674,3 +1674,47 @@ content validate 26/49 全绿；audit 5 学段不变；npm run build 通过（�
 2. 确定性种子基于"单元 id + 题 id"：单元结构重排（同 id 换标签/目标）会改变选项序——属
    预期（内容随大纲变化重出稿），重生成幂等性仍由"同输入同输出"保证（测试锁定）。
 
+---
+
+## 44. docs/14 Phase C · C5：回归与验收（2026-09-09）
+
+**验收结论（B5 规格的 Phase C 对应项）**
+- **全量回归**：pytest = **291 passed + 2 skipped**（293 collected；291+1 基线 + 新增
+  test_phase_c_live ×1（离线 skip），不降）；content validate 26/49 全绿；audit 5 学段不变；
+  npm run build（tsc+vite）通过；git 干净。
+- **真模型验收（MF_ALLOW_LIVE_AI=1 + .env LLM_API_KEY，DeepSeek 实测可达）**：
+  `test_phase_c_live.py` 通过——行星科学 10 单元全部生成并落库，每单元 ≥3 题/≥2 题型/
+  单元内题面去重/科学 rubric（evidence+证据与推理）；材料（文本粘贴 + **PDF 上传 2 页**
+  kind=pdf）入库后，生成单元讲解出现"参考材料（可追溯来源）"（可追溯来源注入）；
+  search 未配置 → `backend.configured=false` + 中文提示（UI 标注"未配置检索后端"数据源）；
+  AI 学科化路径至少 1 单元命中（全量/多数为 AI 起草，退化自动重试兜底 heuristic）。
+- **检索 provider select**：配置 provider 后的 search 出候选 + select 抓正文入库由
+  test_search_provider.py（mock provider/transport，hermetic）锁定——真实 SearXNG 实例
+  属用户自托管依赖（本环境未装），验收留"配置 MF_SEARCH_PROVIDER=searxng + MF_SEARXNG_URL
+  后由用户真跑"清单项。
+- **math 停用/重启用（含 UI 数据）**：test_subject_visibility（C3）+ B5 链锁定——停用 →
+  仪表盘/图谱/地图隐藏、不可学（start 409）、重启不复活、清进度；重启用恢复（学科列表"已移除"
+  分组按钮）；Dashboard 顶部中文提示条。
+- **PDF 上传小文件 → 材料入库 → 重生成出现参考材料**：test_pdf_upload + 上述 live 用例锁定。
+- **零残留**：git 干净（本轮只新增验收测试文件）；测试内容写入均落在 hermetic 副本与
+  临时 DB，真实 content/ 无 auto 文件、无 _drafts 残留。
+
+**验收中记录的现象（非阻塞，见疑点）**
+- 真模型跨单元偶现同一材料句子复用作题面（如"小行星带位于火星和木星轨道之间"出现于两个
+  单元）——AI 起草每次只对**当前单元**去重；单元内去重由 validate_generic_content 强制，
+  跨单元/跨轮次去重为 B1#3"可选"口径（R23 已裁暂不要求）。
+- 材料文本为 AI 起草的强参考：两单元均引用同一来源句，属"内容自然重叠"而非题型单调
+  （各单元仍 ≥2 题型）。
+
+**回归清单快照**：C1 279+1 → C2 285+1 → C3 288+1 → C4 291+1 → C5 291+2（+live skip）；
+每一步 content validate 26/49、audit 全绿、npm build、git 干净。
+
+**疑点（挂待架构裁决）**
+1. 跨单元/跨轮次题面去重对 **AI 起草路径**未强制（离线 heuristic 天然不同单元题面不同）：
+   若要求 AI 路径也全局去重需把"题面池"传入 CALL_UNIT_CONTENT 上下文（B1#3 曾裁"暂不要求"，
+   随 AI 内容量增长可重议）。
+2. 真模型验收在用户机器重复执行即：`MF_ALLOW_LIVE_AI=1 pytest backend/tests/test_phase_c_live.py`
+   （或全量带该 flag 跑）；本次执行已验证 DeepSeek 可达且 10 单元 AI 出稿全过。
+3. 真实 SearXNG 端到端（search 候选 → select 抓正文）需用户自托管实例后按 .env 配置复验；
+   代码路径已 mock 锁定（C1）。
+
