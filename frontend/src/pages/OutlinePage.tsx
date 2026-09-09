@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 
 type Unit = {
@@ -45,6 +45,7 @@ const STATUS_CLS: Record<string, string> = {
 
 export default function OutlinePage() {
   const { id = "" } = useParams();
+  const nav = useNavigate();
   const [subject, setSubject] = useState<Record<string, any> | null>(null);
   const [outline, setOutline] = useState<Record<string, any> | null>(null);
   const [progress, setProgress] = useState<{ units: UnitView[]; concepts_mastered: number } | null>(null);
@@ -175,6 +176,19 @@ export default function OutlinePage() {
       const r = await api.post<{ nodes_reset: number }>(`/subjects/${id}/progress/reset`, { mode: "all" });
       setMsg(`进度已重置（清空 ${r.nodes_reset} 个内容节点掌握）`);
       await load();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const learnUnit = async (uid: string) => {
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await api.post<{ session: { id: string } }>("/session/start", { node_id: uid });
+      nav(`/session/${r.session.id}`);
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -314,9 +328,16 @@ export default function OutlinePage() {
                           </td>
                           <td style={{ padding: "6px 4px" }}>
                             {!isPreset && (
-                              <button style={{ padding: "4px 10px" }} onClick={() => genContent(u.id)} disabled={busy}>
-                                懒生成内容
-                              </button>
+                              <>
+                                <button style={{ padding: "4px 10px" }} onClick={() => genContent(u.id)} disabled={busy}>
+                                  懒生成内容
+                                </button>{" "}
+                                {pv?.open && (
+                                  <button style={{ padding: "4px 10px" }} onClick={() => learnUnit(u.id)} disabled={busy}>
+                                    开始学习
+                                  </button>
+                                )}
+                              </>
                             )}
                             {u.prereqs.length > 0 && <span className="dim"> 前置 {u.prereqs.length}</span>}
                           </td>

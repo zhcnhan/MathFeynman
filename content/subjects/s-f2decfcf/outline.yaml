@@ -1,0 +1,203 @@
+subject: s-f2decfcf
+label: 行星科学
+schema_version: 1
+revision: 1
+status: active
+source: ai
+unit_id_scope: subject
+generated_at: '2026-09-09T09:27:50+00:00'
+updated_at: '2026-09-09T09:27:50+00:00'
+note: ''
+units:
+- id: s-f2decfcf.u01
+  title: 太阳系概览与行星分类
+  objectives:
+  - 描述太阳系的结构和主要天体类型
+  - 区分类地行星、类木行星和矮行星的特征
+  concept_tags:
+  - 太阳系结构
+  - 行星分类
+  - 天体类型
+  group: 基础
+  prereqs: []
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}
+- id: s-f2decfcf.u02
+  title: 行星轨道与开普勒定律
+  objectives:
+  - 解释开普勒三定律及其在行星运动中的应用
+  - 计算轨道参数并预测行星位置
+  concept_tags:
+  - 开普勒定律
+  - 轨道力学
+  - 轨道参数
+  group: 基础
+  prereqs:
+  - s-f2decfcf.u01
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}
+- id: s-f2decfcf.u03
+  title: 行星内部结构与热演化
+  objectives:
+  - 描述行星内部圈层结构及其形成机制
+  - 解释放射性衰变和引力收缩对热演化的影响
+  concept_tags:
+  - 行星内部结构
+  - 热演化
+  - 放射性衰变
+  group: 基础
+  prereqs:
+  - s-f2decfcf.u01
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}
+- id: s-f2decfcf.u04
+  title: 行星表面地质过程
+  objectives:
+  - 识别撞击坑、火山、构造活动等表面特征
+  - 分析内力和外力地质过程对表面改造的作用
+  concept_tags:
+  - 撞击坑
+  - 火山作用
+  - 构造运动
+  - 表面过程
+  group: 基础
+  prereqs:
+  - s-f2decfcf.u03
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}
+- id: s-f2decfcf.u05
+  title: 行星大气与气候系统
+  objectives:
+  - 比较不同行星大气的成分和结构
+  - 解释温室效应、大气环流等气候现象
+  concept_tags:
+  - 大气成分
+  - 大气环流
+  - 温室效应
+  - 气候
+  group: 基础
+  prereqs:
+  - s-f2decfcf.u01
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}
+- id: s-f2decfcf.u06
+  title: 行星磁场与空间环境
+  objectives:
+  - 解释行星磁场的产生机制
+  - 描述磁场与太阳风的相互作用及其对行星环境的影响
+  concept_tags:
+  - 磁场
+  - 太阳风
+  - 磁层
+  - 空间环境
+  group: 进阶
+  prereqs:
+  - s-f2decfcf.u03
+  - s-f2decfcf.u05
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}
+- id: s-f2decfcf.u07
+  title: 行星形成与演化理论
+  objectives:
+  - 阐述星云假说和行星吸积过程
+  - 分析行星迁移对太阳系演化的影响
+  concept_tags:
+  - 星云假说
+  - 吸积
+  - 行星迁移
+  - 演化
+  group: 进阶
+  prereqs:
+  - s-f2decfcf.u02
+  - s-f2decfcf.u03
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}
+- id: s-f2decfcf.u08
+  title: 系外行星探测与特征
+  objectives:
+  - 掌握凌星法和视向速度法探测系外行星的原理
+  - 比较系外行星与太阳系行星的多样性
+  concept_tags:
+  - 系外行星
+  - 凌星法
+  - 视向速度
+  - 宜居带
+  group: 进阶
+  prereqs:
+  - s-f2decfcf.u01
+  - s-f2decfcf.u02
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}
+- id: s-f2decfcf.u09
+  title: 天体生物学与宜居性
+  objectives:
+  - 定义宜居带并评估行星宜居性因素
+  - 讨论生命存在的潜在环境和生物标志
+  concept_tags:
+  - 宜居带
+  - 天体生物学
+  - 生物标志
+  - 生命起源
+  group: 进阶
+  prereqs:
+  - s-f2decfcf.u05
+  - s-f2decfcf.u08
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}
+- id: s-f2decfcf.u10
+  title: 行星科学前沿研究方法
+  objectives:
+  - 概述遥感、质谱、光谱等探测技术
+  - 设计简单的研究方案并分析数据
+  concept_tags:
+  - 遥感技术
+  - 光谱分析
+  - 质谱
+  - 探测任务
+  group: 高级
+  prereqs:
+  - s-f2decfcf.u04
+  - s-f2decfcf.u06
+  - s-f2decfcf.u07
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}

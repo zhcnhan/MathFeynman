@@ -7,6 +7,7 @@ import ReviewPage from "./pages/ReviewPage";
 import SessionPage from "./pages/SessionPage";
 import SettingsPage from "./pages/SettingsPage";
 import SubjectsPage from "./pages/SubjectsPage";
+import SubjectSwitcher from "./components/SubjectSwitcher";
 
 export default function App() {
   return (
@@ -14,7 +15,8 @@ export default function App() {
       <nav>
         <span className="brand">MathFeynman</span>
         <NavLink to="/" end>仪表盘</NavLink>
-        <NavLink to="/subjects">学科</NavLink>
+        <SubjectSwitcher />
+        <NavLink to="/subjects">学科列表</NavLink>
         <NavLink to="/review">复习</NavLink>
         <NavLink to="/feynman-history">费曼复盘</NavLink>
         <NavLink to="/settings">设置</NavLink>
