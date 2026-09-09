@@ -1444,7 +1444,8 @@ content validate 24/47；git 提交（PhaseB B4）。
 - 全量回归：pytest = **269 passed + 1 skipped**（基线 258+1 → +11：judge 扩展 2、单元内容质量 4、
   materials ×4、math 移除/重启不复活/重启用链 ×1；B4 生命周期语义为既有用例改写/升级，不新增
   计数），只增不减；
-- content validate 24/47 全绿（通用内容只在临时学科副本生成/删除，仓库零残留）；
+- content validate 26 节点/49 练习全绿（当前仓库基线，随运行期 auto 内容增补；测试 hermetic
+  基线仍为 13 人工节点不受影响）；通用内容只在临时学科副本生成/删除，仓库零残留；
 - `npm run build`（tsc + vite）通过；git 提交链：B1 (…) → B2 → B3 → B4 → B5（本批）。
 - 行星科学试跑（test_unit_content_gen）：10 单元全部生成并落库，每单元 ≥3 题/≥2 题型/跨单元题面
   零重复，rubric 命中科学模板（evidence 维度）——"三题相同/全自评"消除由校验锁定。
