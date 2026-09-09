@@ -313,8 +313,9 @@ def _invalidate_stale_practice(db, node_id: str) -> None:
     from ..content.loader import load_library
 
     lib = load_library()
-    doc = lib.by_id.get(node_id)
-    new_ids = {e.id for e in doc.exercises} if doc else set()
+    loaded = lib.by_id.get(node_id)
+    node_doc = getattr(loaded, "doc", loaded) if loaded else None
+    new_ids = {e.id for e in node_doc.exercises} if node_doc else set()
     rows = (
         db.query(models.Session)
         .filter(models.Session.node_id == node_id, models.Session.state == "learning")
