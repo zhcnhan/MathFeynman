@@ -6,7 +6,7 @@ status: active
 source: roadmap
 unit_id_scope: entry
 generated_at: '2026-09-09T08:39:09+00:00'
-updated_at: '2026-09-09T08:39:09+00:00'
+updated_at: '2026-09-09T08:40:10+00:00'
 note: 数学总 Outline：由五学段 roadmap（docs/12）派生（学段=关卡组、段内=既有总序链）。primary 组已精核转正(reviewed)；middle/high/college/ai
   为 draft，随用户到段滚动精核转正（docs/12 §4）。概念标签 = 锚点/auto 内容节点 core_concepts 归一回填，重生成按单元 id 保留既有标签。学习门禁仍由 roadmap
   权威总序引擎（R18）驱动。
@@ -724,23 +724,19 @@ units:
   status: draft
   meta: {}
 - id: middle.m14
-  title: 一元一次方程的应用
-  objectives:
-  - 审题设列解检五步
-  - 和差倍分/行程/工程等模型
+  title: ''
+  objectives: []
   concept_tags:
   - 设未知数
   - 等量关系
   - 列方程
   - 检验
   group: middle
-  prereqs:
-  - middle.m13
-  difficulty: 3
-  requires_thinking: true
-  anchors:
-  - middle.0103
-  topic: 代数·方程不等式与方程组
+  prereqs: []
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: ''
   status: draft
   meta: {}
 - id: middle.m15

@@ -155,7 +155,14 @@ def derive_math_outline(
     """
     if db.get(models.Subject, outline_store.PRESET_MATH) is None:
         outline_store.ensure_math_preset(db)
-    prev = outline_store.get_outline(outline_store.PRESET_MATH)
+    # 旧大纲读取容错：文件损坏/结构非法（如 title 空）时降级为“无旧版”，
+    # 直接由 roadmap 干净重派生并覆盖（标签保留尽力而为，不阻塞修复）。
+    prev = None
+    try:
+        prev = outline_store.get_outline(outline_store.PRESET_MATH)
+    except Exception as e:  # OutlineError / OSError 等
+        print(f"[math_preset] 读取旧大纲失败，降级全量重派生: {e}")
+        prev = None
     prev_tags = {u.id: list(u.concept_tags) for u in prev.units} if prev else {}
     if lib_docs is None and lib_ids is None:
         from ..content.loader import load_library
