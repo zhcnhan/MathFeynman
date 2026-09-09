@@ -15,7 +15,7 @@ Schema v1（大纲文件 content/subjects/<sid>/outline.yaml 的 YAML 结构）�
     units:
       - id: primary.s01
         title: …
-        objectives: [≤4 条]
+        objectives: [≤5 条]
         concept_tags: [归一化概念标签（A2 起有效，v1 允许空）]
         group: primary            # 关卡组（math：学段 primary/middle/…；通用：主题组名）
         prereqs: [单元 id / 锚点内容节点 id（含 '.'）]
@@ -86,11 +86,12 @@ class OutlineUnit(BaseModel):
     @field_validator("objectives")
     @classmethod
     def _objectives_ok(cls, v: list[str]) -> list[str]:
-        # docs/14 规格"目标≤3"；数学既有条目少量 ≤4（精核批 A2 曾扩至 4 条）→ 上限 4。
-        # AI 起草提示词要求 ≤3；schema 宽松为 ≤4（见 NOTES 疑点，待架构定口径）。
+        # docs/14 规格"目标≤3"为 AI 起草口径；数学 roadmap 既有条目含 ≤5 条精核条目
+        # （college.c34b SVD 五条，a12 KKT 四条）→ schema 上限 5（数学大纲原样保留）。
+        # AI 起草提示词要求 ≤3（A4 落地）；上限 5 兼容既有数据（见 NOTES 疑点，待架构定口径）。
         cleaned = [str(x).strip() for x in v if str(x).strip()]
-        if len(cleaned) > 4:
-            raise ValueError(f"objectives 过多（{len(cleaned)}>4）")
+        if len(cleaned) > 5:
+            raise ValueError(f"objectives 过多（{len(cleaned)}>5）")
         return cleaned
 
     @field_validator("concept_tags")

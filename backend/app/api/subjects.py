@@ -193,14 +193,20 @@ def patch_unit(subject_id: str, unit_id: str, body: PatchUnitBody,
     return doc.model_dump(mode="json")
 
 
-@router.post("/subjects/{subject_id}/outline/regenerate", status_code=501)
+@router.post("/subjects/{subject_id}/outline/regenerate")
 def regenerate_outline(subject_id: str, db: Session = Depends(get_db)) -> dict:
-    """A4 开放：AI 起草/重生成大纲。A1 仅占位（返回可执行语义说明）。"""
+    """大纲重生成：preset(math) = 由 roadmap 派生/再派生（revision+1，概念标签按 unit id 保留）；
+    通用学科 AI 起草/重生成在 Phase A4 开放。"""
     row = outline_store.get_subject(db, subject_id)
     if row is None:
         raise _err(404, "not_found", f"学科不存在: {subject_id}")
+    if row.kind == "preset":
+        from ..outline.math_preset import derive_math_outline
+
+        doc = derive_math_outline(db, status="active")
+        return doc.model_dump(mode="json")
     raise _err(501, "not_implemented",
-               f"大纲 AI 起草/重生成在 Phase A4 开放（当前为 {row.kind} 学科）")
+               f"通用学科大纲 AI 起草/重生成在 Phase A4 开放（当前为 custom 学科 {subject_id}）")
 
 
 # ---------- A2：概念层与进度映射（docs/14 §2.2） ----------

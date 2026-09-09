@@ -23,6 +23,7 @@ from .api import (
 )
 from .config import get_settings
 from .db import SessionLocal, init_db
+from .outline import store as outline_store
 from .outline.store import ensure_math_preset
 from .service.library import ensure_user, sync_content
 
@@ -38,6 +39,15 @@ async def lifespan(app: FastAPI):
             ensure_user(db)
             ensure_math_preset(db)  # Phase A A1：预置学科注册（幂等）
             report = sync_content(db)
+            # Phase A A3：数学总 Outline 缺失时由 roadmap 自动派生一次（版本治理见 math_preset）
+            if outline_store.get_outline("math") is None:
+                try:
+                    from .outline.math_preset import derive_math_outline
+
+                    derive_math_outline(db)
+                    logger.info("数学总 Outline 已由 roadmap 自动派生（首启）")
+                except Exception as e:  # roadmap/内容异常不阻塞启动
+                    logger.warning("数学总 Outline 自动派生失败（服务仍可启动）: %s", e)
             db.commit()
             logger.info(
                 "内容库同步完成: nodes=%s edges=%s disabled=%s errors=%s",

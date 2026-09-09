@@ -81,11 +81,11 @@ class TestOutlineSchema:
         assert any("primary.0101" in p for p in problems)
         assert validate_outline_doc(doc, known_content_ids={"primary.0101"}) == []
 
-    def test_objectives_cap_four(self):
+    def test_objectives_cap_five(self):
+        unit = OutlineUnit(**_u("d.a", objectives=["1", "2", "3", "4", "5"]))  # 数学既有 ≤5 兼容
+        assert len(unit.objectives) == 5
         with pytest.raises(Exception):
-            OutlineUnit(**_u("d.a", objectives=["1", "2", "3", "4", "5"]))
-        unit = OutlineUnit(**_u("d.a", objectives=["1", "2", "3", "4"]))  # 数学既有 ≤4 兼容
-        assert len(unit.objectives) == 4
+            OutlineUnit(**_u("d.a", objectives=["1", "2", "3", "4", "5", "6"]))
 
     def test_difficulty_range(self):
         OutlineUnit(**_u("d.a", difficulty=1))
@@ -228,7 +228,12 @@ class TestSubjectsApi:
         sids = {s["id"] for s in r.json()["subjects"]}
         assert "math" in sids
         math = next(s for s in r.json()["subjects"] if s["id"] == "math")
-        assert math["kind"] == "preset" and math["outline"] is None
+        assert math["kind"] == "preset"
+        # A3 起 math 总 Outline 存在（启动自动派生或仓库文件）；schema 语义锁定
+        o = math["outline"]
+        if o is not None:
+            assert o["schema_version"] == 1 and o["source"] == "roadmap"
+            assert o["units"] >= 258
 
     def test_preset_outline_put_forbidden(self, app_client):
         r = app_client.put("/api/subjects/math/outline", json={"units": _mk_units("math")})

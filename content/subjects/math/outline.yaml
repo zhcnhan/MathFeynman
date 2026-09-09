@@ -1,0 +1,4269 @@
+subject: math
+label: 数学
+schema_version: 1
+revision: 1
+status: active
+source: roadmap
+unit_id_scope: entry
+generated_at: '2026-09-09T06:13:30+00:00'
+updated_at: '2026-09-09T06:13:30+00:00'
+note: 数学总 Outline：由五学段 roadmap（docs/12）派生（学段=关卡组、段内=既有总序链）。primary 组已精核转正(reviewed)；middle/high/college/ai
+  为 draft，随用户到段滚动精核转正（docs/12 §4）。概念标签 = 锚点/auto 内容节点 core_concepts 归一回填，重生成按单元 id 保留既有标签。学习门禁仍由 roadmap
+  权威总序引擎（R18）驱动。
+units:
+- id: primary.s01
+  title: 数的认识与读写（万以内）·四舍五入与估算
+  objectives:
+  - 认识数位（个/十/百/千/万）
+  - 能正确读写与比较（万以内）
+  - 会用四舍五入取近似数并估算
+  concept_tags:
+  - 数位
+  - 读数写数
+  - 比较大小
+  - 四舍五入
+  - 估算
+  group: primary
+  prereqs: []
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s02
+  title: 百以内加减（进位与退位）
+  objectives:
+  - 掌握竖式进位/退位加减
+  - 能用口算与估算
+  concept_tags:
+  - 进位加法
+  - 退位减法
+  - 竖式计算
+  - 估算
+  group: primary
+  prereqs:
+  - primary.s01
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s03
+  title: 乘法口诀与乘法意义
+  objectives:
+  - 理解乘法是相同加数的简便
+  - 熟练 1–9 乘法口诀
+  concept_tags:
+  - 乘法
+  - 乘法口诀
+  group: primary
+  prereqs:
+  - primary.s02
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s04
+  title: 除法意义与有余数除法
+  objectives:
+  - 理解除法与乘法互逆
+  - 会做有余数除法并处理余数
+  concept_tags:
+  - 除法
+  - 乘法互逆
+  - 有余数除法
+  - 余数
+  group: primary
+  prereqs:
+  - primary.s03
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s05
+  title: 四则混合运算与运算顺序
+  objectives:
+  - 先乘除后加减、有括号先算括号
+  - 两步混合计算
+  concept_tags:
+  - 运算顺序
+  - 乘除
+  - 加减
+  - 括号
+  group: primary
+  prereqs:
+  - primary.s04
+  difficulty: 1
+  requires_thinking: false
+  anchors:
+  - primary.0101
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s22
+  title: 运算律与简便运算
+  objectives:
+  - 交换律/结合律/分配律
+  - 用运算律简便计算
+  concept_tags:
+  - 加法交换律
+  - 加法结合律
+  - 乘法交换律
+  - 乘法结合律
+  - 乘法分配律
+  group: primary
+  prereqs:
+  - primary.s05
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s27
+  title: 因数·倍数·质数与合数·公因数公倍数
+  objectives:
+  - 因数倍数与整除、质数合数概念
+  - 公因数与最大公因数（GCD）
+  - 公倍数与最小公倍数（LCM）
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s04
+  - primary.s05
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s06
+  title: 分数初步与同分母分数加减
+  objectives:
+  - 理解 a/b 的意义
+  - 同分母加减分母不变
+  concept_tags:
+  - 分数
+  - 分母
+  - 分子
+  - 同分母加减
+  group: primary
+  prereqs:
+  - primary.s05
+  - primary.s27
+  difficulty: 2
+  requires_thinking: false
+  anchors:
+  - primary.0102
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s07
+  title: 异分母分数加减与约分
+  objectives:
+  - 通分后加减
+  - 结果约成最简分数
+  concept_tags:
+  - 通分
+  - 公分母
+  - 异分母加减
+  group: primary
+  prereqs:
+  - primary.s06
+  - primary.s27
+  difficulty: 2
+  requires_thinking: false
+  anchors:
+  - primary.0103
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s08
+  title: 分数乘法与倒数初步
+  objectives:
+  - 分数乘分数
+  - 倒数的概念
+  concept_tags:
+  - 分数乘法
+  - 倒数
+  - 分数除法
+  - 约分
+  group: primary
+  prereqs:
+  - primary.s07
+  - primary.s27
+  difficulty: 2
+  requires_thinking: false
+  anchors:
+  - primary.0104
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s09
+  title: 小数的四则运算
+  objectives:
+  - 小数与分数互化
+  - 小数加减乘
+  - 小数除法竖式
+  concept_tags:
+  - 小数与分数互化
+  - 小数加减法
+  - 小数乘法
+  - 小数除法
+  group: primary
+  prereqs:
+  - primary.s08
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s10
+  title: 百分数的认识与应用
+  objectives:
+  - 理解百分数意义
+  - 求一个数的百分之几
+  concept_tags:
+  - 百分数
+  - 百分率
+  - 求一个数的百分之几
+  group: primary
+  prereqs:
+  - primary.s09
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s23
+  title: 比的意义·化简比与按比例分配
+  objectives:
+  - 理解比的意义与前项后项
+  - 化简比
+  - 按比例分配的应用
+  concept_tags:
+  - 比
+  - 前项
+  - 后项
+  - 比值
+  - 化简比
+  - 按比例分配
+  group: primary
+  prereqs:
+  - primary.s06
+  - primary.s08
+  - primary.s10
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 数与运算
+  status: reviewed
+  meta: {}
+- id: primary.s11
+  title: 长度·质量·时间单位与换算
+  objectives:
+  - 常见单位及进率
+  - 单位换算与简单测量应用
+  concept_tags:
+  - 长度单位
+  - 质量单位
+  - 时间单位
+  - 单位换算
+  group: primary
+  prereqs:
+  - primary.s02
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: 量与测量
+  status: reviewed
+  meta: {}
+- id: primary.s12
+  title: 人民币与货币计算
+  objectives:
+  - 元角分互化
+  - 购物找零情境计算
+  concept_tags:
+  - 元角分
+  - 换算
+  - 购物计算
+  group: primary
+  prereqs:
+  - primary.s02
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 量与测量
+  status: reviewed
+  meta: {}
+- id: primary.s13
+  title: 面积与体积单位换算
+  objectives:
+  - 平方米/公顷等进率
+  - 体积容积单位的关系
+  concept_tags:
+  - 面积单位
+  - 体积单位
+  - 容积单位
+  - 进率
+  - 单位换算
+  group: primary
+  prereqs:
+  - primary.s11
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 量与测量
+  status: reviewed
+  meta: {}
+- id: primary.s14
+  title: 平面图形认识与周长
+  objectives:
+  - 点线角与常见图形
+  - 长方形正方形周长
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s02
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: 图形与几何
+  status: reviewed
+  meta: {}
+- id: primary.s15
+  title: 面积公式（长方形·正方形·平行四边形·三角形·梯形）
+  objectives:
+  - 推导并会算基本图形面积
+  - 组合图形分解
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s14
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 图形与几何
+  status: reviewed
+  meta: {}
+- id: primary.s16
+  title: 角的度量·垂直与平行·三角形分类
+  objectives:
+  - 量角器与角度
+  - 三角形内角和
+  - 分类
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s14
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 图形与几何
+  status: reviewed
+  meta: {}
+- id: primary.s17
+  title: 轴对称与图形的运动
+  objectives:
+  - 轴对称图形
+  - 平移与旋转现象
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s16
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 图形与几何
+  status: reviewed
+  meta: {}
+- id: primary.s24
+  title: 圆的认识·周长与面积
+  objectives:
+  - 圆的各部分（圆心/半径/直径）
+  - 周长公式 C=2πr
+  - 面积公式推导与计算
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s15
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 图形与几何
+  status: reviewed
+  meta: {}
+- id: primary.s25
+  title: 立体图形（长方体·正方体·圆柱·圆锥）
+  objectives:
+  - 长方体/正方体表面积与体积
+  - 圆柱表面积与体积
+  - 圆锥体积（与圆柱关系）
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s13
+  - primary.s15
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 图形与几何
+  status: reviewed
+  meta: {}
+- id: primary.s18
+  title: 用字母表示数与简易方程思想
+  objectives:
+  - 字母表示数与关系
+  - 认识简易方程（一步）
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s05
+  - primary.s15
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 代数思维
+  status: reviewed
+  meta: {}
+- id: primary.s19
+  title: 两步应用题与等量关系
+  objectives:
+  - 画图/列表找等量
+  - 列式或设未知数两步求解
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s18
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 应用题建模
+  status: reviewed
+  meta: {}
+- id: primary.s26
+  title: 分数与百分数应用题（求率·折扣）
+  objectives:
+  - 求一个数是另一个数的几分之几/百分之几
+  - 增加/减少百分之几
+  - 折扣问题
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s07
+  - primary.s10
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 应用题建模
+  status: reviewed
+  meta: {}
+- id: primary.s20
+  title: 和差倍·归一·行程初步应用
+  objectives:
+  - 和差倍/归一模型
+  - 相遇行程初步
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s19
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 应用题建模
+  status: reviewed
+  meta: {}
+- id: primary.s21
+  title: 平均数与简单统计（统计图初步）·可能性
+  objectives:
+  - 平均数意义与计算
+  - 会读条形/折线统计图
+  - 简单可能性判断（一定/可能/不可能）
+  concept_tags: []
+  group: primary
+  prereqs:
+  - primary.s20
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 统计与概率
+  status: reviewed
+  meta: {}
+- id: middle.m01
+  title: 负数与数轴
+  objectives:
+  - 负数意义与数轴表示
+  - 比较大小
+  concept_tags:
+  - 负数
+  - 数轴
+  - 相反数
+  - 原点
+  group: middle
+  prereqs: []
+  difficulty: 1
+  requires_thinking: false
+  anchors:
+  - middle.0201
+  topic: 代数·数轴与整式初步
+  status: draft
+  meta: {}
+- id: middle.m02
+  title: 有理数的加法
+  objectives:
+  - 同号/异号加法法则
+  - 数轴理解加法
+  concept_tags:
+  - 有理数加法
+  - 同号相加
+  - 异号相加
+  - 绝对值
+  group: middle
+  prereqs:
+  - middle.m01
+  difficulty: 2
+  requires_thinking: false
+  anchors:
+  - middle.0202
+  topic: 代数·数轴与整式初步
+  status: draft
+  meta: {}
+- id: middle.m03
+  title: 整式的概念与同类项
+  objectives:
+  - 单项式/多项式与次数
+  - 同类项识别与合并
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m02
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 代数·数轴与整式初步
+  status: draft
+  meta: {}
+- id: middle.m04
+  title: 整式的加减与去括号
+  objectives:
+  - 去括号法则
+  - 整式加减运算
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m03
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 代数·数轴与整式初步
+  status: draft
+  meta: {}
+- id: middle.m05
+  title: 有理数的乘法与除法
+  objectives:
+  - 符号法则与绝对值相乘除
+  - 倒数与除法转化
+  - 乘除混合的运算顺序
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m01
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 代数·有理数与实数
+  status: draft
+  meta: {}
+- id: middle.m06
+  title: 有理数的乘方与科学记数法
+  objectives:
+  - 乘方的意义与符号规律
+  - 科学记数法表示大/小数
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m05
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 代数·有理数与实数
+  status: draft
+  meta: {}
+- id: middle.m07
+  title: 有理数混合运算与运算律
+  objectives:
+  - 三级混合运算顺序
+  - 交换/结合/分配律的简便计算
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m06
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 代数·有理数与实数
+  status: draft
+  meta: {}
+- id: middle.m08
+  title: 平方根与立方根
+  objectives:
+  - 算术平方根与平方根
+  - 立方根
+  - 开方与乘方互逆
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m06
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 代数·有理数与实数
+  status: draft
+  meta: {}
+- id: middle.m09
+  title: 实数与数轴（无理数）
+  objectives:
+  - 无理数与实数分类
+  - 实数在数轴上的表示
+  - 实数大小的比较
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m08
+  - middle.m01
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 代数·有理数与实数
+  status: draft
+  meta: {}
+- id: middle.m10
+  title: 二次根式及其运算
+  objectives:
+  - 二次根式的意义与性质
+  - 最简二次根式与化简
+  - 二次根式加减乘除
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m08
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 代数·有理数与实数
+  status: draft
+  meta: {}
+- id: middle.m11
+  title: 一元一次方程的概念
+  objectives:
+  - 方程/方程的解/解方程
+  - 一元一次方程的识别
+  concept_tags:
+  - 方程
+  - 一元一次方程
+  - 未知数
+  - 代数式
+  - 等号
+  group: middle
+  prereqs:
+  - middle.m03
+  difficulty: 1
+  requires_thinking: false
+  anchors:
+  - middle.0101
+  topic: 代数·方程不等式与方程组
+  status: draft
+  meta: {}
+- id: middle.m12
+  title: 等式的性质
+  objectives:
+  - 等式两条性质
+  - 性质在解方程变形中的依据
+  concept_tags:
+  - 等式性质
+  - 天平模型
+  - 两边同加
+  - 除以非零数
+  group: middle
+  prereqs:
+  - middle.m11
+  difficulty: 2
+  requires_thinking: false
+  anchors:
+  - middle.0104
+  topic: 代数·方程不等式与方程组
+  status: draft
+  meta: {}
+- id: middle.m13
+  title: 解一元一次方程（移项·去括号去分母）
+  objectives:
+  - 移项法则与依据
+  - 去括号/去分母的完整流程
+  concept_tags:
+  - 等式性质
+  - 移项
+  - 合并同类项
+  - 验根
+  - 系数化一
+  group: middle
+  prereqs:
+  - middle.m12
+  difficulty: 2
+  requires_thinking: false
+  anchors:
+  - middle.0102
+  topic: 代数·方程不等式与方程组
+  status: draft
+  meta: {}
+- id: middle.m14
+  title: 一元一次方程的应用
+  objectives:
+  - 审题设列解检五步
+  - 和差倍分/行程/工程等模型
+  concept_tags:
+  - 设未知数
+  - 等量关系
+  - 列方程
+  - 检验
+  group: middle
+  prereqs:
+  - middle.m13
+  difficulty: 3
+  requires_thinking: true
+  anchors:
+  - middle.0103
+  topic: 代数·方程不等式与方程组
+  status: draft
+  meta: {}
+- id: middle.m15
+  title: 一元一次不等式及其解集
+  objectives:
+  - 不等式的解与解集
+  - 数轴表示解集
+  - 解一元一次不等式
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m13
+  - middle.m01
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 代数·方程不等式与方程组
+  status: draft
+  meta: {}
+- id: middle.m16
+  title: 一元一次不等式的应用（含不等式组初步）
+  objectives:
+  - 列不等式解决实际问题
+  - 一元一次不等式组的概念与解集
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m15
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 代数·方程不等式与方程组
+  status: draft
+  meta: {}
+- id: middle.m17
+  title: 二元一次方程组的概念
+  objectives:
+  - 二元一次方程（组）及其解
+  - 解与图象的初步联系
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m13
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 代数·方程不等式与方程组
+  status: draft
+  meta: {}
+- id: middle.m18
+  title: 代入与加减消元法
+  objectives:
+  - 代入消元法
+  - 加减消元法
+  - 选择策略与检验
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m17
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 代数·方程不等式与方程组
+  status: draft
+  meta: {}
+- id: middle.m19
+  title: 二元一次方程组的应用
+  objectives:
+  - 设双未知数建模
+  - 鸡兔同笼等经典模型
+  - 与一元一次方程方法对比
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m18
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 代数·方程不等式与方程组
+  status: draft
+  meta: {}
+- id: middle.m20
+  title: 角与相交线
+  objectives:
+  - 余角补角与对顶角
+  - 垂线及其性质
+  - 同位角内错角同旁内角
+  concept_tags: []
+  group: middle
+  prereqs: []
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 图形与几何·平面初步
+  status: draft
+  meta: {}
+- id: middle.m21
+  title: 平行线的判定与性质
+  objectives:
+  - 三种判定方法
+  - 三条性质定理
+  - 判定与性质的综合推理
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m20
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 图形与几何·平面初步
+  status: draft
+  meta: {}
+- id: middle.m22
+  title: 三角形的认识与内角和
+  objectives:
+  - 三角形分类与三边关系
+  - 内角和定理及其证明
+  - 外角性质
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m20
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 图形与几何·平面初步
+  status: draft
+  meta: {}
+- id: middle.m23
+  title: 三角形全等（判定与性质）
+  objectives:
+  - SSS/SAS/ASA/AAS/HL 判定
+  - 全等性质用于证明
+  - 常见辅助线思路初步
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m22
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 图形与几何·平面初步
+  status: draft
+  meta: {}
+- id: middle.m24
+  title: 勾股定理及其应用
+  objectives:
+  - 勾股定理及其逆定理
+  - 面积法/拼接法证明思路
+  - 直角三角形中求边长与实际应用
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m22
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 图形与几何·平面初步
+  status: draft
+  meta: {}
+- id: middle.m25
+  title: 平面直角坐标系与点的坐标
+  objectives:
+  - 坐标系与象限
+  - 点的坐标与对称
+  - 距离与中点公式初步
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m01
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 代数·函数初步
+  status: draft
+  meta: {}
+- id: middle.m26
+  title: 变量与函数的概念
+  objectives:
+  - 常量与变量
+  - 函数定义与表示（列表/解析/图象）
+  - 自变量的取值范围
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m25
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 代数·函数初步
+  status: draft
+  meta: {}
+- id: middle.m27
+  title: 一次函数及其图象
+  objectives:
+  - 正比例函数与一次函数
+  - k/b 对图象的影响
+  - 待定系数法求解析式
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m26
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 代数·函数初步
+  status: draft
+  meta: {}
+- id: middle.m28
+  title: 一次函数与方程、不等式的联系
+  objectives:
+  - 一次函数与一元一次方程
+  - 一次函数与一元一次不等式
+  - 图象法解问题的综合应用
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m27
+  - middle.m13
+  - middle.m15
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 代数·函数初步
+  status: draft
+  meta: {}
+- id: middle.m29
+  title: 数据的收集整理与描述
+  objectives:
+  - 全面调查与抽样调查
+  - 频数分布表与直方图
+  - 扇形/条形/折线图的选择
+  concept_tags: []
+  group: middle
+  prereqs:
+  - primary.s21
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 统计与概率初步
+  status: draft
+  meta: {}
+- id: middle.m30
+  title: 数据的集中趋势与离散程度初步
+  objectives:
+  - 平均数中位数众数
+  - 方差与标准差的意义
+  - 用数据做简单决策
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m29
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 统计与概率初步
+  status: draft
+  meta: {}
+- id: middle.m31
+  title: 简单概率与频率估计
+  objectives:
+  - 事件分类与古典概型
+  - 用频率估计概率
+  - 简单概率模型的列举
+  concept_tags: []
+  group: middle
+  prereqs:
+  - middle.m29
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 统计与概率初步
+  status: draft
+  meta: {}
+- id: high.h01
+  title: 集合的概念与表示
+  objectives:
+  - 元素与集合的关系及确定性/互异性
+  - 常用数集符号
+  - 列举法与描述法表示集合
+  concept_tags: []
+  group: high
+  prereqs: []
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: 集合与常用逻辑
+  status: draft
+  meta: {}
+- id: high.h02
+  title: 集合间的基本关系
+  objectives:
+  - 子集/真子集/集合相等的判定
+  - 空集与集合的关系
+  - 子集个数的计数
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h01
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: 集合与常用逻辑
+  status: draft
+  meta: {}
+- id: high.h03
+  title: 集合的基本运算
+  objectives:
+  - 交集/并集/补集与 Venn 图
+  - 由运算关系反求参数
+  - 德摩根律初步
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h02
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 集合与常用逻辑
+  status: draft
+  meta: {}
+- id: high.h04
+  title: 充分条件与必要条件
+  objectives:
+  - 命题与 p⇒q 的含义
+  - 充分/必要/充要条件的判断
+  - 条件与集合包含关系的对应
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h03
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 集合与常用逻辑
+  status: draft
+  meta: {}
+- id: high.h05
+  title: 全称量词与存在量词
+  objectives:
+  - 全称/存在命题及其真假判断
+  - 含量词命题的否定
+  - 量词与参数问题的初步
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h04
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 集合与常用逻辑
+  status: draft
+  meta: {}
+- id: high.h06
+  title: 集合与常用逻辑综合（新定义题初步）
+  objectives:
+  - 集合运算与逻辑联结词的综合应用
+  - 新定义集合问题的理解与转化
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h05
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 集合与常用逻辑
+  status: draft
+  meta: {}
+- id: high.h07
+  title: 等式性质与一元二次方程（判别式·韦达定理）
+  objectives:
+  - 等式的性质与恒等变形
+  - 判别式与一元二次方程根的关系
+  - 韦达定理及构造方程
+  concept_tags: []
+  group: high
+  prereqs:
+  - middle.0102
+  - middle.0104
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 等式与不等式
+  status: draft
+  meta: {}
+- id: high.h08
+  title: 不等式的基本性质与解集表示
+  objectives:
+  - 不等式的传递/可加/可乘性
+  - 数轴上表示解集与区间记号
+  concept_tags: []
+  group: high
+  prereqs:
+  - middle.0201
+  - high.h07
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: 等式与不等式
+  status: draft
+  meta: {}
+- id: high.h09
+  title: 一元二次不等式及其解法
+  objectives:
+  - 因式分解与图象法解一元二次不等式
+  - 解集与对应方程根/判别式的关系
+  - 含绝对值简单不等式解法
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h03
+  - high.h08
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 等式与不等式
+  status: draft
+  meta: {}
+- id: high.h10
+  title: 含参一元二次不等式与分类讨论
+  objectives:
+  - 二次项系数符号讨论
+  - 根的大小比较与按参数分段
+  - 恒成立问题的判别式法
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h09
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 等式与不等式
+  status: draft
+  meta: {}
+- id: high.h11
+  title: 基本不等式（均值不等式）
+  objectives:
+  - 算术-几何平均不等式及等号条件
+  - 凑配法求最值（和定积最大/积定和最小）
+  - 基本不等式的常见变形
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h08
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 等式与不等式
+  status: draft
+  meta: {}
+- id: high.h12
+  title: 分式不等式与高次不等式初步
+  objectives:
+  - 分式不等式化整式处理
+  - 数轴穿根法解高次不等式
+  - 解集的交并补综合
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h09
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 等式与不等式
+  status: draft
+  meta: {}
+- id: high.h13
+  title: 不等式综合与最值问题
+  objectives:
+  - 含参与恒成立问题向最值转化
+  - 均值不等式与二次函数的综合最值
+  - 不等式证明的常用方法初步
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h10
+  - high.h11
+  - high.h12
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 等式与不等式
+  status: draft
+  meta: {}
+- id: high.h14
+  title: 函数的概念与三要素（一次函数衔接）
+  objectives:
+  - 函数定义与三要素（定义域/对应关系/值域）
+  - 求定义域与函数值（含复合）
+  - 以一次函数为实例回顾对应关系
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.0201
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h15
+  title: 函数的表示法与分段函数
+  objectives:
+  - 解析式/列表/图象三种表示
+  - 分段函数及其图象
+  - 求值域的常用方法（观察/配凑/换元）
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h14
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h16
+  title: 函数单调性与最值
+  objectives:
+  - 单调性的定义与证明
+  - 利用单调性求最值
+  - 复合函数单调性（同增异减）
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h14
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h17
+  title: 函数奇偶性与图象对称性
+  objectives:
+  - 奇偶性定义与判断
+  - 奇偶函数图象的对称性
+  - 奇偶性与单调性的综合
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h16
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h18
+  title: 函数图象变换与周期性初步
+  objectives:
+  - 平移/对称/翻折变换
+  - 周期函数概念与最小正周期
+  - 由图象与性质求解析式
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h17
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h19
+  title: 根式与分数指数幂·幂函数
+  objectives:
+  - 根式与分数指数幂的互化与运算
+  - 幂函数 y=x^n 的图象与性质
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h14
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h20
+  title: 指数运算与指数函数
+  objectives:
+  - 有理数指数幂的运算律
+  - 指数函数图象与性质
+  - 指数型增长/衰减模型初步
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h19
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h21
+  title: 对数与对数运算
+  objectives:
+  - 对数的定义与指数对数互化
+  - 对数运算性质
+  - 换底公式及常用/自然对数
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h20
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h22
+  title: 对数函数与反函数
+  objectives:
+  - 对数函数图象与性质
+  - 指数函数与对数函数互为反函数
+  - 利用单调性比较大小
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h21
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h23
+  title: 函数零点与方程（二分法）
+  objectives:
+  - 零点存在定理与零点个数
+  - 二分法求方程近似解
+  - 零点/交点与图象的关系
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h18
+  - high.h22
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h24
+  title: 任意角与弧度制（单位圆初步）
+  objectives:
+  - 角的推广与象限角
+  - 弧度制与角度制互化
+  - 弧度制下的弧长与扇形面积公式
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h14
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h25
+  title: 任意角的三角函数定义与同角关系
+  objectives:
+  - 单位圆上的三角函数定义
+  - 各象限三角函数符号
+  - 同角基本关系（平方/商数关系）
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h24
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h26
+  title: 三角函数的图象与性质
+  objectives:
+  - 五点法作正弦/余弦函数图象
+  - 周期性/奇偶性/单调区间
+  - 正切函数的图象与性质
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h25
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h27
+  title: 诱导公式与三角化简求值
+  objectives:
+  - 诱导公式完整组与记忆口诀
+  - 利用诱导公式化简与求值
+  - 给值求值问题的基本技巧
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h25
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h28
+  title: 正弦型函数 y=Asin(ωx+φ) 与图象变换
+  objectives:
+  - A/ω/φ 对图象的影响（伸缩与平移）
+  - 由图象求解析式
+  - 三角函数模型的实际应用
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h26
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h29
+  title: 三角恒等变换（和差角·倍角公式）
+  objectives:
+  - 两角和与差的正弦/余弦/正切
+  - 二倍角公式及其变形
+  - 辅助角公式与三角函数化简求值
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h27
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h30
+  title: 解三角形（正弦定理·余弦定理·面积）
+  objectives:
+  - 正弦定理与边角互化
+  - 余弦定理及其判别应用
+  - 三角形面积公式与实际问题（测量）
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h27
+  - high.h28
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 函数
+  status: draft
+  meta: {}
+- id: high.h31
+  title: 数列的概念与表示
+  objectives:
+  - 数列的定义/项/通项公式
+  - 递推公式初步与归纳通项
+  - 前 n 项和 Sn 与通项 an 的关系
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h14
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 数列
+  status: draft
+  meta: {}
+- id: high.h32
+  title: 等差数列
+  objectives:
+  - 等差数列定义与通项公式
+  - 等差中项与常用性质
+  - 前 n 项和公式（倒序相加）
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h31
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 数列
+  status: draft
+  meta: {}
+- id: high.h33
+  title: 等比数列
+  objectives:
+  - 等比数列定义与通项公式
+  - 等比中项与常用性质
+  - 前 n 项和公式及公比讨论
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h32
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 数列
+  status: draft
+  meta: {}
+- id: high.h34
+  title: 数列求和专题（分组·裂项·错位相减）
+  objectives:
+  - 分组转化求和
+  - 裂项相消求和
+  - 错位相减法求和
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h32
+  - high.h33
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 数列
+  status: draft
+  meta: {}
+- id: high.h35
+  title: 数列的综合应用
+  objectives:
+  - 等差/等比数列的判定与构造（an+1=pan+q 型）
+  - 数列单调性与其最值问题
+  - 数列与函数/不等式交汇问题
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h34
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 数列
+  status: draft
+  meta: {}
+- id: high.h36
+  title: 数学归纳法初步
+  objectives:
+  - 数学归纳法的原理与两步骤
+  - 用归纳法证明等式与整除性
+  - 归纳-猜想-证明问题
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h31
+  - high.h05
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 数列
+  status: draft
+  meta: {}
+- id: high.h37
+  title: 平面向量的概念与线性运算
+  objectives:
+  - 向量/零向量/单位向量等基本概念
+  - 向量加法的三角形与平行四边形法则
+  - 数乘向量与共线定理
+  concept_tags: []
+  group: high
+  prereqs: []
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 平面向量
+  status: draft
+  meta: {}
+- id: high.h38
+  title: 平面向量基本定理与坐标表示
+  objectives:
+  - 平面向量基本定理与基底
+  - 向量的坐标表示与坐标运算
+  - 向量共线的坐标判定
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h37
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 平面向量
+  status: draft
+  meta: {}
+- id: high.h39
+  title: 平面向量的数量积
+  objectives:
+  - 数量积的定义与几何意义（投影）
+  - 坐标法求数量积/夹角/模
+  - 向量垂直的判定与应用
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h38
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 平面向量
+  status: draft
+  meta: {}
+- id: high.h40
+  title: 平面向量的应用（几何与物理）
+  objectives:
+  - 向量法证明平行/垂直/共线
+  - 向量法解平面几何度量问题
+  - 力的合成/速度等物理应用
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h39
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 平面向量
+  status: draft
+  meta: {}
+- id: high.h40b
+  title: 复数的概念与四则运算
+  objectives:
+  - 虚数单位 i 与复数概念（实部/虚部/复数相等）
+  - 复数的四则运算与共轭复数
+  - 复平面与模、复数的几何意义初步
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h07
+  - high.h38
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 复数
+  status: draft
+  meta: {}
+- id: high.h41
+  title: 空间几何体的结构特征与三视图
+  objectives:
+  - 柱/锥/台/球的结构特征
+  - 三视图与直观图（斜二测画法）
+  - 由三视图还原几何体
+  concept_tags: []
+  group: high
+  prereqs: []
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: 立体几何初步
+  status: draft
+  meta: {}
+- id: high.h42
+  title: 空间几何体的表面积与体积
+  objectives:
+  - 柱/锥/台/球的表面积公式
+  - 柱/锥/台/球的体积公式
+  - 组合体与割补法的计算
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h41
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 立体几何初步
+  status: draft
+  meta: {}
+- id: high.h43
+  title: 平面的基本性质与空间点线面位置关系
+  objectives:
+  - 三个公理及其推论（确定平面）
+  - 空间点/线/面的位置关系
+  - 异面直线的判定
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h41
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 立体几何初步
+  status: draft
+  meta: {}
+- id: high.h44
+  title: 空间中的平行关系
+  objectives:
+  - 线面平行/面面平行的判定与性质
+  - 线线平行的传递与转化
+  - 平行的综合证明
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h43
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 立体几何初步
+  status: draft
+  meta: {}
+- id: high.h45
+  title: 空间中的垂直关系
+  objectives:
+  - 线面垂直的判定与性质
+  - 面面垂直的判定与性质
+  - 垂直与平行的相互转化证明
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h44
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 立体几何初步
+  status: draft
+  meta: {}
+- id: high.h46
+  title: 空间角与距离（综合法初步）
+  objectives:
+  - 异面直线所成角/线面角/二面角
+  - 点到平面与直线到平面的距离
+  - 综合法求角与距离的基本策略
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h45
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 立体几何初步
+  status: draft
+  meta: {}
+- id: high.h47
+  title: 空间向量与立体几何
+  objectives:
+  - 空间向量的坐标运算与方向向量/法向量
+  - 向量法求线线/线面/面面角
+  - 向量法求空间距离（点到面）
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h46
+  - high.h38
+  - high.h39
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 空间向量与立体几何
+  status: draft
+  meta: {}
+- id: high.h48
+  title: 直线的倾斜角与斜率
+  objectives:
+  - 倾斜角与斜率的定义与关系
+  - 两点斜率公式
+  - 斜率与一次函数图象的衔接
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.0201
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h49
+  title: 直线方程（点斜式·斜截式·两点式·一般式）
+  objectives:
+  - 直线方程的五种形式及其互化
+  - 由条件求直线方程
+  - 直线系方程初步
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h48
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h50
+  title: 两条直线的位置关系
+  objectives:
+  - 平行/垂直/相交的判定
+  - 交点坐标与点到直线距离
+  - 平行线间的距离
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h49
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h51
+  title: 圆的标准方程与一般方程
+  objectives:
+  - 圆的标准方程与一般方程的互化
+  - 由条件求圆的方程
+  - 点与圆的位置关系
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h49
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h52
+  title: 直线与圆的位置关系
+  objectives:
+  - 相离/相切/相交的判定
+  - 弦长与中点弦问题
+  - 圆的切线方程
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h51
+  - high.h50
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h53
+  title: 圆与圆的位置关系及圆的综合最值
+  objectives:
+  - 两圆位置关系与公共弦/公切线
+  - 圆上的点与定点距离的最值
+  - 圆方程中的参数与几何意义
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h52
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h54
+  title: 椭圆及其标准方程
+  objectives:
+  - 椭圆的定义与标准方程推导
+  - 焦点/焦距/长轴短轴等基本量
+  - 椭圆的几何性质（范围/对称/离心率）
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h52
+  - high.h09
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h55
+  title: 双曲线及其标准方程
+  objectives:
+  - 双曲线的定义与标准方程
+  - 渐近线与离心率
+  - 双曲线与椭圆的对比
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h54
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h56
+  title: 抛物线及其标准方程
+  objectives:
+  - 抛物线的定义与标准方程
+  - 焦点/准线/通径等基本量
+  - 抛物线几何性质的简单应用
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h54
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h57
+  title: 直线与圆锥曲线的位置关系（弦长·中点弦）
+  objectives:
+  - 联立方程与判别式的位置判定
+  - 弦长公式与韦达定理的应用
+  - 中点弦问题与点差法
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h55
+  - high.h56
+  - high.h09
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h58
+  title: 轨迹方程的求法
+  objectives:
+  - 直接法与定义法求轨迹
+  - 相关点（代入）法求轨迹
+  - 参数法求轨迹及轨迹与方程的关系
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h57
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h59
+  title: 圆锥曲线综合（范围·最值·定点定值初步）
+  objectives:
+  - 离心率与参数的取值范围问题
+  - 圆锥曲线中的最值问题
+  - 定点/定值问题的基本策略
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h57
+  - high.h13
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 解析几何
+  status: draft
+  meta: {}
+- id: high.h60
+  title: 变化率与导数的概念
+  objectives:
+  - 平均变化率与瞬时变化率（极限思想）
+  - 导数的定义与可导性
+  - 常见函数在某点的导数
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h14
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 导数及其应用
+  status: draft
+  meta: {}
+- id: high.h61
+  title: 导数的运算
+  objectives:
+  - 基本初等函数的导数公式
+  - 导数的四则运算法则
+  - 复合函数求导（链式法则初步）
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h60
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 导数及其应用
+  status: draft
+  meta: {}
+- id: high.h62
+  title: 导数的几何意义（切线问题）
+  objectives:
+  - 导数的几何意义与切线斜率
+  - 过曲线上/外一点的切线方程
+  - 切线条数与参数问题
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h61
+  - high.h48
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 导数及其应用
+  status: draft
+  meta: {}
+- id: high.h63
+  title: 导数与函数的单调性
+  objectives:
+  - 用导数判断与证明单调性
+  - 由单调性求参数的取值范围
+  - 导函数图象与原函数性质的关系
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h62
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 导数及其应用
+  status: draft
+  meta: {}
+- id: high.h64
+  title: 函数的极值与最值
+  objectives:
+  - 极值的概念与求法
+  - 闭区间上函数的最值
+  - 极值点与导数零点（含参初步）
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h63
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 导数及其应用
+  status: draft
+  meta: {}
+- id: high.h65
+  title: 含参导数问题与分类讨论
+  objectives:
+  - 含参函数单调区间的完整讨论
+  - 参数对极值/最值的影响
+  - 分类讨论的完整性与简化策略
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h64
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 导数及其应用
+  status: draft
+  meta: {}
+- id: high.h66
+  title: 导数在实际优化问题中的应用
+  objectives:
+  - 建立优化问题的目标函数
+  - 用导数求实际问题的最大值最小值
+  - 建模与可行域（定义域）意识
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h64
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 导数及其应用
+  status: draft
+  meta: {}
+- id: high.h67
+  title: 导数与不等式证明（构造·放缩初步）
+  objectives:
+  - 构造差函数证明不等式
+  - 常见函数不等式（lnx≤x-1 等）与放缩
+  - 双变量不等式的处理思路
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h65
+  - high.h13
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 导数及其应用
+  status: draft
+  meta: {}
+- id: high.h68
+  title: 导数综合（恒成立·零点个数）
+  objectives:
+  - 恒成立问题与最值/分离参数
+  - 函数零点个数与图象/单调性讨论
+  - 导数压轴综合题的拆解策略
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h67
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 导数及其应用
+  status: draft
+  meta: {}
+- id: high.h69
+  title: 计数原理（分类加法与分步乘法）
+  objectives:
+  - 分类加法计数原理
+  - 分步乘法计数原理
+  - 两个原理的综合与辨析
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h03
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: high.h70
+  title: 排列与排列数
+  objectives:
+  - 排列的概念与排列数公式
+  - 全排列与阶乘
+  - 有限制条件的排列问题（相邻/不相邻/定位）
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h69
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: high.h71
+  title: 组合与组合数
+  objectives:
+  - 组合的概念与组合数公式
+  - 组合数的两个性质
+  - 分组分配与有限制条件的组合问题
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h70
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: high.h72
+  title: 二项式定理及其应用
+  objectives:
+  - 二项式定理与通项公式
+  - 二项式系数的性质（对称/增减/最大）
+  - 赋值法与整除/近似计算应用
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h71
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: high.h79
+  title: 抽样方法与用样本估计总体
+  objectives:
+  - 简单随机/系统/分层抽样
+  - 频率分布直方图与茎叶图
+  - 样本的数字特征估计总体
+  - 总体百分位数的估计
+  concept_tags: []
+  group: high
+  prereqs: []
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: high.h73
+  title: 随机事件与古典概型
+  objectives:
+  - 随机事件的关系与运算（互斥/对立）
+  - 古典概型的特征与概率公式
+  - 用列举/树图/计数法求概率
+  - 频率估计概率与随机模拟
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h03
+  - high.h69
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: high.h74
+  title: 条件概率与事件的独立性
+  objectives:
+  - 条件概率的定义与计算
+  - 相互独立事件的判断与概率
+  - 全概率公式初步
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h73
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: high.h75
+  title: 离散型随机变量及其分布列
+  objectives:
+  - 随机变量与分布列的概念
+  - 分布列的性质与求法
+  - 分布列的综合应用
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h74
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: high.h76
+  title: 离散型随机变量的数字特征（期望与方差）
+  objectives:
+  - 数学期望的定义与性质
+  - 方差与标准差的定义与性质
+  - 期望/方差在决策问题中的应用
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h75
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: high.h77
+  title: 常见分布（二项分布与超几何分布）
+  objectives:
+  - n 次独立重复试验与二项分布
+  - 超几何分布及其与二项分布的区别
+  - 两种分布的期望公式
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h75
+  - high.h76
+  - high.h71
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: high.h78
+  title: 正态分布
+  objectives:
+  - 正态分布的定义与正态曲线
+  - 均值/方差对曲线形态的影响
+  - 3σ 原则与区间概率
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h76
+  difficulty: 3
+  requires_thinking: false
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: high.h80
+  title: 成对数据的统计分析（相关·回归·独立性检验）
+  objectives:
+  - 散点图与相关性判断
+  - 最小二乘法与线性回归方程
+  - 2×2 列联表与独立性检验初步
+  concept_tags: []
+  group: high
+  prereqs:
+  - high.h79
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 统计与概率
+  status: draft
+  meta: {}
+- id: college.c01
+  title: 数列极限与函数极限
+  objectives:
+  - 数列极限的 ε-N 定义与性质
+  - 函数极限定义与单侧极限
+  - 夹逼准则与两个重要极限
+  concept_tags: []
+  group: college
+  prereqs:
+  - high.h31
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c02
+  title: 函数的连续性与间断点
+  objectives:
+  - 连续的定义与运算法则
+  - 间断点的分类
+  - 初等函数的连续性
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c01
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c03
+  title: 闭区间上连续函数的性质
+  objectives:
+  - 有界性与最值定理
+  - 零点定理与介值定理
+  - 用介值性证明根的存在性
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c02
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c04
+  title: 导数与微分
+  objectives:
+  - 导数的定义与几何意义（深化）
+  - 求导法则与高阶导数
+  - 微分的概念与应用
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c02
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c05
+  title: 微分中值定理
+  objectives:
+  - 罗尔定理与拉格朗日中值定理
+  - 柯西中值定理
+  - 中值定理证明题的基本思路
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c03
+  - college.c04
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c06
+  title: 导数的应用
+  objectives:
+  - 单调性与极值最值的判定
+  - 曲线的凹凸性与拐点
+  - 曲率与最优化应用
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c05
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c07
+  title: 洛必达法则与泰勒公式
+  objectives:
+  - 洛必达法则及其适用条件
+  - 泰勒公式与麦克劳林展开
+  - 用泰勒公式求极限与近似
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c05
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c08
+  title: 不定积分
+  objectives:
+  - 原函数与不定积分概念
+  - 换元积分法
+  - 分部积分法
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c04
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c09
+  title: 定积分
+  objectives:
+  - 定积分的定义（和式极限）与性质
+  - 变上限积分函数及其导数
+  - 积分中值定理
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c08
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c10
+  title: 微积分基本定理（牛顿-莱布尼茨）
+  objectives:
+  - 微积分基本定理
+  - 定积分的换元与分部积分
+  - 奇偶/周期函数的定积分性质
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c09
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c11
+  title: 定积分的应用
+  objectives:
+  - 平面图形的面积
+  - 旋转体体积与曲线弧长
+  - 变力做功等物理应用
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c10
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c12
+  title: 反常积分
+  objectives:
+  - 无穷区间上的反常积分
+  - 无界函数的反常积分
+  - 敛散性判别（比较与极限比较）
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c09
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c13
+  title: 微分方程的基本概念与一阶方程
+  objectives:
+  - 微分方程/阶/解/初值问题
+  - 变量可分离/齐次/一阶线性方程
+  - 可降阶的高阶方程类型
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c08
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c14
+  title: 二阶常系数线性微分方程
+  objectives:
+  - 齐次方程通解（特征根法）
+  - 非齐次方程特解（待定系数法）
+  - 振动与电路等应用模型
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c13
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c15
+  title: 无穷级数
+  objectives:
+  - 数项级数审敛（正项/交错/绝对收敛）
+  - 幂级数收敛半径与和函数
+  - 函数展开成幂级数
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c07
+  - college.c10
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c15b
+  title: 傅里叶级数初步（方向条目：语音/信号）
+  objectives:
+  - 周期函数的傅里叶级数展开
+  - 傅里叶系数（Euler-Fourier 公式）
+  - 收敛性直觉与频谱/语音信号初步
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c15
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 一元微积分
+  status: draft
+  meta: {}
+- id: college.c16
+  title: 向量代数与空间解析几何
+  objectives:
+  - 空间直角坐标系与向量运算
+  - 平面与直线的方程
+  - 常见曲面与空间曲线
+  concept_tags: []
+  group: college
+  prereqs:
+  - high.h47
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 多元函数微积分
+  status: draft
+  meta: {}
+- id: college.c17
+  title: 多元函数极限与连续
+  objectives:
+  - 多元函数的概念与二重极限
+  - 二重极限与累次极限的关系
+  - 多元函数的连续性
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c16
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 多元函数微积分
+  status: draft
+  meta: {}
+- id: college.c18
+  title: 偏导数与全微分
+  objectives:
+  - 偏导数与高阶偏导
+  - 全微分与可微性判定
+  - 多元复合函数与隐函数求导
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c17
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 多元函数微积分
+  status: draft
+  meta: {}
+- id: college.c19
+  title: 方向导数与梯度（场论入门）
+  objectives:
+  - 方向导数与梯度
+  - 梯度与等值线/等值面的关系
+  - 梯度/散度/旋度的直观
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c18
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 多元函数微积分
+  status: draft
+  meta: {}
+- id: college.c20
+  title: 多元函数的极值与最值
+  objectives:
+  - 无条件极值（黑塞矩阵判别）
+  - 条件极值与拉格朗日乘数法
+  - 多元最值应用问题
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c18
+  - college.c19
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 多元函数微积分
+  status: draft
+  meta: {}
+- id: college.c21
+  title: 二重积分
+  objectives:
+  - 二重积分的概念与性质
+  - 直角坐标与极坐标计算
+  - 交换积分次序
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c10
+  - college.c18
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 多元函数微积分
+  status: draft
+  meta: {}
+- id: college.c22
+  title: 三重积分与曲线积分
+  objectives:
+  - 三重积分（直角/柱/球坐标）
+  - 第一/二类曲线积分
+  - 格林公式
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c21
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 多元函数微积分
+  status: draft
+  meta: {}
+- id: college.c23
+  title: 曲面积分与高斯/斯托克斯公式
+  objectives:
+  - 第一/二类曲面积分
+  - 高斯公式（散度定理）
+  - 斯托克斯公式与旋度
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c22
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 多元函数微积分
+  status: draft
+  meta: {}
+- id: college.c24
+  title: 多元微积分的综合应用
+  objectives:
+  - 重积分/线面积分的应用（质心/转动惯量）
+  - 场论综合（通量/环量）
+  - 微积分定理间的联系
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c23
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 多元函数微积分
+  status: draft
+  meta: {}
+- id: college.c25
+  title: 行列式
+  objectives:
+  - 行列式的定义（排列/逆序数）与性质
+  - 按行/列展开（代数余子式）
+  - 克拉默法则
+  concept_tags: []
+  group: college
+  prereqs:
+  - high.h38
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 线性代数
+  status: draft
+  meta: {}
+- id: college.c26
+  title: 矩阵及其运算
+  objectives:
+  - 矩阵的概念与线性运算
+  - 矩阵乘法、转置与方阵幂
+  - 分块矩阵初步
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c25
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 线性代数
+  status: draft
+  meta: {}
+- id: college.c27
+  title: 逆矩阵与初等变换
+  objectives:
+  - 逆矩阵的定义与性质
+  - 初等变换与初等矩阵
+  - 用初等变换求逆矩阵
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c26
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 线性代数
+  status: draft
+  meta: {}
+- id: college.c28
+  title: 矩阵的秩与线性方程组
+  objectives:
+  - 矩阵的秩与行阶梯形
+  - 线性方程组解的存在性判定
+  - 齐次/非齐次方程组解的结构
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c27
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 线性代数
+  status: draft
+  meta: {}
+- id: college.c29
+  title: 向量组的线性相关性
+  objectives:
+  - 线性相关/无关的定义与判定
+  - 极大线性无关组与秩
+  - 向量组与矩阵秩的关系
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c28
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 线性代数
+  status: draft
+  meta: {}
+- id: college.c30
+  title: 向量空间
+  objectives:
+  - 向量空间与子空间
+  - 基、维数与坐标
+  - 坐标变换与过渡矩阵
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c29
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 线性代数
+  status: draft
+  meta: {}
+- id: college.c31
+  title: 特征值与特征向量
+  objectives:
+  - 特征值与特征向量的定义与计算
+  - 特征值的性质（迹/行列式/重数）
+  - 相似矩阵
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c28
+  - college.c30
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 线性代数
+  status: draft
+  meta: {}
+- id: college.c32
+  title: 矩阵的对角化
+  objectives:
+  - 矩阵可对角化的条件
+  - 实对称矩阵的正交对角化
+  - 对角化的应用（矩阵幂/递推）
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c31
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 线性代数
+  status: draft
+  meta: {}
+- id: college.c33
+  title: 二次型与标准形
+  objectives:
+  - 二次型与矩阵表示
+  - 配方法与正交变换化标准形
+  - 惯性定理与规范形
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c32
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 线性代数
+  status: draft
+  meta: {}
+- id: college.c34
+  title: 正定二次型与最小二乘初步
+  objectives:
+  - 正定/半正定/负定的判定
+  - 实对称矩阵在二次型中的应用
+  - 最小二乘法（法方程）初步
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c33
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 线性代数
+  status: draft
+  meta: {}
+- id: college.c34b
+  title: 奇异值分解与低秩近似（SVD/PCA 铺垫）
+  objectives:
+  - SVD 的定义与几何意义（奇异值/左右奇异向量）
+  - SVD 与 AᵀA 特征分解的关系
+  - 低秩逼近（Eckart-Young）与图像压缩
+  - 数据中心化与 PCA 的衔接
+  - 伪逆与最小二乘的衔接
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c32
+  - college.c34
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 线性代数
+  status: draft
+  meta: {}
+- id: college.c35
+  title: 随机事件与概率的公理化
+  objectives:
+  - 样本空间与事件运算（深化）
+  - 概率的公理化定义与性质
+  - 古典/几何概型与条件概率、独立性
+  concept_tags: []
+  group: college
+  prereqs:
+  - high.h74
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 概率论与数理统计
+  status: draft
+  meta: {}
+- id: college.c36
+  title: 一维随机变量及其分布
+  objectives:
+  - 离散型随机变量与分布律
+  - 连续型随机变量与密度函数
+  - 常见分布（二项/泊松/均匀/指数/正态）
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c35
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 概率论与数理统计
+  status: draft
+  meta: {}
+- id: college.c37
+  title: 多维随机变量
+  objectives:
+  - 联合分布/边缘分布/条件分布
+  - 随机变量的独立性
+  - 二维正态分布简介
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c36
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 概率论与数理统计
+  status: draft
+  meta: {}
+- id: college.c38
+  title: 随机变量的数字特征
+  objectives:
+  - 数学期望（离散/连续）
+  - 方差、协方差与相关系数
+  - 数字特征的性质与计算技巧
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c36
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 概率论与数理统计
+  status: draft
+  meta: {}
+- id: college.c39
+  title: 大数定律与中心极限定理
+  objectives:
+  - 切比雪夫不等式
+  - 大数定律（伯努利/辛钦）
+  - 中心极限定理及其应用
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c37
+  - college.c38
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 概率论与数理统计
+  status: draft
+  meta: {}
+- id: college.c40
+  title: 数理统计基础与抽样分布
+  objectives:
+  - 总体/样本/统计量
+  - 常用抽样分布（χ²/t/F）
+  - 分位数与分布表的使用
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c38
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 概率论与数理统计
+  status: draft
+  meta: {}
+- id: college.c41
+  title: 参数估计
+  objectives:
+  - 矩估计与极大似然估计
+  - 估计量的评价（无偏/有效/一致）
+  - 正态总体的区间估计
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c40
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 概率论与数理统计
+  status: draft
+  meta: {}
+- id: college.c42
+  title: 假设检验
+  objectives:
+  - 假设检验的基本思想与两类错误
+  - 正态总体均值/方差的检验
+  - p 值与检验的实际应用
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c41
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 概率论与数理统计
+  status: draft
+  meta: {}
+- id: college.c43
+  title: 方差分析与回归分析初步
+  objectives:
+  - 单因素方差分析
+  - 一元线性回归与最小二乘估计
+  - 相关系数与显著性检验
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c42
+  - college.c34
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 概率论与数理统计
+  status: draft
+  meta: {}
+- id: college.c43b
+  title: 随机过程初步：马尔可夫链
+  objectives:
+  - 转移矩阵与 n 步转移（Chapman-Kolmogorov）
+  - 稳态分布与遍历性直觉
+  - 随机游走与简单应用
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c38
+  - college.c39
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 概率论与数理统计
+  status: draft
+  meta: {}
+- id: college.c44
+  title: 集合论基础
+  objectives:
+  - 集合运算/幂集/笛卡尔积
+  - 映射与函数（单/满/双射）
+  - 基数的概念（可数与不可数）
+  concept_tags: []
+  group: college
+  prereqs:
+  - high.h06
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 离散数学初步
+  status: draft
+  meta: {}
+- id: college.c45
+  title: 数理逻辑初步
+  objectives:
+  - 命题逻辑：联结词与真值表
+  - 谓词逻辑与量词
+  - 推理规则与证明方法（反证/归纳）
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c44
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 离散数学初步
+  status: draft
+  meta: {}
+- id: college.c46
+  title: 关系
+  objectives:
+  - 二元关系的性质
+  - 等价关系与集合的划分
+  - 偏序关系与哈斯图
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c44
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 离散数学初步
+  status: draft
+  meta: {}
+- id: college.c47
+  title: 图论基础
+  objectives:
+  - 图的基本概念与度序列
+  - 路径/回路与连通性
+  - 欧拉图与哈密顿图
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c44
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 离散数学初步
+  status: draft
+  meta: {}
+- id: college.c48
+  title: 树与平面图
+  objectives:
+  - 树的性质与生成树
+  - 最小生成树（Kruskal/Prim 思想）
+  - 平面图与欧拉公式
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c47
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 离散数学初步
+  status: draft
+  meta: {}
+- id: college.c49
+  title: 组合计数方法
+  objectives:
+  - 容斥原理
+  - 递推关系与特征方程
+  - 生成函数初步
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c44
+  - college.c45
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 离散数学初步
+  status: draft
+  meta: {}
+- id: college.c50
+  title: 代数系统初步
+  objectives:
+  - 二元运算与代数系统
+  - 群的基本概念与性质
+  - 环/域的概念（模 n 剩余类等例子）
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c44
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 离散数学初步
+  status: draft
+  meta: {}
+- id: college.c51
+  title: 数值计算导论（误差与稳定性）
+  objectives:
+  - 浮点数表示与误差来源
+  - 有效数字与误差传播
+  - 算法的稳定性与收敛性概念
+  concept_tags: []
+  group: college
+  prereqs: []
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 数值计算初步
+  status: draft
+  meta: {}
+- id: college.c52
+  title: 插值与多项式逼近
+  objectives:
+  - 拉格朗日插值
+  - 牛顿插值与差商
+  - 多项式逼近的基本思想
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c51
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 数值计算初步
+  status: draft
+  meta: {}
+- id: college.c53
+  title: 数值积分与数值微分
+  objectives:
+  - 梯形公式与 Simpson 公式
+  - 复合求积与误差估计
+  - 数值微分公式
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c51
+  - college.c09
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 数值计算初步
+  status: draft
+  meta: {}
+- id: college.c54
+  title: 线性方程组的数值解法
+  objectives:
+  - 高斯消去法与选主元
+  - LU 分解初步
+  - 迭代法（Jacobi/Gauss-Seidel）思想
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c51
+  - college.c27
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 数值计算初步
+  status: draft
+  meta: {}
+- id: college.c55
+  title: 非线性方程求根
+  objectives:
+  - 二分法与不动点迭代
+  - 牛顿法及其收敛性
+  - 割线法
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c51
+  - college.c01
+  - college.c04
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 数值计算初步
+  status: draft
+  meta: {}
+- id: college.c56
+  title: 常微分方程数值解初步
+  objectives:
+  - Euler 方法
+  - Runge-Kutta 方法的思想
+  - 数值稳定性与步长控制概念
+  concept_tags: []
+  group: college
+  prereqs:
+  - college.c55
+  - college.c13
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 数值计算初步
+  status: draft
+  meta: {}
+- id: ai.a01
+  title: 机器学习中的数学框架
+  objectives:
+  - 数据/模型/损失/风险的数学表述
+  - 训练集与测试集、过拟合欠拟合的直觉
+  - 机器学习问题的规范化步骤
+  concept_tags: []
+  group: ai
+  prereqs: []
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 机器学习数学基础
+  status: draft
+  meta: {}
+- id: ai.a02
+  title: 线性回归与最小二乘（矩阵形式）
+  objectives:
+  - 正规方程与矩阵形式推导
+  - 多项式特征与基函数展开
+  - 从概率视角看最小二乘（高斯噪声）
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a01
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 机器学习数学基础
+  status: draft
+  meta: {}
+- id: ai.a03
+  title: 分类与逻辑回归
+  objectives:
+  - sigmoid 与伯努利模型
+  - 对数似然与交叉熵损失
+  - 决策边界与多分类（softmax）直觉
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a02
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 机器学习数学基础
+  status: draft
+  meta: {}
+- id: ai.a04
+  title: 概率视角的机器学习（MLE 与 MAP）
+  objectives:
+  - 极大似然估计在模型族的应用
+  - 贝叶斯观点与最大后验（MAP）
+  - 先验与正则化的联系（直觉）
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a03
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 机器学习数学基础
+  status: draft
+  meta: {}
+- id: ai.a04b
+  title: 贝叶斯推断与共轭先验
+  objectives:
+  - 后验计算（先验×似然与归一化）
+  - 共轭先验族（Beta-Binomial/Normal-Normal 等）
+  - 贝叶斯线性回归的解析形式
+  - 后验预测分布的直觉
+  - 先验选择（无信息/弱信息先验）
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a04
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 机器学习数学基础
+  status: draft
+  meta: {}
+- id: ai.a05
+  title: 偏差-方差分解与模型选择
+  objectives:
+  - 偏差-方差分解的推导
+  - 交叉验证与模型选择的原理
+  - 泛化误差与测试误差的关系
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a02
+  - ai.a03
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 机器学习数学基础
+  status: draft
+  meta: {}
+- id: ai.a06
+  title: 正则化与损失函数设计初步
+  objectives:
+  - L1/L2 惩罚的优化与统计意义
+  - 稀疏性与压缩估计的直觉
+  - 损失函数选择的稳健性考量
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a05
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 机器学习数学基础
+  status: draft
+  meta: {}
+- id: ai.a07
+  title: 梯度下降与随机梯度下降（直觉层）
+  objectives:
+  - 批量/小批量/随机梯度下降
+  - 学习率与批大小的作用
+  - 动量与常见实践的直观解释
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a06
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 机器学习数学基础
+  status: draft
+  meta: {}
+- id: ai.a08
+  title: 特征表示与核方法直觉
+  objectives:
+  - 特征标准化与表示变换
+  - 核技巧的思想（高维内积）
+  - 核与相似度的联系
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a07
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 机器学习数学基础
+  status: draft
+  meta: {}
+- id: ai.a09
+  title: 评估指标与统计意义
+  objectives:
+  - 准确率/精确率/召回率/F1
+  - ROC 与 AUC 的统计含义
+  - 不平衡数据下的指标选择
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a03
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 机器学习数学基础
+  status: draft
+  meta: {}
+- id: ai.a10
+  title: 典型模型族的数学拆解（案例）
+  objectives:
+  - 线性族/树模型/神经网络族对比
+  - 从损失与容量角度理解模型差异
+  - 端到端小案例的数学复盘
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a08
+  - ai.a09
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 机器学习数学基础
+  status: draft
+  meta: {}
+- id: ai.a11
+  title: 凸集与凸函数
+  objectives:
+  - 凸集定义与保凸运算
+  - 凸函数判定（一阶/二阶条件）
+  - 常见凸函数类与强凸性
+  concept_tags: []
+  group: ai
+  prereqs:
+  - college.c20
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 凸优化与数值优化
+  status: draft
+  meta: {}
+- id: ai.a12
+  title: 凸优化问题与最优性条件
+  objectives:
+  - 优化问题的标准形式与分类
+  - 无约束一阶/二阶最优性条件
+  - KKT 四条件（平稳/原始可行/对偶可行/互补松弛）的推导
+  - KKT 的几何直觉与在 SVM/Lasso/带约束组合优化中的应用
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a11
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 凸优化与数值优化
+  status: draft
+  meta: {}
+- id: ai.a13
+  title: 梯度下降的收敛性分析
+  objectives:
+  - 平滑性与强凸下的线性收敛
+  - 步长选择与收敛率
+  - 与随机梯度下降收敛的差异
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a12
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 凸优化与数值优化
+  status: draft
+  meta: {}
+- id: ai.a14
+  title: 加速与自适应优化方法
+  objectives:
+  - 动量与 Nesterov 加速思想
+  - AdaGrad/RMSProp/Adam 的自适应步长
+  - 实践中的方法选择
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a13
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 凸优化与数值优化
+  status: draft
+  meta: {}
+- id: ai.a15
+  title: 牛顿法与拟牛顿方法
+  objectives:
+  - 牛顿法的局部收敛性
+  - BFGS 与 L-BFGS 思想
+  - 二阶方法在大规模问题的局限
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a12
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 凸优化与数值优化
+  status: draft
+  meta: {}
+- id: ai.a16
+  title: 拉格朗日对偶与约束优化
+  objectives:
+  - 拉格朗日函数与对偶问题
+  - 弱对偶/强对偶与 Slater 条件
+  - 对偶在 SVM 等模型中的应用
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a12
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 凸优化与数值优化
+  status: draft
+  meta: {}
+- id: ai.a17
+  title: 近端方法与稀疏优化
+  objectives:
+  - 次梯度与近端算子
+  - ISTA/FISTA 的思想
+  - L1 稀疏优化的近端视角
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a16
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 凸优化与数值优化
+  status: draft
+  meta: {}
+- id: ai.a17b
+  title: ADMM 与算子分裂
+  objectives:
+  - 对偶上升与对偶分解思想
+  - 增广拉格朗日与乘子法
+  - ADMM 的推导（x/z 交替最小化与乘子更新）
+  - 分布式优化与 Lasso 等应用的算子分裂视角
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a16
+  - ai.a17
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 凸优化与数值优化
+  status: draft
+  meta: {}
+- id: ai.a18
+  title: 在线凸优化与遗憾界
+  objectives:
+  - 在线学习框架与遗憾定义
+  - 在线梯度下降的遗憾界
+  - 与统计学习的联系（可学习性）
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a13
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 凸优化与数值优化
+  status: draft
+  meta: {}
+- id: ai.a19
+  title: 优化在训练中的应用实践
+  objectives:
+  - 学习率调度策略
+  - 批次/分布式训练的优化直觉
+  - 训练不稳定问题的排查思路
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a14
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 凸优化与数值优化
+  status: draft
+  meta: {}
+- id: ai.a20
+  title: 熵与信息量
+  objectives:
+  - 自信息与熵的定义
+  - 联合熵与条件熵
+  - 熵的性质（非负/上界）
+  concept_tags: []
+  group: ai
+  prereqs: []
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 信息论与熵
+  status: draft
+  meta: {}
+- id: ai.a21
+  title: 互信息与相对熵（KL 散度）
+  objectives:
+  - 互信息的定义与链式法则
+  - KL 散度与交叉熵
+  - 散度的非负性与等式条件
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a20
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 信息论与熵
+  status: draft
+  meta: {}
+- id: ai.a22
+  title: 熵在机器学习中的应用
+  objectives:
+  - 决策树的信息增益
+  - 最大熵原理
+  - softmax 交叉熵损失的统计含义
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a21
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 信息论与熵
+  status: draft
+  meta: {}
+- id: ai.a23
+  title: 数据压缩与信道容量直觉
+  objectives:
+  - 无损压缩与熵编码
+  - 信道模型与互信息
+  - 信道容量的直观理解
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a21
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 信息论与熵
+  status: draft
+  meta: {}
+- id: ai.a24
+  title: 率失真与信息论极限
+  objectives:
+  - 率失真函数的思想
+  - 有损压缩的信息论边界
+  - 信源-信道编码定理直觉
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a23
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 信息论与熵
+  status: draft
+  meta: {}
+- id: ai.a25
+  title: 微分熵与最大熵分布
+  objectives:
+  - 微分熵的定义与高斯分布
+  - 最大熵分布（给定矩约束）
+  - 相对熵在变分推断的初步联系
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a21
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 信息论与熵
+  status: draft
+  meta: {}
+- id: ai.a26
+  title: 向量范数与矩阵范数
+  objectives:
+  - 常用向量范数与范数等价性
+  - 矩阵范数与算子范数
+  - 范数与正则化惩罚的联系
+  - 矩阵条件数与数值稳定性的直觉
+  concept_tags: []
+  group: ai
+  prereqs: []
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 矩阵分析与正则化
+  status: draft
+  meta: {}
+- id: ai.a27
+  title: 谱分解与奇异值分解（SVD）
+  objectives:
+  - 实对称矩阵的谱分解
+  - SVD 的存在性与几何意义
+  - Moore-Penrose 伪逆
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a26
+  - college.c34b
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 矩阵分析与正则化
+  status: draft
+  meta: {}
+- id: ai.a28
+  title: SVD 的应用（低秩近似与 PCA）
+  objectives:
+  - 低秩近似的 Eckart-Young 定理
+  - 主成分分析（PCA）的推导
+  - 特征脸/去噪等应用思想
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a27
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 矩阵分析与正则化
+  status: draft
+  meta: {}
+- id: ai.a29
+  title: 矩阵微分与梯度计算
+  objectives:
+  - 标量对向量/矩阵求导的布局
+  - 常用矩阵微分恒等式
+  - 链式法则在模型求导中的应用
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a27
+  - college.c18
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 矩阵分析与正则化
+  status: draft
+  meta: {}
+- id: ai.a30
+  title: 伪逆与最小二乘的完整解
+  objectives:
+  - 欠定/超定方程的最小二乘解
+  - 用 SVD/伪逆表示通解
+  - 与岭估计的联系
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a27
+  - ai.a29
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 矩阵分析与正则化
+  status: draft
+  meta: {}
+- id: ai.a31
+  title: 正则化理论（Lasso/Ridge 统计视角）
+  objectives:
+  - 岭估计的偏差-方差权衡
+  - Lasso 的稀疏性与变量选择
+  - 正则化参数的选取方法
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a30
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 矩阵分析与正则化
+  status: draft
+  meta: {}
+- id: ai.a32
+  title: 谱理论初步
+  objectives:
+  - 特征值的变分刻画（Rayleigh 商）
+  - Gershgorin 圆盘定理
+  - 对称矩阵的谱分解应用
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a27
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 矩阵分析与正则化
+  status: draft
+  meta: {}
+- id: ai.a33
+  title: 大规模矩阵计算的直觉
+  objectives:
+  - 稀疏矩阵与结构化矩阵
+  - 迭代法与随机化算法的思想
+  - 计算复杂度与精度权衡
+  - 条件数与数值稳定性对大规模求解的影响
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a32
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 矩阵分析与正则化
+  status: draft
+  meta: {}
+- id: ai.a34
+  title: 高维几何直觉与集中不等式
+  objectives:
+  - 高维球的体积与维数灾难直觉
+  - Hoeffding/Bernstein 不等式
+  - 集中不等式在估计中的应用
+  concept_tags: []
+  group: ai
+  prereqs:
+  - college.c39
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 高维概率与统计学习理论
+  status: draft
+  meta: {}
+- id: ai.a35
+  title: 高维中的大数定律失效与尾部行为
+  objectives:
+  - 高维样本协方差的病态性
+  - 尾分布与重尾直觉
+  - 随机向量范数的集中现象
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a34
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 高维概率与统计学习理论
+  status: draft
+  meta: {}
+- id: ai.a36
+  title: 随机矩阵初步
+  objectives:
+  - Wishart 分布与样本协方差
+  - 谱分布的半圆/MP 定律直觉
+  - 随机矩阵在信号处理的应用
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a34
+  - ai.a27
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 高维概率与统计学习理论
+  status: draft
+  meta: {}
+- id: ai.a37
+  title: 统计学习理论框架
+  objectives:
+  - ERM 与假设类
+  - 泛化误差的分解
+  - 可学习性与一致性
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a34
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 高维概率与统计学习理论
+  status: draft
+  meta: {}
+- id: ai.a38
+  title: 一致收敛与 VC 维
+  objectives:
+  - 一致收敛与均匀大数定律
+  - VC 维的定义与计算例子
+  - 由 VC 维导出的泛化界
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a37
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 高维概率与统计学习理论
+  status: draft
+  meta: {}
+- id: ai.a39
+  title: Rademacher 复杂度与泛化界
+  objectives:
+  - 经验 Rademacher 复杂度
+  - 对称化与泛化界推导
+  - 复杂度界与 VC 界的比较
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a37
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 高维概率与统计学习理论
+  status: draft
+  meta: {}
+- id: ai.a40
+  title: 模型选择的统计理论（AIC/BIC/交叉验证）
+  objectives:
+  - 似然框架下的模型选择准则
+  - 信息准则的推导直觉
+  - 交叉验证的理论视角
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a38
+  - ai.a39
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 高维概率与统计学习理论
+  status: draft
+  meta: {}
+- id: ai.a41
+  title: 无监督学习的数学（聚类/混合模型/EM）
+  objectives:
+  - K-means 与高斯混合模型
+  - EM 算法的推导与收敛性
+  - 隐变量模型的统计视角
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a37
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 高维概率与统计学习理论
+  status: draft
+  meta: {}
+- id: ai.a25b
+  title: 变分推断与 ELBO
+  objectives:
+  - KL 视角下的 ELBO 推导（证据下界分解）
+  - 均值场假设与坐标上升变分推断
+  - 重参数化技巧的直觉（蒙特卡洛梯度）
+  - 与 EM、VAE、扩散模型训练的联系
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a25
+  - ai.a41
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 高维概率与统计学习理论
+  status: draft
+  meta: {}
+- id: ai.a42
+  title: 随机过程基础
+  objectives:
+  - 随机过程的定义与有限维分布
+  - 严平稳与宽平稳
+  - 相关函数与遍历性直觉
+  concept_tags: []
+  group: ai
+  prereqs: []
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 时间序列与随机过程
+  status: draft
+  meta: {}
+- id: ai.a43
+  title: 泊松过程与马尔可夫链
+  objectives:
+  - 泊松过程的定义与性质
+  - 离散/连续时间马尔可夫链
+  - 平稳分布与极限行为
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a42
+  - college.c43b
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 时间序列与随机过程
+  status: draft
+  meta: {}
+- id: ai.a45
+  title: 鞅与停时初步
+  objectives:
+  - 鞅的定义与基本性质
+  - 停时与可选停时定理
+  - 鞅在公平博弈与金融中的应用
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a42
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 时间序列与随机过程
+  status: draft
+  meta: {}
+- id: ai.a44
+  title: 布朗运动与扩散初步
+  objectives:
+  - 布朗运动的构造与性质
+  - 高斯过程与协方差核
+  - 随机游走到布朗运动的极限
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a45
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 时间序列与随机过程
+  status: draft
+  meta: {}
+- id: ai.a46
+  title: 时间序列模型（AR/MA/ARMA）
+  objectives:
+  - 自回归与移动平均模型
+  - 平稳性与可逆性条件
+  - ARMA 的识别与估计直觉
+  - 单位根/差分与 ARIMA 整合阶（平稳化）
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a42
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 时间序列与随机过程
+  status: draft
+  meta: {}
+- id: ai.a47
+  title: 谱分析与频域方法
+  objectives:
+  - 谱密度与自相关函数的关系
+  - 周期图与平滑估计直觉
+  - 滤波在频域的解释
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a46
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 时间序列与随机过程
+  status: draft
+  meta: {}
+- id: ai.a48
+  title: 状态空间模型与卡尔曼滤波
+  objectives:
+  - 状态空间模型的形式
+  - 卡尔曼滤波的递推推导
+  - 在跟踪/预测中的应用
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a46
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 时间序列与随机过程
+  status: draft
+  meta: {}
+- id: ai.a49
+  title: 蒙特卡洛与 MCMC 初步
+  objectives:
+  - 蒙特卡洛估计与方差缩减
+  - Metropolis-Hastings 与 Gibbs 采样
+  - 马尔可夫链收敛诊断直觉
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a43
+  - ai.a42
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 时间序列与随机过程
+  status: draft
+  meta: {}
+- id: ai.a50
+  title: 金融数学基础（收益与分布）
+  objectives:
+  - 收益率/对数收益与分布假设
+  - 期望/方差/协方差矩阵的作用
+  - 金融数据的统计特征（肥尾/波动聚集）
+  concept_tags: []
+  group: ai
+  prereqs:
+  - college.c38
+  difficulty: 2
+  requires_thinking: true
+  anchors: []
+  topic: 量化应用
+  status: draft
+  meta: {}
+- id: ai.a51
+  title: 资产组合理论（均值-方差）
+  objectives:
+  - 均值-方差优化问题
+  - 有效前沿与夏普比率
+  - 协方差矩阵估计的实践问题
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a50
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 量化应用
+  status: draft
+  meta: {}
+- id: ai.a52
+  title: 定价模型与多因子模型
+  objectives:
+  - 资本资产定价模型（CAPM）的推导直觉
+  - 多因子模型与因子收益
+  - 套利定价理论初步
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a51
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 量化应用
+  status: draft
+  meta: {}
+- id: ai.a53
+  title: 风险度量与管理
+  objectives:
+  - VaR 与 CVaR 的定义与估计
+  - 回撤与波动率的风险指标
+  - 风险预算与组合约束
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a50
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 量化应用
+  status: draft
+  meta: {}
+- id: ai.a54
+  title: 组合优化与再平衡
+  objectives:
+  - 带约束的组合优化建模
+  - 交易成本与再平衡策略
+  - 与凸优化 run 方法的衔接
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a51
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 量化应用
+  status: draft
+  meta: {}
+- id: ai.a55
+  title: 回测的统计严谨性
+  objectives:
+  - 样本外评估与数据窥探偏差
+  - 多重检验与回测过拟合
+  - 稳健回测的方法论
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a50
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 量化应用
+  status: draft
+  meta: {}
+- id: ai.a56
+  title: 交易成本与市场微观结构初步
+  objectives:
+  - 买卖价差/冲击成本模型
+  - 订单流的统计特征
+  - 高频数据的噪声与采样
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a55
+  difficulty: 2
+  requires_thinking: false
+  anchors: []
+  topic: 量化应用
+  status: draft
+  meta: {}
+- id: ai.a57
+  title: 量化项目中的数学工程（综合案例）
+  objectives:
+  - 因子-信号-组合-风控闭环的数学拆解
+  - 把本学段各 run 工具串成工作流
+  - 端到端量化小项目的复盘
+  concept_tags: []
+  group: ai
+  prereqs:
+  - ai.a52
+  - ai.a53
+  - ai.a54
+  - ai.a55
+  - ai.a56
+  difficulty: 3
+  requires_thinking: true
+  anchors: []
+  topic: 量化应用
+  status: draft
+  meta: {}

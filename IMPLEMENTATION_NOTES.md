@@ -1011,8 +1011,9 @@ user_nodes/… 不加 subject 列（内容节点隐式归属 math，语义零变
 24/47 全绿；audit 5 学段不变（本子步未动 roadmap/stages）；git 提交（PhaseA A1）。
 
 **疑点（挂待架构裁决）**
-1. 大纲 schema 单元 objectives 上限取 **4**（docs/14 规格"目标≤3"；数学既有条目精核批曾扩至 4 条
-   a12 KKT——机械照搬 ≤3 会与现库冲突）。AI 起草提示词按 ≤3 执行，schema 宽松 ≤4。
+1. 大纲 schema 单元 objectives 上限取 **5**（docs/14 规格"目标≤3"；数学 roadmap 既有精核条目
+   最高 5 条 college.c34b SVD、a12 KKT 4 条——机械照搬 ≤3 会与现库冲突）。AI 起草提示词按 ≤3
+   执行（A4），schema 宽松 ≤5 兼容既有数据（A1 记录原按 ≤4，A3 建 outline 时实测放宽至 ≤5）。
 2. "整份重生成版本递增"以 revision 字段 + 原子替换实现，历史版本留 git 不落盘归档副本（MVP 口径；
    若需运行期回滚/对比旧版，需大纲归档目录设计——列为候选）。
 3. 大纲文件放 `content/subjects/`（git 管理、随内容库隔离副本走测试）；subjects 表为 DB 注册真源，
@@ -1061,4 +1062,64 @@ user_nodes/… 不加 subject 列（内容节点隐式归属 math，语义零变
    （审计留痕，docs/03 复习降级口径一致）；若需"连历史一并清"另行裁决。
 4. 首领(boss)节点概念由 core_concepts 兜底（如"数与运算首领战"含分数加减等标签）——boss 达成
    时点已在组全部条目达成后，故其证据为重复集，语义无害；如架构认为 boss 不应产概念可加排除。
+
+---
+
+## 29. docs/14 Phase A · A3 子步：数学 preset 迁移与总 Outline 建立（2026-09-09）
+
+**规格**：docs/14 §5 + 派工单 A3（数学=subject=math；五学段 roadmap/内容/总序门禁/sympy L1/费曼
+rubric/guardrails 封为 preset 规则；建立数学总 Outline（学段=关卡组、段内=既有总序链；roadmap draft
+状态如实标注）；打通 outline ↔ concept 标签映射（既有锚点节点归一到概念标签，历史掌握进度可迁移）；
+已知问题治理：s27 补链后一致性复核、0 掌握用户总序起点链（s01→…）实测、迁移暴露耦合抽离测试锁定）。
+
+**改动清单**
+1. `backend/app/outline/math_preset.py`（新）：`build_math_outline`（纯函数：roadmap → 数学总
+   OutlineDoc；roadmaps/lib_docs 可注入测试）与 `derive_math_outline`（持久化 + 概念注册表同步 +
+   重生成 revision+1）。语义：
+   - 关卡组=学段（primary/middle/high/college/ai），组内=roadmap 列表序（既有总序链）；
+   - 单元=roadmap 条目原样映射（title/objectives/prereqs/difficulty/thinking/anchors/topic）；
+   - 概念标签：重生成优先沿用上版同 id 单元标签（不丢人工补标）；否则由已落地内容节点
+     （anchors[0] 在库 → 锚点；否则单元 id 在库 = auto 节点）core_concepts 归一回填——
+     "既有锚点节点归一到概念标签"，免逐单元人工补标；孤儿人工节点/首领由概念层节点
+     core_concepts 兜底（A2 已实现）；
+   - 单元 status：primary=reviewed（已精核转正）；middle/high/college/ai=draft（docs/14 §5 ①
+     如实标注；roadmap 精核转正为持续治理项）；doc note 记载治理口径。
+2. `content/subjects/math/outline.yaml`（新，入库）：数学总 Outline v1——**258 单元**（primary 27/
+   middle 31/high 81/college 59/ai 60），revision 1，status active，source roadmap；21 个已落地内容
+   单元带概念标签（13 锚点 + 8 auto），其余 draft 单元标签随内容落地/精核滚动回填。
+3. `backend/app/api/subjects.py`：POST /subjects/math/outline/regenerate = roadmap 派生/再派生
+   （custom 仍 501 待 A4）；`backend/app/main.py` lifespan：math 大纲缺失时自动派生一次（首启/
+   全新克隆兜底；文件已入库则不动，版本治理走显式 regenerate）。
+4. `backend/app/outline/schemas.py`：objectives 上限 4→5（A3 建 outline 实测 college.c34b SVD 五条
+   精核目标触发放宽；见 A1 疑点 1 修订）。
+5. `backend/tests/test_math_outline.py`（新 ×12）：派生 258 单元/组规模/转正状态如实；结构校验
+   （内容库引用）干净；锚点单元标签 == 锚点节点 core_concepts 归一；**s27 一致性红线段**
+   （s04<s27<s06 序 + s06 prereq 含 s27）；派生重生成 revision 递增 + 同 id 标签保留；
+   **结构重组进度不丢**（s05→s05v2 改名仍锚 0101 → 标签自动回填 → 单元状态保持达成(mastered/
+   equivalent) 不回退 todo；节点级 mastered 原样）；**0 掌握首开放单元 = primary.s01**；API
+   regenerate（math 200/结构正确；custom 501）；通用学段档位语义锁定（非 LEVELS → fast 基础 +
+   content_think 覆盖；math college 仍 think）；仓库 outline 文件可解析。A1/A2 两处断言适配
+   （math outline 现存在；registry 计数用独立学科 id 防 math 全局概念污染）。
+6. docs 同步：本 NOTES §29；（docs/06 §3 概念表/大纲文件已随 A1/A2 同步）。
+
+**预设规则封装口径（"数学写死"耦合）**：sympy L1 判题（domain/judge）、总序门禁（service/path，
+R18）、费曼 rubric/guardrails（content/service）为 math preset 的学科规则，以"代码 + roadmap 大纲
+治理"承载——学习门禁仍读 roadmap（权威），math outline 为治理视图（docs/14 §5"roadmap 精核转正为
+math outline 持续治理项"）；概念层不替代门禁，只做"换大纲不丢进度"的等效映射。后续通用学科
+内容/路径引擎所需的泛化（NodeDoc level 放宽、outline 门禁）在 A4 落地并测试锁定。
+
+**回归**：pytest = **242 passed + 1 skipped**（230+1 基线 + 新增 12，不降）；content validate
+24/47 全绿；audit 5 学段不变；git 提交（PhaseA A3）。
+
+**疑点（挂待架构裁决）**
+1. 大纲"转正状态"为单元级 status 字段（roadmap 文件头注释仍是"草案"字样）；本实现按 docs/14
+   §5 ① 口径落地（primary reviewed、其余 draft）。若 roadmap 文件头注释应与大纲一致，需架构侧
+   统一口径后由精核批回填。
+2. math outline 概念标签目前覆盖"已落地内容"单元（21 个）；未落地单元标签随懒生成内容落地后
+   再次 regenerate 时由 auto 节点 core_concepts 回填（重生成语义已锁测试）——首个正式版本
+   （v1）标签覆盖率为渐进式而非全量，接受为常态（内容库稀疏属懒生成常态，docs/14 §5 ③）。
+3. A3 未动 domain/NodeDoc level（仍 5 学段 Literal）与 ai/tier 决策：通用学科内容生成（A4）需要
+   放宽 level 语义时再行抽离并锁测试；本次仅锁"非 LEVELS 档位语义=fast 基础"。
+4. boss（0199）不是 roadmap 条目 → 不在 math outline 单元内（大纲=学习单元规划，首领属关卡层，
+   由 campaign/引擎组达成驱动）；其概念证据经 core_concepts 兜底进概念层（同 A2 疑点 4）。
 
