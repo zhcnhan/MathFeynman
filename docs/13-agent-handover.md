@@ -42,20 +42,23 @@
   新增/改动端点都要满足；sample 级测试锁定。
 
 ## 3. 当前活动工单（新实例的第一个任务）
-> 历史批次（R1–R23、docs/14 Phase A A1–A4、Phase B B1–B5、**Phase C C1–C5**）已完成并
-> git 提交（基线 **pytest 291 passed + 2 skipped（离线默认）**、audit 5 学段全绿
-> （27/31/81/59/60）、content 26/49、subject=math 总 Outline 258 单元已建、通用学科闭环 E2E 已锁）；
-> 详见 IMPLEMENTATION_NOTES §9–§44、docs/09 R1–R23。
+> 历史批次（R1–R24、docs/14 Phase A A1–A4、Phase B B1–B5、Phase C C1–C5）已完成并 git 提交
+> （基线 pytest 291 passed + 2 skipped（离线默认）、audit 5 学段全绿、content 26/49）；
+> 详见 IMPLEMENTATION_NOTES §9–§45、docs/09 R1–R27。最近前端热修 1126dfc（SessionPage hook 顺序）。
 
-1. **docs/14 Phase A 已验收（R19）、Phase B 已验收（R23）、Phase C C1–C5 完成**（NOTES §40–§44）：
-   C1 外部检索后端 provider 抽象（默认未启用 + 可配自托管 SearXNG + LLM 候选 + select 抓正文）、
-   C2 PDF/文档解析（pypdf 分页/分节 kind:pdf）、C3 学科停用过滤 UI + 学科管理收敛、C4 backlog
-   （heuristic 单选乱序+answer_index 同步 / PUT 405 复查留档）、C5 回归与真模型验收（行星科学
-   10 单元 AI 内容 + 材料可追溯来源实测通过）。**C6 汇报收尾（本批）**；剩架构侧裁决与真人
-   浏览器验收（验收清单见 NOTES §44 与 docs/08 M5 剩余真人项）。
-2. 后续派发视用户验收与需求：docs/14 §7 待细化项（大纲 schema 升级、标签归一策略细化、题目
-   交互块落地顺序/信息架构、AI 起草跨单元题面去重等）与数学内容持续治理（roadmap 到段精核/
-   内容懒生成）。
+1. **R27 费曼追问语义 v3（混合制）—— 本批唯一工单**（docs/09 R27 全规格 + docs/05 §5 v3）：
+   ① 两类提交分离（feynman_submit=完整稿 / feynman_answer=补答）；删除 R25 合并稿拼接；
+   ② 评分对象改革：transcript=本轮文本 + previously_acknowledged 上下文；
+      evidence 必须逐字出自本轮文本（服务端包含校验，违规标记/降级）；
+   ③ 新增缺口账本 ledger（维度历轮最高分 + 缺口清单）与补答轻量评估（gap_check，
+      只更新缺口所属维度）；追问定向 unmet_gaps；
+   ④ 轮次预算：整体稿 ≤3（首讲+≤2 终验）、补答 ≤2；额度尽未过 → relearn（_feynman_reset 沿用），
+      R10/R11/R17 分支语义不得回归（409/回炉/清零）；
+   ⑤ UI：费曼视图双提交入口 + 实时得分条（维度账本分+缺口提示+进度条）；
+   ⑥ 测试：三条集成路径 + evidence 纪律校验；全量 pytest 不降（291+2 离线）+ 前端 build；
+      数据回归（行星科学 u01 真人再走，答追问分数须可见上升）；错误中文化绝对规则不变。
+   实现记录追加 IMPLEMENTATION_NOTES §46+，git 提交标注 R27。
+2. 后续派发视用户验收与需求：docs/14 §7 待细化项、数学内容持续治理（roadmap 到段精核）。
 3. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"；涉及 docs/02/03/05/06/07/14 的语义
    变更在实现时顺带同步。
 

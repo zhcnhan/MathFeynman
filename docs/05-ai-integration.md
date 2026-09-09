@@ -86,32 +86,43 @@ MVP 调用点一览（后续按需增补，规则同）：
 - 白名单由程序从图谱取 `node.prereqs ∪ node.core_concepts`，**LLM 无权扩白**。
 - 学生问超纲问题（常见于好奇提问）：按禁令礼貌截断，记入画像 `styling_notes`（可成为后续学习的钩子）。
 
-## 5. 费曼流程与评分（Feynman Flow）
+## 5. 费曼流程与评分（Feynman Flow · R27 v3 混合制）
+
+> v3（docs/09 R27）取代 R25 合并稿语义：补答（答追问）与完整稿（首讲/整合重讲）分离，
+> 评分不再拼接历史合并稿，杜绝"新增回答被旧文锚定"；补答实时认账入账本，通过仍需完整稿。
 
 ```
 1. service 出任务：feynman.task_prompt（含 rubric 说明"请像对老师讲解"）
-2. 学生口述（打字；语音是 P2）→ 完整存库（attempts 表）
-3. feynman_evaluate 调用：
+2. 学生提交完整稿（feynman_submit；打字，语音是 P2）→ 完整存库（attempts 表）
+3. feynman_evaluate 调用（整体评分）：
    输出 schema:
    {
      "dimension_scores": [{"key":"correctness","score":0.0..1.0,"evidence_quote":"学生原话片段",
-                            "comment":"为什么给这个分"}],
+                             "comment":"为什么给这个分"}],
      "overall_note": "...",
      "misconceptions_found": [{"concept":"...","evidence":"..."}],
      "recommend_action": "pass|followup|relearn"
    }
-   —— evidence_quote 必须逐字引用学生原话，禁止无据评分
-4. service 合成综合分 = Σ(weight×score)；对比 pass_threshold。
-   - 未过且轮次 <2 → feynman_followup 生成 Socratic 追问（针对 misconceptions），学生回答后回到 3（重评，但把首轮评分作为二轮 context）。
-   - 3 轮仍不过 → recommend_action=relearn → 节点不达标，回到练习/讲解回炉（计入画像 concept_confusion）。
-5. 费曼通过 → 若练习也已达标 → mastery 达标，FSRS 首次排程（rating 默认 good）。
-6. 全部费曼评估保留记录供用户复盘（"我当时哪里讲错了"回看）。
+   —— evidence_quote 必须逐字引用【本轮提交文本】，禁止无据评分（服务端做包含校验）
+   —— 输入含 previously_acknowledged（账本已认可内容摘要）：已认可点未重抄不扣分
+4. service 合成综合分 = Σ(weight×score)；对比 pass_threshold：
+   - ≥0.7 → pass → mastery（练习也已达标时）
+   - <0.7 → 提取未达标维度的"缺口"入账本 → feynman_followup 定向追问最弱缺口
+     （一次一个；输入 unmet_gaps，不再自由发问）
+5. 补答（feynman_answer，学生回答追问）→ 缺口补答评分（轻量评估，非整体重评）：
+   只更新该缺口所属维度 → 账本取历轮最高分 → 实时综合分上升可见；答不对缺口保留可再追
+6. 学生可随时再交完整稿（整合重讲，feynman_submit）做整体终验（预算：整体稿 ≤3 =
+   首讲+≤2 终验；补答 ≤2；两额度尽或 3 次整体稿未过 → relearn 回炉，沿用 _feynman_reset）
+7. 补答只涨账本与进度，不能单独过关；完整稿 ≥0.7 才 pass（防挤牙膏替代完整输出）
+8. 全部费曼评估保留记录供用户复盘（"我当时哪里讲错了"回看）
 ```
 
 评分防作弊要点：
-- rubric 逐维输出 + 原话引文，让评分可审计；
+- rubric 逐维输出 + 原话引文，让评分可审计；evidence 必须出自本轮文本（服务端校验）；
 - 学生口述若过短（< 20 字）→ 服务层直接判"敷衍"，提示重讲，不进评分；
 - 评分结果不直接驱动状态：状态由 service 按阈值裁决。
+
+调用点与轮次/预算口径见 docs/09 R27；缺口账本与双提交 UI 语义见 docs/07 费曼视图小节。
 
 ## 6. Provider 与失败处理
 
