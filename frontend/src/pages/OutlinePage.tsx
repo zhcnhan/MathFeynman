@@ -185,6 +185,10 @@ export default function OutlinePage() {
   const isPreset = subject?.kind === "preset";
   const progressById: Record<string, UnitView> = {};
   if (progress) for (const u of progress.units) progressById[u.id] = u;
+  // 分组不在大纲顶层字段：由单元 group 首次出现序派生（后端 unit.group 为准）
+  const groups: string[] = outline
+    ? Array.from(new Set((outline.units as Unit[]).map((u) => u.group).filter(Boolean) as string[]))
+    : [];
 
   return (
     <div>
@@ -273,7 +277,7 @@ export default function OutlinePage() {
             )}
           </div>
           {outline.note && <div className="dim">{outline.note}</div>}
-          {outline.groups?.map?.((g: string) => (
+          {groups.map((g: string) => (
             <div key={g}>
               <h2>▸ {g}</h2>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>

@@ -1,12 +1,12 @@
 subject: math
 label: 数学
 schema_version: 1
-revision: 2
+revision: 5
 status: active
 source: roadmap
 unit_id_scope: entry
-generated_at: '2026-09-09T08:35:15+00:00'
-updated_at: '2026-09-09T08:35:15+00:00'
+generated_at: '2026-09-09T08:39:09+00:00'
+updated_at: '2026-09-09T08:39:09+00:00'
 note: 数学总 Outline：由五学段 roadmap（docs/12）派生（学段=关卡组、段内=既有总序链）。primary 组已精核转正(reviewed)；middle/high/college/ai
   为 draft，随用户到段滚动精核转正（docs/12 §4）。概念标签 = 锚点/auto 内容节点 core_concepts 归一回填，重生成按单元 id 保留既有标签。学习门禁仍由 roadmap
   权威总序引擎（R18）驱动。
