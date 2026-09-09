@@ -16,7 +16,7 @@ export default function App() {
         <span className="brand">MathFeynman</span>
         <NavLink to="/" end>仪表盘</NavLink>
         <SubjectSwitcher />
-        <NavLink to="/subjects">学科列表</NavLink>
+        <NavLink to="/subjects" end>学科列表</NavLink>
         <NavLink to="/review">复习</NavLink>
         <NavLink to="/feynman-history">费曼复盘</NavLink>
         <NavLink to="/settings">设置</NavLink>
