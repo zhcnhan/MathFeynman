@@ -356,6 +356,25 @@ service/outline_gate、content/subjects/math/outline.yaml 258 单元）。**批�
 
 **文档同步**：本裁决；docs/13 §3 当前工单已更新（Phase A ✅，待真人验收与 Phase B 派发）。
 
+## R20 · 热修吸收 + 错误中文化 验收裁决（Euler 三块 · 2026-09-09）
+
+架构侧复跑：pytest=258+1（74s exit 0）、git 链 d1859e8→9dfc25c→be5990b、工作树干净、
+content validate 24/47。**批准完成**；疑点逐条裁决：
+
+- **错误响应体**：以嵌套体 `{"detail":{"error":{"code","message(中文)"}}}` 为准（前端已双包装
+  兼容；测试已锁）；docs/06 §1 已同步该表述。改扁平需另裁（牵动测试/前端，无必要）。
+- 500 类别小字典 + 未知 →"系统处理"：✅ 接受（真实原因只进日志）。
+- delete custom 学科后内容节点以 disabled 保留（R18 sync 语义）：✅ 接受；物理删除+仅留日志
+  另裁留档（Phase B 可选）。
+- outline_gate 指纹 = mtime_ns+size：✅ 接受 MVP；极端同指纹覆盖风险已有 `clear_outline_cache`
+  兜底，可后续换内容 hash（留档）。
+- 补充采纳（块1 内）✅：OutlineUnit.title 改必填（杜绝空 title 静默入库）；slugify 对齐数字开头。
+
+**给 Euler 的 backlog 更新**：R19 backlog 中两条（delete 级联、outline 缓存）已被块3 完成，从清单移除；
+新增可选留档（错误体扁平化/物理删除/内容 hash 指纹）。
+
+**文档同步**：本裁决；docs/06 §1、docs/13 §2 已含中文化与嵌套错误体口径。
+
 ---
 
 - 架构侧独立验证（2026-09-08）：11 个内容节点真实存在；Euler 复审回归 136 passed/1 skipped
