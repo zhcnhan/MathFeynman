@@ -13,6 +13,18 @@
 | GET | `/nodes/{node_id}` | 节点元数据 + content 摘要（不含答案） |
 | GET | `/dashboard` | 今日复习队列、当前推荐节点、累计统计、断点清单（捡拾结果） |
 
+### 学科与大纲（docs/14 Phase A A1 起；math 为预置学科，通用学科=用户自建）
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/subjects` | 学科列表（含大纲摘要：revision/status/units/组） |
+| POST | `/subjects` | 创建自定义学科（body: label/description/subject_id?，id 须 `^[a-z][a-z0-9-]*$`） |
+| GET / DELETE | `/subjects/{subject_id}` | 学科详情 / 删除自定义学科（preset 不可删） |
+| GET | `/subjects/{subject_id}/outline` | 当前大纲全文（审阅；无大纲 404） |
+| PUT | `/subjects/{subject_id}/outline` | 采纳/整份重生成（custom；revision+1；结构校验：唯一/自指/环/引用） |
+| POST | `/subjects/{subject_id}/outline/validate` | 校验候选大纲（不落盘，返回问题清单，UI 预览用） |
+| PATCH | `/subjects/{subject_id}/outline/units/{unit_id}` | 单元局部改（custom 任意白名单字段；preset 仅 concept_tags 等附加字段） |
+| POST | `/subjects/{subject_id}/outline/regenerate` | AI 起草/重生成（Phase A4 开放；A1 占位 501） |
+
 ### 学习会话
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -79,6 +91,8 @@ LLM 等待前仍按 R7 先提交事务释放写锁。长文本（讲解/答疑�
 ## 3. SQLite 表结构草案
 
 ```sql
+subjects     (id TEXT PK, label TEXT, kind TEXT,       -- Phase A：kind=preset(math)|custom
+              description TEXT, meta_json TEXT, created_at)   -- 大纲文档在 content/subjects/<id>/outline.yaml
 users        (id TEXT PK, profile_json TEXT, created_at)            -- MVP 恒为 'local'
 nodes        (id TEXT PK, yaml_path TEXT, title, level, topic,
               objectives_json, core_concepts_json, feynman_json,
@@ -100,9 +114,17 @@ reviews      (user_id, node_id, state_json,            -- FSRS 状态
 ai_logs      (id INTEGER PK, call_name, model, tier, prompt_tokens, completion_tokens,
               ok INTEGER, error TEXT, latency_ms, created_at)
 relearn_logs (user_id, node_id, reason TEXT, created_at)   -- mastered→learning 降级留痕
+-- Phase A（docs/14）后续表：concepts/user_concepts（概念层掌握证据，A2 落地时同步本文档）
 ```
 
-- 迁移策略：MVP 用 SQLAlchemy `create_all`；表结构变化时人工写 `ALTER` 迁移脚本放 `backend/migrations/`（不上 alembic，但结构保持文档同步）。
+- **subject 命名空间迁移方案（Phase A A1 已落地，docs/14 §1/§5）**：学科注册 = 新增 `subjects` 表
+  （math 为 kind=preset 预置学科，启动幂等注册；custom 由 API 创建）；大纲文档按
+  `content/subjects/<subject_id>/outline.yaml` 持久（schema v1，整份重生成 revision+1 原子替换）；
+  **现有关键表（nodes/edges/user_nodes/sessions/attempts/reviews）不加 subject 列**——既有 content 节点
+  隐含归属 math（level 语义保留，零 ALTER 兼容现库），subject 归属由大纲 ↔ 内容 id 映射反查
+  （自定义学科内容节点 id 强制 `<subject>.` 前缀，全局唯一）。概念层与 (subject, concept) 掌握证据
+  为新增独立表（A2）。
+- 迁移策略：MVP 用 SQLAlchemy `create_all`（新表自动创建）；表结构变化时人工写 `ALTER` 迁移脚本放 `backend/migrations/`（不上 alembic，但结构保持文档同步）。
 - 并发：本地单机单用户，无并发问题；但仍建议 SQLite `WAL` 模式。
 
 ## 4. 错误码（约定）

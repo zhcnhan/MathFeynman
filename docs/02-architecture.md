@@ -57,12 +57,14 @@ MathFeynman/
 │   │   ├── domain/          # 图谱/掌握度/fsrs/画像（纯 Python，零外部依赖可测）
 │   │   ├── ai/              # provider.py / calls.py(schema) / validate.py / rubric.py
 │   │   ├── content/         # loader / templates / generator
+│   │   ├── outline/         # Phase A（docs/14）：subject 注册 + 大纲 schema/持久化（通用学科层）
 │   │   ├── db.py            # SQLAlchemy engine/session
 │   │   └── models.py        # ORM
 │   ├── tests/
 │   └── pyproject.toml
 ├── content/
-│   └── stages/              # 见 04 文档：primary/middle/high/college/ai/...
+│   ├── stages/              # 见 04 文档：primary/middle/high/college/ai/...（数学内容库）
+│   └── subjects/            # Phase A（docs/14）：学科大纲文件 <sid>/outline.yaml（含 math 派生大纲）
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/           # Dashboard / Session / Review / Settings

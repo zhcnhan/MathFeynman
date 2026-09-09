@@ -959,3 +959,64 @@ sync_content 触发 nodes UNIQUE（同会话 pending 与已提交行叠加）与
 **备注**：docs/05 未改（R18 不涉及 AI 调用点 schema/状态机流转，门禁在 start 边界；如架构认为需在
 docs/05 会话章节补门禁指引可另行回填）。
 
+---
+
+## 26. 会话续接（2026-09-09 13:50）—— 基线复核通过：pytest=200 passed + 1 skipped，content=ok 24 节点/47 练习
+
+**续接前最后已知状态**：
+- 新 Euler 实例（本会话）按 docs/13 §1 开机清单完成全量上下文读取与基线验证：
+  pytest **200 passed + 1 skipped**（201 collected exit 0）；audit 5 学段全绿
+  （primary 27/middle 31/high 81/college 59/ai 60，经 test_roadmap 真实库循环断言 + 门禁矩阵）；
+  content validate **ok=True nodes=24 exercises=47**；git HEAD=a2eeeb4（docs/14 工单文档 +
+  全文档"适用范围"标签 + resume/ 清理已由设置批提交）、工作树干净。
+- 里程碑：M0–M5 + docs/11 阶段 1/2/3 + docs/12 总纲 P1–P4 + R15 精核补丁 + A/B/C/D 引擎段 +
+  R18 蓝图总序权威化（§8–§25 全部落地）；当前活动工单 = **docs/14 Phase A**（docs/13 §3）。
+- 本会话目标：docs/14 Phase A 四子步 A1–A4（各独立汇报 + git 提交，提交标注 PhaseA 子步）；每步
+  全量回归 200+1 不降 + content validate 绿 + audit 全绿 + 零残留；疑点挂"待架构裁决"。
+
+---
+
+## 27. docs/14 Phase A · A1 子步：subject/outline 数据模型与持久化（2026-09-09）
+
+**规格**：docs/14 §1/§2.1/§7 #2 + 派工单 A1（subject 注册与命名空间；outline schema；大纲文件持久，
+可审阅/局部改/整份重生成版本递增；SQLite subject 维度迁移方案，兼容现库）。
+
+**改动清单**
+1. `backend/app/outline/schemas.py`（新）：大纲 schema v1（OutlineDoc/OutlineUnit/校验）——subject/
+   schema_version/revision/status(draft|active)/source(roadmap|ai|manual|hybrid)/unit_id_scope/
+   units{id,title,objectives≤4,concept_tags[],group,prereqs,difficulty,requires_thinking,anchors,
+   topic,status(draft|reviewed)}；结构校验：id 唯一/自指/引用存在性（含 '.' 内容节点引用，注入
+   known_content_ids 才判存在）/同大纲前置环（DFS）；YAML 往返（UTF-8 可审阅）。
+2. `backend/app/outline/store.py`（新）：学科注册（DB subjects 表：preset math 幂等注册、custom API
+   创建/删除，preset 治理红线）+ 大纲持久化 `content/subjects/<sid>/outline.yaml`（原子替换；
+   重生成 revision+1 版本递增）；custom 单元 id 强制 `<subject>.` 前缀（内容节点全局唯一命名空间
+   约定）；preset 大纲禁止直接 PUT（由 roadmap 派生治理，A3 落派生入口）；patch_outline_unit 局部改
+   （custom 白名单字段 / preset 仅附加字段）。
+3. `backend/app/models.py`：+ Subject 表（id/label/kind=preset|custom/description/meta_json）。
+4. `backend/app/api/subjects.py`（新）+ main.py 挂载与 lifespan `ensure_math_preset`：
+   GET/POST /subjects、GET/DELETE /subjects/{sid}、GET/PUT /subjects/{sid}/outline、
+   POST /subjects/{sid}/outline/validate、PATCH …/units/{unit_id}、POST …/regenerate（A4 占位 501）。
+5. `backend/tests/test_outline.py`（新 ×20）：schema 往返/重复/自指/环/引用/目标上限/难度域/版本守卫/
+   空大纲；store preset 治理/幂等注册/custom 创建/版本递增落盘/环拒/局部改/删除/非法 id；API 全流程
+   （math preset 列表、preset PUT 拒、CRUD、环 422、命名空间前缀拒、非法 id 422、删除、preset 删除 409、
+   regenerate 501）。
+6. docs 同步：docs/02 §3 目录树（outline 模块 + content/subjects）；docs/06 §1 学科与大纲端点表、
+   §3 subjects 表 + subject 命名空间迁移方案说明（现有关键表不加列零迁移；概念层独立表 A2 补）。
+
+**迁移方案（已文档化，docs/06 §3）**：学科注册 = subjects 表；大纲 = 文件；既有 nodes/edges/
+user_nodes/… 不加 subject 列（内容节点隐式归属 math，语义零变更兼容现库）；subject 归属由
+大纲 ↔ 内容 id 映射反查；自定义学科内容节点 id 强制 `<subject>.` 前缀防跨学科碰撞。
+
+**回归**：pytest = **220 passed + 1 skipped**（200+1 基线 + 新增 20，不降）；content validate
+24/47 全绿；audit 5 学段不变（本子步未动 roadmap/stages）；git 提交（PhaseA A1）。
+
+**疑点（挂待架构裁决）**
+1. 大纲 schema 单元 objectives 上限取 **4**（docs/14 规格"目标≤3"；数学既有条目精核批曾扩至 4 条
+   a12 KKT——机械照搬 ≤3 会与现库冲突）。AI 起草提示词按 ≤3 执行，schema 宽松 ≤4。
+2. "整份重生成版本递增"以 revision 字段 + 原子替换实现，历史版本留 git 不落盘归档副本（MVP 口径；
+   若需运行期回滚/对比旧版，需大纲归档目录设计——列为候选）。
+3. 大纲文件放 `content/subjects/`（git 管理、随内容库隔离副本走测试）；subjects 表为 DB 注册真源，
+   目录仅文档载体（两处不重复存大纲元数据）。
+4. delete_subject 对已产生学习进度的 custom 学科未做进度级联（A2 显式重置语义落地后统一处理；
+   当前 custom 无内容闭环，不构成实际风险）。
+

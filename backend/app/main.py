@@ -19,9 +19,11 @@ from .api import (
     review,
     selfextend,
     session as session_api,
+    subjects,
 )
 from .config import get_settings
 from .db import SessionLocal, init_db
+from .outline.store import ensure_math_preset
 from .service.library import ensure_user, sync_content
 
 logger = logging.getLogger("mathfeynman")
@@ -34,6 +36,7 @@ async def lifespan(app: FastAPI):
     with SessionLocal() as db:
         try:
             ensure_user(db)
+            ensure_math_preset(db)  # Phase A A1：预置学科注册（幂等）
             report = sync_content(db)
             db.commit()
             logger.info(
@@ -79,4 +82,5 @@ api.include_router(history.router)
 api.include_router(selfextend.router)
 api.include_router(feedback.router)
 api.include_router(content_admin.router)
+api.include_router(subjects.router)
 app.include_router(api)

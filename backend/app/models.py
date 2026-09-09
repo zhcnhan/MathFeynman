@@ -37,6 +37,23 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Subject(Base):
+    """学科注册（docs/14 §1 subject 命名空间 · Phase A A1）。
+
+    kind: preset=预置学科（math，受代码治理）/ custom=用户自建。
+    大纲文档持久于 content/subjects/<id>/outline.yaml（不在本表）。
+    """
+
+    __tablename__ = "subjects"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    label: Mapped[str] = mapped_column(String(128), default="")
+    kind: Mapped[str] = mapped_column(String(16), default="custom")  # preset|custom
+    description: Mapped[str] = mapped_column(Text, default="")
+    meta_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Node(Base):
     __tablename__ = "nodes"
 
@@ -167,6 +184,7 @@ class Feedback(Base):
 __all__ = [
     "Base",
     "User",
+    "Subject",
     "Node",
     "Edge",
     "UserNode",
