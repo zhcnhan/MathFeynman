@@ -248,6 +248,31 @@ def _regenerate_node_now(db: Session, user_id: str, node_id: str, *, drafter=Non
             db.flush()
             return {"action": "failed", "node_id": node_id, "message": "节点不可自动重生成（非 auto/不存在）。"}
 
+        from ..domain.graph import LEVELS
+
+        # R26：自定义学科（非数学 preset）内容重生成 = 学科化单元出稿
+        # （group 名作层级，不走数学 roadmap 学段校验——修 RoadmapEntry level 校验炸）
+        prefix = node_id.split(".", 1)[0]
+        is_generic = prefix not in LEVELS
+        if is_generic:
+            from ..outline import generate as ogen
+
+            try:
+                res = ogen.generate_unit_content(db, prefix, node_id, force=True)
+            except Exception as e:
+                _mark(db, rows, "failed", f"自动重生成异常（通用学科）：{type(e).__name__}: {str(e)[:200]}")
+                db.flush()
+                return {"action": "failed", "node_id": node_id, "message": "通用学科重生成失败，保留原内容。"}
+            if res.get("status") in ("created", "exists"):
+                _invalidate_stale_practice(db, node_id)
+                _mark(db, rows, "regenerated", res.get("note") or "已自动重生成替换（通用学科）。")
+                db.flush()
+                return {"action": "regenerated", "node_id": node_id,
+                        "message": f"已自动重生成替换该单元（{len(rows)} 条反馈清零）。"}
+            _mark(db, rows, "failed", res.get("note") or "重生成失败（保留原内容）。")
+            db.flush()
+            return {"action": "failed", "node_id": node_id, "message": res.get("note") or "重生成失败。"}
+
         from ..content import pipeline as pl
         from ..content.loader import load_library
         from ..content.roadmap import RoadmapEntry
