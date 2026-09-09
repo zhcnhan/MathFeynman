@@ -41,8 +41,9 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 
 OUTLINE_SCHEMA_VERSION = 1
-# 学科 id 命名空间（注册规则）：小写字母开头 + 小写字母/数字/连字符
-SUBJECT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+# 学科 id 命名空间（注册规则）：字母/数字开头均可（允许用户填 111 这类），
+# 小写字母/数字/连字符，≤32 位（保留：LEVELS 学段名与 math preset）
+SUBJECT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 # 单元本地号（id 的 <subject>. 之后部分）：字母数字/点/连字符/下划线
 UNIT_LOCAL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
