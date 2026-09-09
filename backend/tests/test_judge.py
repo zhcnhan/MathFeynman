@@ -184,6 +184,39 @@ def test_judge_argument_validation():
         judge("equation_solution", "x=1")  # 缺 equation
 
 
+# --------------------------------------------------------------------------
+# B2：single_choice / fill_text
+# --------------------------------------------------------------------------
+def test_single_choice_accepts_index_letter_text():
+    options = ["类地行星", "气态巨行星", "黑洞"]
+    # 编号（1 起）
+    assert judge("single_choice", "1", options=options, expected="0").correct
+    assert judge("single_choice", "2", options=options, expected="0").correct is False
+    # 字母
+    assert judge("single_choice", "a", options=options, expected="0").correct
+    assert judge("single_choice", "b", options=options, expected="0").correct is False
+    # 选项文本
+    assert judge("single_choice", "类地行星", options=options, expected="0").correct
+    assert judge("single_choice", " 类地行星 ", options=options, expected="0").correct
+    # 越界/乱答 → notation
+    with pytest.raises(NotationError):
+        judge("single_choice", "9", options=options, expected="0")
+    with pytest.raises(NotationError):
+        judge("single_choice", "随便说说", options=options, expected="0")
+
+
+def test_fill_text_exact_and_alias():
+    assert judge("fill_text", "地球", expected="地球").correct
+    assert judge("fill_text", "地球 ", expected="地球").correct  # 空白容忍
+    assert judge("fill_text", "类地行星", expected="类地行星",
+                 aliases=["岩石行星", "岩质行星"]).correct
+    assert judge("fill_text", "岩质行星", expected="类地行星",
+                 aliases=["岩石行星", "岩质行星"]).correct  # 同义 alias
+    assert judge("fill_text", "恒星", expected="类地行星", aliases=["岩石行星"]).correct is False
+    with pytest.raises(NotationError):
+        judge("fill_text", "  ", expected="地球")  # 空作答
+
+
 # 统计：本文件判题断言用例总数（含参数化条目）
 def test_judge_case_count_ge_30():
     total = (

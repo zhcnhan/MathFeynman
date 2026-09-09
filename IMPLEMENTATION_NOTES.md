@@ -1294,3 +1294,46 @@ git 提交（R19 块3）。
    短暂命中旧值（本实现所有大纲写入均经原子替换且 revision 变化改 size，实际不构成风险）；
    如需更强一致可改为内容 hash 或显式 bust（clear_outline_cache 已提供）。
 
+---
+
+## 34. docs/14 Phase B · B1：学科化单元内容出稿（2026-09-09 · 与 B2 判题引擎联动）
+
+**规格**：docs/14 §10/§2.4/§2.5 + R22（行星科学试点；真内容替换桩：讲解按学科语境、3–5 道多样
+练习题、费曼学科化 rubric——先给科学类默认模板；无 LLM_API_KEY → 保留启发式桩离线可测）。
+说明：R22 前架构侧先行提交 3ea2798（docs/15 交接 + 吸收 schemas/judge 部分改动，258+1 保持）。
+
+**改动清单**
+1. `content/schemas.py`（前置已吸收进 3ea2798）+ `domain/judge.py`/`content/templates.py` 补齐：
+   - CheckDoc 新增 **single_choice / fill_text** 判题模式；ExerciseDoc 增 options/answer_index/
+     expected/aliases 与题型一致性校验（B2 引擎层，B1 内容出稿依赖其自检）；
+   - judge：judge_single_choice（接受 编号/字母/选项文本，乱答 NotationError）、judge_fill_text
+     （归一化 + aliases 同义）；统一 judge() 增 options/aliases 参数并分发（补回 3ea2798 未吸收的
+     统一入口段，import re）；
+   - templates.RenderedExercise 增 options/answer_index/aliases 与 judge_payload 细分；_render_fixed
+     支持新两型（selfcheck 用 canonical 作答通过）。
+2. `outline/generate.py`（重写 A4 单题桩 → B1 学科化出稿）：
+   - **heuristic（离线确定性）**：由大纲元数据构造 3–5 道、≥2 题型、题面去重的可信题
+     （boolean 概念归属 / single_choice 概念选择（干扰=其它单元标签）/ fill_text 补全概念 /
+      目标句选择题补足）；全部可自动判题并过自检——无 key 可测；
+   - **AI（配 key）**：`CALL_UNIT_CONTENT`（ai/calls 调用点 11，light 档 schema 化）→ 组装 NodeDoc
+     → validate_generic_content（题型≥2/题量≥3/题面去重/自检 broken）→ 失败带错误重试 ≤2 次，
+     仍失败降级 heuristic；
+   - 费曼 rubric 学科化：rubric_for() 科学类模板（correctness/own_words/**evidence**/self_correction，
+     启发式按学科名/标签命中）与通用四维；
+   - 落盘沿用 source:auto + refresh/sync 幂等；material_summaries 参数预留（B3 注入引用摘要）。
+3. `service/session.py`：_exercise_view 对 single_choice 输出 options（答案不泄；服务端判题）。
+4. `backend/tests`：test_judge +2（single/fill 判题矩阵 + Notation）；test_unit_content_gen.py 新 ×4
+   （行星科学 10 单元全部生成多题型内容：≥3 题/≥2 题型/跨单元题面零重复/科学 rubric 命中
+   evidence；heuristic 单单元底线；AI 调用点注册；无 key 自动启发式离线成功）。
+
+**回归**：pytest = **264 passed + 1 skipped**（258+1 基线 + 新增 6，不降）；content validate 24/47
+（通用内容只在临时学科副本生成，不入仓库）；git 提交（PhaseB B1）。
+
+**疑点（挂待架构裁决）**
+1. 启发式题目为"事实引用大纲元数据"的安全陈述（判断恒可判、选择正项固定第 1 项）——UI 展示
+   需避免"永远选第一项"的做题套路：后续可在 heuristic 内随机打乱选项并把 answer_index 同步
+   （保持确定性种子），或在 B2 UI 提供乱序渲染（选项展示序与判题序一致即可）；建议架构定夺。
+2. fill_text 归一化 MVP=去空白/句末标点+小写；更细（繁简/标点变体）同 docs/14 §7#3 治理。
+3. "原三题相同"在启发式与 AI 路径均已以"题面去重 + 题型多样校验"锁定；跨**轮次**（同单元重
+   新生成）是否要求不同题面属可选增强（当前重生成 = force 后由校验保证 ≥3 不重复的稳定题组）。
+

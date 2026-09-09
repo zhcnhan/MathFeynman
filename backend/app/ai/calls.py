@@ -224,6 +224,31 @@ CALL_OUTLINE_DRAFT = CallSpec(
     "outline_draft", "light", OutlineDraftIn, OutlineDraftOut, temperature=0.7, max_retries=2
 )
 
+
+# ---------- 调用点 11：通用学科单元内容起草（docs/14 Phase B · B1） ----------
+class UnitContentExercise(BaseModel):
+    """AI 起草输出的单道练习题（kind ∈ boolean/choice/fill，服务器组装为 NodeDoc 并校验）。"""
+
+    kind: Literal["boolean", "choice", "fill"]
+    prompt: str
+    answer_bool: bool = False          # boolean
+    options: list[str] = Field(default_factory=list)
+    answer_index: int = 0              # choice（0 起）
+    expected: str = ""                 # fill
+    aliases: list[str] = Field(default_factory=list)
+
+
+class UnitContentDraftOut(BaseModel):
+    lecture: str = ""
+    feynman_task: str = ""
+    exercises: list[UnitContentExercise] = Field(default_factory=list)
+
+
+CALL_UNIT_CONTENT = CallSpec(
+    "unit_content_draft", "light", OutlineDraftIn, UnitContentDraftOut,
+    temperature=0.5, max_retries=2,
+)
+
 CALLS: dict[str, CallSpec] = {
     c.name: c for c in (
         CALL_EXPLAIN_NODE,
@@ -236,6 +261,7 @@ CALLS: dict[str, CallSpec] = {
         CALL_CLASSIFY_ERROR,
         CALL_DRAFT_CONTENT,
         CALL_OUTLINE_DRAFT,
+        CALL_UNIT_CONTENT,
     )
 }
 

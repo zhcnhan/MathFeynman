@@ -985,7 +985,7 @@ class SessionService:
         }
 
     def _exercise_view(self, cur: RenderedExercise) -> dict[str, Any]:
-        return {
+        view: dict[str, Any] = {
             "exercise_id": cur.exercise_id,
             "prompt": cur.prompt,
             "mode": cur.mode,
@@ -993,6 +993,9 @@ class SessionService:
             "interactive": cur.interactive,
             "seed": cur.seed,
         }
+        if cur.mode == "single_choice" and cur.options:
+            view["options"] = list(cur.options)  # B2：选择题选项（答案由服务端判定，不外泄 index）
+        return view
 
     def _session_meta(self, db: Session, sess: models.Session) -> dict[str, Any]:
         return {

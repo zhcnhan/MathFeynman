@@ -33,17 +33,26 @@ class RenderedExercise:
     seed: int
     params: dict[str, Any] = field(default_factory=dict)
     equation: str | None = None          # equation_solution 机器方程
-    expected: str | bool | None = None   # 判题期望（numeric/equivalence/boolean）
+    expected: str | bool | None = None   # 判题期望（numeric/equivalence/boolean/fill_text）
     canonical_answer: str = ""           # 正确答案文本（自检/测试用，严禁直接返回前端）
     broken: bool = False
     detail: str = ""
+    # B2（docs/04 §2 同步）：选择/填空附加判题数据
+    options: list[str] = field(default_factory=list)
+    answer_index: int | None = None
+    aliases: list[str] = field(default_factory=list)
 
     def judge_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {"mode": self.mode}
         if self.mode == "equation_solution":
             payload["equation"] = self.equation
+        elif self.mode == "single_choice":
+            payload["expected"] = str(self.answer_index if self.answer_index is not None else 0)
+            payload["options"] = list(self.options)
         else:
             payload["expected"] = self.expected
+            if self.mode == "fill_text" and self.aliases:
+                payload["aliases"] = list(self.aliases)
         if self.tolerance is not None:
             payload["tolerance"] = self.tolerance
         return payload
@@ -160,6 +169,14 @@ def _render_fixed(ex: ExerciseDoc, out: RenderedExercise) -> RenderedExercise:
             raise ValueError("fixed + equation_solution 需要 equation")
         out.equation = ex.equation
         out.canonical_answer = _canonical_solution_text(ex.equation)
+    elif mode == "single_choice":  # B2
+        out.options = list(ex.options)
+        out.answer_index = ex.answer_index
+        out.canonical_answer = str((ex.answer_index or 0) + 1)  # 作答=1..n 编号
+    elif mode == "fill_text":  # B2
+        out.expected = ex.expected
+        out.aliases = list(ex.aliases)
+        out.canonical_answer = ex.expected
     else:
         raise ValueError(f"fixed 不支持判题模式 {mode}")
     _selfcheck(out)

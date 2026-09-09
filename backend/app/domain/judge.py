@@ -11,6 +11,7 @@ boolean_judgment。ordering/manual_review 属扩展枚举，本里程碑不支�
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -353,8 +354,11 @@ def judge(
     equation: str | None = None,
     symbol: str = "x",
     tolerance: float | None = None,
+    options: list[str] | None = None,
+    aliases: list[str] | None = None,
 ) -> JudgeResult:
-    """按 mode 分发判题。mode ∈ MVP 四模式；ordering/manual_review 抛 UnsupportedJudgeMode。"""
+    """按 mode 分发判题。mode ∈ MVP 模式 + B2（single_choice/fill_text）；ordering/manual_review
+    抛 UnsupportedJudgeMode。"""
     if mode == "numeric_value":
         if expected is None or not isinstance(expected, str):
             raise JudgeError("numeric_value 需要 expected(字符串表达式)")
@@ -371,6 +375,18 @@ def judge(
         if expected is None or not isinstance(expected, bool):
             raise JudgeError("boolean_judgment 需要 expected(bool)")
         return judge_boolean_judgment(user_answer, expected=expected)
+    if mode == "single_choice":
+        if not options or expected is None:
+            raise JudgeError("single_choice 需要 options 与 expected(正确项下标)")
+        try:
+            idx = int(expected)
+        except (TypeError, ValueError) as e:
+            raise JudgeError(f"single_choice expected 须为整数下标，得到 {expected!r}") from e
+        return judge_single_choice(user_answer, options=options, answer_index=idx)
+    if mode == "fill_text":
+        if expected is None:
+            raise JudgeError("fill_text 需要 expected(标准答案)")
+        return judge_fill_text(user_answer, expected=str(expected), aliases=aliases or [])
     if mode in ("ordering", "manual_review"):
         raise UnsupportedJudgeMode(
             f"模式 {mode} 非 MVP 自动判题范围（manual_review 应进人工复核队列）"
