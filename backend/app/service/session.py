@@ -898,9 +898,18 @@ class SessionService:
 
     def _payload_explain(self, db: Session, sess: models.Session, node: NodeDoc) -> dict[str, Any]:
         flow = sess.flow_json
-        if flow.get("lecture_cache") is None:
-            # R12：regen_explain 可携带单次 think_deep → 本帧消费
+        cache = flow.get("lecture_cache")
+        # 档位联动（R21）：缓存非"手动单次指定"（explicit）且其档位 ≠ 当前全局解析档位 →
+        # 自动作废，按新档位重生成（用户切换 快/深 后旧讲解不残留旧档）。
+        if cache is not None and not cache.get("explicit"):
+            desired = self._resolve_tier(db, node=node, override=None)
+            if cache.get("strategy") and cache["strategy"] != desired.strategy:
+                flow["lecture_cache"] = None
+                cache = None
+        if cache is None:
+            # R12：regen_explain 可携带单次 think_deep → 本帧消费（视为显式单次，不被联动翻回）
             regen_override = flow.pop("regen_think_override", None)
+            explicit = regen_override is not None
             decision = self._resolve_tier(db, node=node, override=regen_override)
             ctx = ExplainIn(
                 session_id=sess.id,
@@ -920,6 +929,7 @@ class SessionService:
                 "asks": out.asked_to_confirm,
                 "degraded": degraded,
                 "strategy": decision.strategy,  # R12：标注本次讲解档位（审计/UI）
+                "explicit": explicit,           # R21：是否手动单次指定（不被档位联动自动翻）
             }
         cache = flow["lecture_cache"]
         return {
