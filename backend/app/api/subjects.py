@@ -50,6 +50,7 @@ def _subject_summary(db: Session, subj) -> dict:
         "description": subj.description,
         "enabled": bool(subj.enabled),  # B4：停用标记（列表默认隐藏停用者）
         "removed_at": subj.removed_at.isoformat() if subj.removed_at else None,
+        "source_policy": str((subj.meta_json or {}).get("source_policy") or "ai"),  # B3
         "outline": (
             None
             if doc is None
@@ -274,7 +275,10 @@ def generate_unit_content(subject_id: str, unit_id: str, db: Session = Depends(g
     from ..outline.generate import generate_unit_content as _gen
 
     try:
-        return _gen(db, subject_id, unit_id)
+        from ..outline import materials as mat
+
+        summaries = mat.materials_summaries(db, subject_id)  # B3：引用材料注入
+        return _gen(db, subject_id, unit_id, material_summaries=summaries)
     except OutlineError as e:
         raise _outline_err(e) from e
 
@@ -323,3 +327,105 @@ def reset_progress(subject_id: str, body: ResetProgressBody,
         return report
     except OutlineError as e:
         raise _outline_err(e) from e
+
+
+# ---------- B3：内容来源策略 + 材料层（docs/14 §8） ----------
+class PolicyBody(BaseModel):
+    source_policy: str = "ai"
+
+
+@router.get("/subjects/{subject_id}/policy")
+def policy_get(subject_id: str, db: Session = Depends(get_db)) -> dict:
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    return {"subject_id": subject_id, "source_policy": mat.get_policy(db, subject_id)}
+
+
+@router.put("/subjects/{subject_id}/policy")
+def policy_put(subject_id: str, body: PolicyBody, db: Session = Depends(get_db)) -> dict:
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    try:
+        policy = mat.set_policy(db, subject_id, body.source_policy)
+    except OutlineError as e:
+        raise _err(422, "validation_error", str(e)) from e
+    return {"subject_id": subject_id, "source_policy": policy}
+
+
+class MaterialUploadBody(BaseModel):
+    title: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    source: str = "本地导入"
+    url: str = ""
+
+
+@router.post("/subjects/{subject_id}/materials/upload", status_code=201)
+def material_upload(subject_id: str, body: MaterialUploadBody,
+                    db: Session = Depends(get_db)) -> dict:
+    """本地导入（自有/授权 PDF/文本解析为文本后上传，或直接粘贴文本）。"""
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    try:
+        entry = mat.add_material(db, subject_id, title=body.title, text=body.text,
+                                 source=body.source, url=body.url)
+    except OutlineError as e:
+        raise _outline_err(e) from e
+    return entry
+
+
+@router.get("/subjects/{subject_id}/materials")
+def material_list(subject_id: str, db: Session = Depends(get_db)) -> dict:
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    return {"subject_id": subject_id, "materials": mat.list_materials(db, subject_id)}
+
+
+@router.delete("/subjects/{subject_id}/materials/{material_id}", status_code=204)
+def material_delete(subject_id: str, material_id: str, db: Session = Depends(get_db)) -> None:
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    if not mat.delete_material(db, subject_id, material_id):
+        raise _err(404, "not_found", f"材料不存在: {material_id}")
+
+
+class SearchBody(BaseModel):
+    query: str = Field(min_length=1)
+
+
+@router.post("/subjects/{subject_id}/materials/search")
+def material_search(subject_id: str, body: SearchBody, db: Session = Depends(get_db)) -> dict:
+    """联网候选清单（外部检索后端 Phase C；离线/未接入返回提示，UI 明示）。"""
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    return mat.search_candidates(db, subject_id, body.query)
+
+
+class SelectItem(BaseModel):
+    title: str = Field(min_length=1)
+    url: str = ""
+    source: str = ""
+    summary: str = Field(min_length=1)
+
+
+class SelectBody(BaseModel):
+    items: list[SelectItem] = Field(min_length=1)
+
+
+@router.post("/subjects/{subject_id}/materials/select", status_code=201)
+def material_select(subject_id: str, body: SelectBody, db: Session = Depends(get_db)) -> dict:
+    """勾选候选 → 本地化引用（摘要入库，来源可追溯；不整本下载）。"""
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    items = [it.model_dump() for it in body.items]
+    try:
+        saved = mat.select_candidates(db, subject_id, items)
+    except OutlineError as e:
+        raise _err(422, "validation_error", str(e)) from e
+    return {"subject_id": subject_id, "saved": saved}

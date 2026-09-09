@@ -56,6 +56,59 @@ export default function OutlinePage() {
   const [busy, setBusy] = useState(false);
   const [tagsDraft, setTagsDraft] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState("");
+  const [policy, setPolicy] = useState("ai"); // B3：来源策略
+  const [matTitle, setMatTitle] = useState("");
+  const [matText, setMatText] = useState("");
+  const [materials, setMaterials] = useState<{ id: string; title: string; source: string }[]>([]);
+
+  const loadMaterials = async () => {
+    try {
+      const r = await api.get<{ materials: { id: string; title: string; source: string }[] }>(
+        `/subjects/${id}/materials`
+      );
+      setMaterials(r.materials);
+      const p = await api.get<{ source_policy: string }>(`/subjects/${id}/policy`);
+      setPolicy(p.source_policy);
+    } catch {
+      /* 停用/无权限等：静默 */
+    }
+  };
+
+  const setPolicyNow = async (value: string) => {
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const r = await api.put<{ source_policy: string }>(`/subjects/${id}/policy`, { source_policy: value });
+      setPolicy(r.source_policy);
+      setMsg("内容来源策略已更新");
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const uploadMaterial = async () => {
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const r = await api.post<{ title: string }>(`/subjects/${id}/materials/upload`, {
+        title: matTitle,
+        text: matText,
+        source: "本地导入",
+      });
+      setMsg(`已导入材料「${r.title}」（重生成单元时会作为参考来源）`);
+      setMatTitle("");
+      setMatText("");
+      await loadMaterials();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setErr("");
@@ -82,6 +135,7 @@ export default function OutlinePage() {
 
   useEffect(() => {
     void load();
+    void loadMaterials();
   }, [load]);
 
   const draft = async (regen = false) => {
@@ -220,6 +274,33 @@ export default function OutlinePage() {
       )}
       {err && <div className="banner error">{err}</div>}
       {msg && <div className="banner ok">{msg}</div>}
+
+      {/* B3：内容来源策略 + 材料层（docs/14 §8） */}
+      <div className="card">
+        <h2>内容来源与材料（B3）</h2>
+        <div className="input-row" style={{ gap: 10, margin: "6px 0" }}>
+          <label className="dim">来源策略</label>
+          <select value={policy} disabled={busy} onChange={(e) => void setPolicyNow(e.target.value)}>
+            <option value="ai">AI 全生成</option>
+            <option value="import">本地教材导入</option>
+            <option value="web">联网候选清单</option>
+            <option value="mixed">混合</option>
+          </select>
+        </div>
+        <div className="dim" style={{ margin: "4px 0" }}>
+          引用材料（{materials.length}）：本地导入后，重生成单元会作为可追溯参考来源注入讲解。
+        </div>
+        <div className="input-row" style={{ gap: 8, margin: "6px 0" }}>
+          <input placeholder="材料标题（如：教材第一章）" value={matTitle} onChange={(e) => setMatTitle(e.target.value)}
+                 style={{ flex: 1, padding: 7, borderRadius: 8, border: "1px solid #c5cdd6" }} />
+          <button className="primary" disabled={busy || !matTitle.trim()} onClick={() => void uploadMaterial()}>
+            导入文本
+          </button>
+        </div>
+        <textarea placeholder="粘贴自有/授权教材文本…（选填更多材料）" value={matText}
+                  onChange={(e) => setMatText(e.target.value)}
+                  style={{ width: "100%", minHeight: 56, border: "1px solid #c5cdd6", borderRadius: 8, padding: 8, font: "inherit" }} />
+      </div>
 
       {/* 起草 / 采纳（无大纲或重生成时） */}
       <div className="card">

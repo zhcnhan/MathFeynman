@@ -362,6 +362,17 @@ def generate_unit_content(
         if problems:
             return {"status": "failed", "node_id": unit.id, "path": "", "subject": subject_id,
                     "unit": unit_id, "note": "启发式内容校验未通过：" + "；".join(problems[:3])}
+    # B3：引用材料可追溯（讲解正文附"参考材料"来源标注；AI 起草时摘要已注入上下文）
+    if material_summaries:
+        refs = "\n".join(
+            f"- 「{m.get('title', '')}」（{m.get('source', '本地')}"
+            + (f"，{m.get('url', '')}" if m.get("url") else "") + "）"
+            for m in material_summaries[:8]
+        )
+        if refs:
+            suffix = "\n\n## 参考材料（可追溯来源）\n" + refs + "\n"
+            doc.body_md += suffix
+            doc.explanation.body += suffix
     path = _node_file_path(subject_id, unit.id)
     path.write_text(_frontmatter_md(doc), encoding="utf-8")
     from ..service.library import refresh_library, sync_content

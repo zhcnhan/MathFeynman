@@ -1402,3 +1402,37 @@ content validate 24/47；git 提交（PhaseB B4）。
 3. custom 停用后其大纲/内容文件仍在 loader/图谱中显示（图谱通用视图）——通用学科图谱视图
    （Phase B 未做地图 UI）落地时按 subject.enabled 过滤。
 
+---
+
+## 37. docs/14 Phase B · B3：内容来源策略 + 材料层基础（2026-09-09）
+
+**规格**：docs/14 §8 + R22——subject 增加 source_policy（ai|import|web|mixed，默认 ai，UI 可切换）；
+本地导入（自有/授权 PDF/文本 → 本地引用库，来源标注）；联网候选清单（search → 候选；select →
+本地化引用，**不整本下载**；离线/未接入给提示）；生成单元时引用库注入（可追溯来源）；math 同能力。
+
+**改动清单**
+1. `outline/materials.py`（新）：材料目录 `content/subjects/<sid>/materials/`（front-matter id/title/
+   source/url/kind + 正文）；add/list/delete/materials_summaries（摘要供生成注入）；search_candidates
+   （离线提示"联网检索后端未接入（Phase C），请用本地导入…"）；select_candidates（勾选摘要入库）；
+   来源策略存取（meta_json.source_policy，SOURCE_POLICIES，默认 ai）。
+2. `api/subjects.py`：GET/PUT /policy；materials upload/list/delete/search/select；列表/详情带
+   source_policy；单元内容生成端点自动注入 `material_summaries`（有引用材料时讲解正文附
+   "参考材料（可追溯来源）"标注——重生成可见"基于教材"信号；AI 起草时摘要注入 prompt）。
+3. 前端：SubjectsPage（显示已移除管理 + 重新启用 + 移除 + custom 连同文件删除）；
+   OutlinePage（来源策略下拉即时切换 + 文本导入 + 材料计数提示）；api.ts 增 del helper。
+4. 测试：`test_materials.py` ×4——policy 默认/切换/非法 422；上传/列表/summaries + search 离线
+   提示 + select 入库 + 生成注入不崩；math（preset）policy+materials 同样支持；停用学科 policy/
+   materials 操作 409。
+5. docs 同步：docs/06 §1/§3（policy/materials/enable/removed 端点与 subjects 列注释）。
+
+**回归**：pytest = **269 passed + 1 skipped**（264+1 基线 + 5：materials ×4 + math 移除链 ×1，
+不降）；content validate 24/47；npm run build 通过；git 提交（PhaseB B3）。
+
+**疑点（挂待架构裁决）**
+1. search 的"外部检索后端"未接入（docs/14 §7 #5 治理项）：当前返回明确离线提示；select 以
+   调用方提供的候选摘要本地化（不整本下载，符合边界）。真实检索接入属 Phase C。
+2. PDF 解析：MVP 走"文本/内容粘贴上传"；PDF 二进制解析（分页/分节）待引入解析器时扩展（上传
+   契约已按"分节文本"预留）。
+3. heuristic（离线）出稿不使用材料文本改写题目（事实安全约束），仅在讲解正文作来源标注；
+   材料驱动的题目改写由 AI 路径承担（配 key 后生效）。
+

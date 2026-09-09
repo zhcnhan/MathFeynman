@@ -17,6 +17,9 @@ interface SubjectItem {
   label: string;
   kind: string;
   description: string;
+  enabled: boolean;
+  removed_at?: string | null;
+  source_policy?: string;
   outline: OutlineSummary | null;
 }
 
@@ -25,20 +28,23 @@ export default function SubjectsPage() {
   const [label, setLabel] = useState("");
   const [desc, setDesc] = useState("");
   const [subjectId, setSubjectId] = useState("");
+  const [showRemoved, setShowRemoved] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = async () => {
+  const load = async (incl: boolean) => {
     try {
-      const r = await api.get<{ subjects: SubjectItem[] }>("/subjects");
+      const q = incl ? "?include_removed=1" : "";
+      const r = await api.get<{ subjects: SubjectItem[] }>(`/subjects${q}`);
       setSubjects(r.subjects);
     } catch (e) {
       setErr(String(e));
     }
   };
   useEffect(() => {
-    void load();
-  }, []);
+    void load(showRemoved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRemoved]);
 
   const create = async () => {
     setErr("");
@@ -52,7 +58,21 @@ export default function SubjectsPage() {
       setLabel("");
       setDesc("");
       setSubjectId("");
-      await load();
+      await load(showRemoved);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const act = async (fn: () => Promise<unknown>, okMsg: string) => {
+    setErr("");
+    setBusy(true);
+    try {
+      await fn();
+      await load(showRemoved);
+      setErr(okMsg); // 复用横幅显示成功提示
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -63,26 +83,57 @@ export default function SubjectsPage() {
   return (
     <div>
       <h1>学科（Subjects）</h1>
-      {err && <div className="banner error">{err}</div>}
-      <div className="grid">
+      {err && <div className={`banner ${err.startsWith("✅") ? "ok" : "error"}`}>{err}</div>}
+      <label className="dim" style={{ marginBottom: 8, display: "inline-flex", gap: 6, alignItems: "center" }}>
+        <input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} />
+        显示已移除（可重新启用）
+      </label>
+      <div className="grid" style={{ marginTop: 8 }}>
         {subjects.map((s) => (
-          <Link key={s.id} to={`/subjects/${s.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-            <div className="card">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div key={s.id} className="card" style={{ opacity: s.enabled ? 1 : 0.72 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Link to={`/subjects/${s.id}`} style={{ textDecoration: "none", color: "inherit" }}>
                 <strong>{s.label}</strong>
-                <span className={`badge ${s.kind === "preset" ? "" : "pass"}`}>
-                  {s.kind === "preset" ? "预置" : "自建"}
-                </span>
-              </div>
-              <div className="dim">{s.id}</div>
-              {s.description && <div className="dim">{s.description}</div>}
-              <div className="dim" style={{ marginTop: 6 }}>
-                {s.outline
-                  ? `大纲 v${s.outline.revision}（${s.outline.status}/${s.outline.source}）· ${s.outline.units} 单元`
-                  : "尚无大纲（点击起草）"}
-              </div>
+              </Link>
+              <span className={`badge ${!s.enabled ? "deferred" : s.kind === "preset" ? "" : "pass"}`}>
+                {!s.enabled ? "已停用" : s.kind === "preset" ? "预置" : "自建"}
+              </span>
             </div>
-          </Link>
+            <div className="dim">{s.id} · 来源策略 {s.source_policy ?? "ai"}</div>
+            {s.description && <div className="dim">{s.description}</div>}
+            <div className="dim" style={{ marginTop: 6 }}>
+              {s.outline
+                ? `大纲 v${s.outline.revision}（${s.outline.status}/${s.outline.source}）· ${s.outline.units} 单元`
+                : "尚无大纲"}
+            </div>
+            <div className="input-row" style={{ marginTop: 8 }}>
+              {!s.enabled ? (
+                <button className="primary" disabled={busy}
+                        onClick={() => void act(() => api.post(`/subjects/${s.id}/enable`), "✅ 已重新启用")}>
+                  重新启用
+                </button>
+              ) : (
+                <button className="ghost" disabled={busy}
+                        onClick={() => {
+                          if (window.confirm(`移除学科「${s.label}」？（停用隐藏、进度清空；文件留盘可随时重新启用）`)) {
+                            void act(() => api.del(`/subjects/${s.id}`), "✅ 已移除（可重新启用）");
+                          }
+                        }}>
+                  移除
+                </button>
+              )}
+              {s.enabled && s.kind !== "preset" && (
+                <button className="ghost" disabled={busy}
+                        onClick={() => {
+                          if (window.confirm(`彻底删除「${s.label}」连同内容文件？（不可恢复）`)) {
+                            void act(() => api.del(`/subjects/${s.id}?hard=true`), "✅ 已彻底删除");
+                          }
+                        }}>
+                  连同文件删除
+                </button>
+              )}
+            </div>
+          </div>
         ))}
       </div>
       <div className="card">

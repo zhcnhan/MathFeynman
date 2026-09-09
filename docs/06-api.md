@@ -31,6 +31,15 @@
 | GET | `/subjects/{subject_id}/progress` | 学科进度视图（单元 达成/等效/开放 + 内容节点状态；A2） |
 | POST | `/subjects/{subject_id}/progress/recompute` | 幂等重算概念掌握证据（= 数学历史掌握迁移入口；A2） |
 | POST | `/subjects/{subject_id}/progress/reset` | 显式重置学科进度（清概念层 + 学科内容掌握；body `{mode: all}`；A2） |
+| GET / PUT | `/subjects/{subject_id}/policy` | 内容来源策略（ai/import/web/mixed，默认 ai；B3） |
+| POST | `/subjects/{subject_id}/materials/upload` | 本地导入文本 → 本地引用库（B3） |
+| GET | `/subjects/{subject_id}/materials` | 引用材料列表（B3） |
+| DELETE | `/subjects/{subject_id}/materials/{material_id}` | 删除单条材料（B3） |
+| POST | `/subjects/{subject_id}/materials/search` | 联网候选清单（外部检索后端 Phase C；离线/未接入给提示；B3） |
+| POST | `/subjects/{subject_id}/materials/select` | 勾选候选 → 本地化引用（摘要入库，不整本下载；B3） |
+| POST | `/subjects/{subject_id}/enable` | 重新启用被移除（停用）学科（B4） |
+| GET | `/subjects?include_removed=1` | 含停用学科列表（管理"移除可恢复"；B4） |
+| DELETE | `/subjects/{subject_id}?hard=true` | 学科移除：默认=停用（隐藏+清进度，大纲/内容/roadmap 留盘可恢复）；`hard=true` 仅 custom 连同文件删除（math 拒 hard）（B4/R22） |
 
 ### 学习会话
 | 方法 | 路径 | 说明 |
@@ -99,7 +108,9 @@ LLM 等待前仍按 R7 先提交事务释放写锁。长文本（讲解/答疑�
 
 ```sql
 subjects     (id TEXT PK, label TEXT, kind TEXT,       -- Phase A：kind=preset(math)|custom
-              description TEXT, meta_json TEXT, created_at)   -- 大纲文档在 content/subjects/<id>/outline.yaml
+              description TEXT, meta_json TEXT,        -- meta_json.source_policy（B3：ai/import/web/mixed）
+              enabled INTEGER DEFAULT 1, removed_at DATETIME,  -- B4：停用标记（移除可恢复）
+              created_at)   -- 大纲文档在 content/subjects/<id>/outline.yaml；材料在 <id>/materials/
 users        (id TEXT PK, profile_json TEXT, created_at)            -- MVP 恒为 'local'
 nodes        (id TEXT PK, yaml_path TEXT, title, level, topic,
               objectives_json, core_concepts_json, feynman_json,
