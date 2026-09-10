@@ -108,6 +108,19 @@ type CoverageByMaterial = {
   pages: number;
   healthy: boolean;
   note: string;
+  /** R42 A3：本材料因「总注入上限」未注入的章/节 */
+  cap_skipped?: string[];
+  cap_skipped_count?: number;
+};
+
+type NotInjected = {
+  material: string;
+  material_id?: string;
+  label: string;
+  chars: number;
+  note: string;
+  reason?: string;
+  reason_zh?: string;
 };
 
 type Coverage = {
@@ -122,6 +135,17 @@ type Coverage = {
   uncovered_materials?: { material_id: string; title: string; kind: string; note: string }[];
   order_basis?: string;
   multi_material?: boolean;
+  /** R42 A3：未纳入清单（三种原因）+ 总上限状态（覆盖账与预算视图同源） */
+  not_injected?: NotInjected[];
+  inject_cap?: {
+    configured: boolean;
+    cap: number;
+    used_chars: number;
+    remaining: number;
+    skipped_count: number;
+    skipped_labels: string[];
+    skipped_by_material?: { material_id: string; title: string; items: { label: string; chars: number; reason_zh: string }[] }[];
+  };
   materials: { id: string; title: string; healthy: boolean; note: string; structure_kind: string; structure_note: string; role?: string; role_zh?: string }[];
   entries: CoverageEntry[];
   units: CoverageUnit[];
@@ -167,7 +191,7 @@ export default function OutlinePage() {
   const [subject, setSubject] = useState<Record<string, any> | null>(null);
   const [outline, setOutline] = useState<Record<string, any> | null>(null);
   const [progress, setProgress] = useState<{ units: UnitView[]; concepts_mastered: number } | null>(null);
-  const [candidate, setCandidate] = useState<{ units: Unit[]; source: string; problems: string[]; ok: boolean; source_materials?: string[]; material_usage?: { count: number; used_chars: number; dropped: string[]; truncated: boolean; batches?: number; inject_max_chars?: number; batch_chars?: number; blocked?: { title: string; note: string }[]; budget?: Record<string, unknown>; per_material?: unknown[]; not_injected?: unknown[]; order_basis?: string; context_valve?: { applied: boolean; limit_chars: number; context_tokens: number } }; coverage?: { total: number; covered: number; uncovered: string[] } | null; ledger?: LedgerEntry[] } | null>(null);
+  const [candidate, setCandidate] = useState<{ units: Unit[]; source: string; problems: string[]; ok: boolean; source_materials?: string[]; material_usage?: { count: number; used_chars: number; dropped: string[]; truncated: boolean; batches?: number; inject_max_chars?: number; batch_chars?: number; blocked?: { title: string; note: string }[]; budget?: Record<string, unknown>; per_material?: unknown[]; not_injected?: unknown[]; order_basis?: string; context_valve?: { applied: boolean; limit_chars: number; context_tokens: number }; inject_cap?: { configured: boolean; cap: number; used_chars: number; remaining: number; skipped_count: number; skipped_labels: string[]; skipped_by_material?: { material_id: string; title: string; items: { label: string; chars: number; reason_zh: string }[] }[] } }; coverage?: { total: number; covered: number; uncovered: string[] } | null; ledger?: LedgerEntry[] } | null>(null);
   const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [draftBrief, setDraftBrief] = useState("");
   const [draftCount, setDraftCount] = useState(6);
@@ -717,7 +741,8 @@ export default function OutlinePage() {
                   : "（未覆盖清单为空）"}
               </div>
             )}
-            {/* R38 A1 必显：本轮实际注入总量 + 批次数 + 两个滑块的生效值与来源 */}
+            {/* R38 A1 必显 + **R42 A1/A4**：本轮实际注入总量/批次数 + 两个滑块的生效值与来源 +
+                因总上限未纳入的章节数（就地可见，可展开） */}
             {candidate.material_usage && candidate.material_usage.count > 0 && (
               <div className="dim" style={{ fontSize: 12, margin: "4px 0" }}>
                 本轮材料注入：共 <strong>{candidate.material_usage.used_chars.toLocaleString("zh-CN")}</strong> 字 ·
@@ -727,6 +752,18 @@ export default function OutlinePage() {
                 顺序依据：{candidate.material_usage.order_basis ?? "导入顺序"}
                 {candidate.material_usage.context_valve?.applied && (
                   <> · 安全阀：本书较大，已自动分批（不截断、不漏章节）</>
+                )}
+                {!!candidate.material_usage.inject_cap?.skipped_count && (
+                  <>
+                    <br />
+                    <span style={{ color: "#b3261e" }}>
+                      因「总注入上限」已用完，本教材有{" "}
+                      <strong>{candidate.material_usage.inject_cap.skipped_count}</strong> 章/节**未纳入**
+                      （已注入 {(candidate.material_usage.inject_cap.used_chars ?? 0).toLocaleString("zh-CN")} 字；
+                      按章/节边界停止，未截断）：
+                      {(candidate.material_usage.inject_cap.skipped_labels ?? []).join("、")}
+                    </span>
+                  </>
                 )}
               </div>
             )}
@@ -810,6 +847,7 @@ export default function OutlinePage() {
                       <th>已覆盖节 / 总节</th>
                       <th>字数</th>
                       <th>页数</th>
+                      <th>因总上限未纳入</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -827,10 +865,37 @@ export default function OutlinePage() {
                         </td>
                         <td style={{ padding: "3px", textAlign: "center" }}>{b.chars.toLocaleString("zh-CN")}</td>
                         <td style={{ padding: "3px", textAlign: "center" }}>{b.pages}</td>
+                        <td style={{ padding: "3px", textAlign: "center" }}>
+                          {b.cap_skipped_count
+                            ? <span className="badge deferred" title={(b.cap_skipped ?? []).join("、")}>
+                                {b.cap_skipped_count} 章
+                              </span>
+                            : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              )}
+
+              {/* R42 A3：因「总注入上限」未纳入（覆盖账如实降 —— 不许"没喂却算覆盖"） */}
+              {!!coverage.inject_cap?.configured && (coverage.inject_cap.skipped_count > 0) && (
+                <div className="banner warn" style={{ marginTop: 6 }}>
+                  因「总注入上限」{(coverage.inject_cap.cap ?? 0).toLocaleString("zh-CN")} 字已用完，
+                  本教材有 <strong>{coverage.inject_cap.skipped_count}</strong> 章/节**未纳入**（覆盖账已如实降）：
+                  <ul className="plain" style={{ margin: "4px 0 0 12px" }}>
+                    {(coverage.inject_cap.skipped_by_material ?? []).map((g) => (
+                      <li key={g.material_id}>
+                        《{g.title}》：
+                        {g.items.map((it) => `${it.label}（${it.chars.toLocaleString("zh-CN")} 字）`).join("、")}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="dim" style={{ fontSize: 12 }}>
+                    这些章节**没有被喂给模型**，因此**不算覆盖**；调大「总注入上限」或设为 0（不限）
+                    后重新起草即可纳入（想更省又不想丢章节 → 调小「单次调用预算」）。
+                  </div>
+                </div>
               )}
 
               {coverage.uncovered.length === 0 ? (
@@ -856,6 +921,22 @@ export default function OutlinePage() {
                     <Link to={`/ledger?subject_id=${id}&category=coverage`}>就地看着</Link>）。
                   </div>
                 </>
+              )}
+              {/* R42 A3：未纳入清单（三种原因都列出来——健康度不合格 / 未进批次 / 总注入上限） */}
+              {coverage.not_injected && coverage.not_injected.length > 0 && (
+                <details style={{ marginTop: 6 }}>
+                  <summary className="dim">
+                    未纳入注入清单（{coverage.not_injected.length}，含原因）
+                  </summary>
+                  <ul className="plain" style={{ margin: "4px 0 0 12px", fontSize: 12 }}>
+                    {coverage.not_injected.map((x, i) => (
+                      <li key={`${x.material_id ?? x.material}-${x.label}-${i}`}>
+                        {x.material} · {x.label}
+                        {x.reason_zh || x.reason ? ` —— ${x.reason_zh ?? x.reason}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
               {coverage.uncovered_materials && coverage.uncovered_materials.length > 0 && (
                 <div className="banner error" style={{ marginTop: 4 }}>
