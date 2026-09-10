@@ -813,3 +813,78 @@ R27 前落库）正是该结构——用户验收 R27 新流程的**第一个动
 **结论：立心与清理**（文档 + 代码内文案/注释，逻辑不动）**验收通过、放行**；
 改名执行记录如上，遗留项按 §4 派工。
 
+## R33 · R33 批验收裁决（onboarding + 文档尾巴 + 库路径归一 · 2026-09-10）
+
+**架构侧独立复跑（不采信汇报）**：pytest **325 passed + 2 skipped / 327 collected，exit 0**
+（121.6s，离线，与 §2 基线逐位一致）；`content validate` **ok 26/54**；roadmap `audit()` 五学段
+**27/31/81/59/60**，`cycles`/`prereq_missing`/`anchors_missing`/`content_prereq_violations`/
+`boss_unmatched` **全 0**（非零项均为 `covered/pending/topic_runs` 信息项）；`npx tsc --noEmit` exit 0；
+提交链 `51c6a62 → b90c160 → 7eec2fc → c9f61ba → 2c08a57 → 79c18a6` 与汇报吻合，工作树干净；
+本批 diff 仅 4 文件（NOTES / docs/02 / docs/13 / docs/15），**零代码改动** → 测试数字不变有解释力。
+
+**真实库校验（架构侧只读复核）**：`backend/data/yanhui.db` `integrity_check=ok`，
+六项计数 **user_nodes 26 / sessions 3 / attempts 31 / subjects 2 / concepts 113 / reviews 0**
+与迁移前逐位一致；两学科（math + 行星科学）与遗留会话 `s-f2decfcf.u01:a7689b7ebf` 均在库 →
+**迁移未丢任何数据**。旧三件套已移出 `backend/data/`（备份于
+`_backups\yanhui-db-20260910-160212\`，含误建空库残骸子目录）。
+
+### 1. 结论：通过、放行
+
+Euler 自证的四项基线全部由架构侧独立复现；文档改动逐行复核为**写实**（目录树按实测补齐、
+删除 3 个不存在的组件名、历史叙述保留）；`_backups\` 下的库备份与"误建空库证据"均实存。
+
+### 2. 新增根因（比 Euler 报告更精确）与唯一安全修法
+
+- **第一层**（R32 §3 已记）：`.env` 写旧名 → `db.py` 的迁移前置不成立。
+- **第二层**（Euler 本批发现，属实）：`config.py` 用 `load_dotenv()`（python-dotenv **默认不覆盖**
+  已存在的环境变量），而当前 DSH 进程环境里残留**进程级** `MF_DB_PATH=backend/data/mathfeynman.db`
+  → **只改 `.env` 永不生效**；重启即静默新建空库。
+- **第三层（架构侧本次勘察所得，本批未记）**：真正让残留得以生效的入口是
+  **`scripts/dev.ps1`** —— 它 `Start-Process` 启动 uvicorn 时**从不设置 `MF_DB_PATH`**（第 34–39 行），
+  因此后端**继承调用终端的环境变量**。后果：从"带残留的终端"（DSH 内、或任何旧终端）跑
+  `dev.ps1` → 又指回旧库名、再建空库。**这是用户最可能踩到的那一步。**
+
+**裁决：唯一安全修法 = 在 `scripts/dev.ps1` 显式设定 `MF_DB_PATH`（定值指向
+`backend/data/yanhui.db`），不采用 `load_dotenv(override=True)`。理由（架构侧隔离实验证据）**：
+
+```
+环境变量(残留)=from_process_env
+load_dotenv()          -> from_process_env    （现状：.env 被压住）
+load_dotenv(override)  -> from_dotenv_file    （能修好——但会砸掉测试隔离）
+```
+
+`backend/tests/conftest.py` **先**设 `os.environ["MF_DB_PATH"]=<临时库>`（L54）、**后**才
+`from app.main import app`（L79）。一旦 app 侧改 `override=True`，`.env` 的
+`backend/data/yanhui.db` 会**反过来覆盖临时库 → 测试直接写真实库**。故该修法**禁止**。
+`dev.ps1` 显式设定不影响测试（测试不经过该脚本）。附带要求：脚本内加一行读回校验，
+启动前若发现生效值与目标不一致则**中文报错中止**（把"悄悄建空库"变成"响亮失败"）。
+
+### 3. 疑点裁决（Euler 六条）
+
+1. **是否 `load_dotenv(override=True)` / dev.ps1 显式设值** → **禁止前者**（见 §2）；
+   **采纳后者**并入 R34（含读回校验）。
+2. **`.gitignore` 是 GBK、中文注释乱码** → **确认属实**（架构侧字节级复核：无 BOM、UTF-8 严格解码
+   失败；GBK 解出可读中文，但部分行是 UTF-8/GBK 混杂的二次乱码）。**列入 R34 清理**：重写为
+   UTF-8 无 BOM、注释恢复为可读中文。属配置文件、非逻辑，改后 `git check-ignore` 复核。
+3. **NOTES §51「库路径遗留」已过时** → **保留原文不改写**（它是架构侧写作当时的时点记录，
+   与"历史裁决不改写"同口径）；已在该段**上方追加**"R33 已处置，本段为时点记录"标注（本次架构侧提交）。
+4. **提交 `51c6a62` 消息只标 §52、实际含 docs/02** → **接受**，不 rebase、不改历史
+   （未推送；"提交正文与验收正文"不一致已主动披露，信息披露比历史洁净更有价值）。
+5. **旧库备份 `mathfeynman.db.bak-20260908-220309`**（224 KB，9/8） → **暂留**（见 §4 用户动作）；
+   它是 9/8 的旧快照、非本次迁移产物，与"旧版不留档"政策无冲突但已无用途。
+6. **`stray-from-misconfigured-restart\`（误建空库证据）** → **暂留**至本轮验收结束（它是第二层根因的
+   实证），R34 收尾时随用户确认删除。
+
+### 4. 用户动作（唯一未闭项 = 真人验收）
+
+- 服务已就绪：后端 8000 / 前端 5173（Euler 冒烟：`/api/health`、`/api/dashboard`、`/api/subjects`、
+  `/api/selfextend/status`、`/api/campaign`、前端 `/` 与同源 `5173/api/health` 均 200）。
+- **验收清单见 NOTES §55 / 工单任务 C**：核心是**费曼 v3 混合制**（R27–R31 这套从未真人测过）——
+  遗留会话 `s-f2decfcf.u01:a7689b7ebf` 走「首讲 → 补答 → 整合重讲」，看**答追问后分数是否可见上升**、
+  得分条 / 缺口提示 / 额度徽标是否正确、主副双提交入口是否清晰；另含 F6 边缘带横幅、真实 SearXNG、
+  PDF 上传、math 停用/重启用、材料可追溯重生成。
+- `_backups\` 下两份遗留（旧库 .bak 与 stray 空库证据）确认后删除。
+
+**文档同步**：本裁决；docs/13 §3/§4、docs/15 §3 已由 Euler 随批同步；NOTES §52–§56 为本批实现记录、
+§51 增时点标注；R34 工单 `.runtime/EULER_TICKET_R34.md`。
+

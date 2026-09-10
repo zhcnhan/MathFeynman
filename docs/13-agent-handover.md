@@ -48,13 +48,15 @@
 > **下一批 = R33（小批）**：文档/配置一致性收尾 + 用户真人验收清单；规格见 docs/09 R32 §4
 > 与 `.runtime/EULER_TICKET_R32.md`。
 >
-> **R33 已执行完毕（Euler，2026-09-10 · 待架构侧验收）**：
-> ① 任务 A 文档尾巴——`docs/02` §3 目录树首行改 `YanHui/` 并按实测补齐实有目录；旧名 `MathFeynman`
-> 全仓复核（40 处命中）并逐处分类"改 / 有意保留 / 不能改"；
-> ② 任务 B 库名归一——库文件改名 `mathfeynman.db` → `yanhui.db`（备份 + SHA256 核对 + 六项计数
-> 26/3/31/2/113/0 逐位一致），`.env` 同步；**另查出第二层根因：进程环境变量优先于 `.env`**
-> （`load_dotenv()` 默认不 override，见 NOTES §54）；
-> ③ 任务 C 真人验收清单（NOTES §55，用户动作，待用户走查）。
+> **R33 已由 R33 裁决验收通过、放行**（架构侧独立复跑：pytest 325+2 / content 26/54 /
+> audit 27/31/81/59/60 / tsc exit 0；真实库 `yanhui.db` integrity ok 且六项计数 26/3/31/2/113/0
+> 与迁移前逐位一致）：① 任务 A 文档尾巴（`docs/02` §3 首行改 `YanHui/` 并按实测补齐实有目录；
+> 旧名 `MathFeynman` 全仓 40 处命中逐处分类）；② 任务 B 库名归一（备份 + SHA256 + 计数逐位一致，
+> `.env` 同步；**另查出第二层根因：进程环境变量优先于 `.env`**，见 NOTES §54）；
+> ③ 任务 C 真人验收清单（NOTES §55，**用户动作，待走查**）。
+> **下一批 = R34（小批收尾）**：`scripts/dev.ps1` 显式设定 `MF_DB_PATH` + 读回校验（根因第三层：
+> 启动脚本不设值 → 继承终端残留环境变量 → 静默建空库）＋ `.gitignore` GBK 编码修复；
+> 规格见 docs/09 **R33 §2/§3** 与 `.runtime/EULER_TICKET_R34.md`。
 > 规格/工单：`.runtime/EULER_TICKET_INIT_R33.md`；实现记录：NOTES **§52–§55**；
 > 提交：`51c6a62`（NOTES §52 + docs/02）、`b90c160`（NOTES §53/§54 + docs/15）、收尾提交（NOTES §55 + 本文件）。
 > 提交链：443efb0（后端账本/双提交）→ bfd5bea（UI）→ a3dbddc（协议）→ 65282e9/8927a20（R28 裁决）
@@ -86,6 +88,10 @@
 ## 4. 环境速查（新人必读）
 - 服务：`powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`（前端 5173 / 后端 8000）；
   停止 `scripts\stop.ps1`；日志 `.runtime/backend.err.log`。
+- ⚠️ **库路径务必走 `dev.ps1`**：手工 `uvicorn` 时须自行确保 `MF_DB_PATH` 未被**终端残留环境变量**
+  劫持（`config.py` 用 `load_dotenv()`，python-dotenv 默认**不覆盖**已存在的环境变量）；
+  被劫持会指回 `mathfeynman.db` 并**静默新建空库**（R33 实测踩过；R34 已让 `dev.ps1` 显式定值 +
+  读回校验兜底）。根因链见 docs/09 R33 §2。
 - 测试内容根已隔离（conftest 会话级临时副本）；真模型冒烟需 `MF_ALLOW_LIVE_AI=1`。
 - `.env`（仓库根，git 忽略）：LLM_API_KEY 等；`MF_AUTO_EXTEND=1` 控制全自动续关；
   `LLM_MAX_TOKENS_PER_DAY=0` 不限额。
