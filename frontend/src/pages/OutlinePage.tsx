@@ -60,7 +60,43 @@ type MaterialItem = {
   kind: string;
   file: string;
   filename?: string;
+  // R37 S7：文本层健康度（扫描/图片版 → 中文告知，不静默出稿）
+  text_health?: { pages: number; chars: number; healthy: boolean; checked: boolean; note: string };
 };
+
+// R37 S6：覆盖账本（教材章节 ↔ 单元映射 ↔ 单元覆盖状态）
+type CoverageEntry = {
+  material: string;
+  label: string;
+  chapter: string;
+  chars: number;
+  sections: string[];
+  units: string[];
+  covered: boolean;
+};
+
+type CoverageUnit = {
+  unit_id: string;
+  title: string;
+  sources: { title: string; section: string }[];
+  status: string;
+  note: string;
+  grounded_facts: number;
+  material_bound: boolean;
+  dropped_exercises: number;
+};
+
+type Coverage = {
+  has_materials: boolean;
+  total: number;
+  covered: number;
+  uncovered: string[];
+  materials: { id: string; title: string; healthy: boolean; note: string; structure_kind: string; structure_note: string }[];
+  entries: CoverageEntry[];
+  units: CoverageUnit[];
+};
+
+const COVERAGE_CLS: Record<string, string> = { 完整: "pass", 部分: "deferred", 未覆盖: "error" };
 
 type SearchCandidate = {
   title: string;
@@ -88,7 +124,8 @@ export default function OutlinePage() {
   const [subject, setSubject] = useState<Record<string, any> | null>(null);
   const [outline, setOutline] = useState<Record<string, any> | null>(null);
   const [progress, setProgress] = useState<{ units: UnitView[]; concepts_mastered: number } | null>(null);
-  const [candidate, setCandidate] = useState<{ units: Unit[]; source: string; problems: string[]; ok: boolean; source_materials?: string[]; material_usage?: { count: number; used_chars: number; dropped: string[]; truncated: boolean } } | null>(null);
+  const [candidate, setCandidate] = useState<{ units: Unit[]; source: string; problems: string[]; ok: boolean; source_materials?: string[]; material_usage?: { count: number; used_chars: number; dropped: string[]; truncated: boolean; batches?: number; inject_max_chars?: number; blocked?: { title: string; note: string }[] }; coverage?: { total: number; covered: number; uncovered: string[] } | null } | null>(null);
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [draftBrief, setDraftBrief] = useState("");
   const [draftCount, setDraftCount] = useState(6);
   const [err, setErr] = useState("");
@@ -121,10 +158,14 @@ export default function OutlinePage() {
       const fd = new FormData();
       if (matTitle.trim()) fd.append("title", matTitle.trim());
       fd.append("file", f);
-      const r = await api.upload<{ id: string; title: string; pages: number; filename: string }>(
+      const r = await api.upload<{ id: string; title: string; pages: number; filename: string; text_health?: { healthy: boolean; checked: boolean; note: string } }>(
         `/subjects/${id}/materials/upload-pdf`, fd
       );
-      setMsg(`PDF 已解析入库「${r.title}」（${r.pages} 页，分页文本可作为参考来源）`);
+      if (r.text_health && r.text_health.checked && !r.text_health.healthy) {
+        setErr(`PDF 已入库「${r.title}」，但**没有可用文本层**：${r.text_health.note}`);
+      } else {
+        setMsg(`PDF 已解析入库「${r.title}」（${r.pages} 页；将作为教材真源参与大纲与出题）`);
+      }
       if (inp) inp.value = "";
       await loadMaterials();
     } catch (e) {
@@ -255,6 +296,11 @@ export default function OutlinePage() {
       }
       setOutline(o);
       setProgress(p);
+      try {
+        setCoverage(await api.get<Coverage>(`/subjects/${id}/coverage`));
+      } catch {
+        setCoverage(null);
+      }
       const t: Record<string, string> = {};
       if (o) for (const u of o.units as Unit[]) t[u.id] = (u.concept_tags || []).join("，");
       setTagsDraft(t);
@@ -342,8 +388,14 @@ export default function OutlinePage() {
     setErr("");
     setMsg("");
     try {
-      const r = await api.post<{ status: string; node_id: string }>(`/subjects/${id}/units/${uid}/content`);
-      setMsg(`单元 ${uid} 内容：${r.status === "exists" ? "已在库（幂等）" : "已生成（source:auto）"}`);
+      const r = await api.post<{ status: string; node_id: string; note?: string; coverage?: { status: string } }>(`/subjects/${id}/units/${uid}/content`);
+      if (r.status === "uncovered") {
+        setErr(`单元 ${uid} 未出稿：${r.note || "教材未覆盖此单元"}`);
+      } else if (r.status === "failed") {
+        setErr(`单元 ${uid} 出稿失败：${r.note || "未通过内容校验"}`);
+      } else {
+        setMsg(`单元 ${uid} 内容：${r.status === "exists" ? "已在库（幂等）" : `已生成（source:auto${r.coverage ? ` · 教材覆盖：${r.coverage.status}` : ""}）`}`);
+      }
       await load();
     } catch (e) {
       setErr(String(e));
@@ -419,8 +471,8 @@ export default function OutlinePage() {
         </div>
 
         <div className="dim" style={{ margin: "4px 0" }}>
-          引用材料（{materials.length}）：本地导入/联网勾选/PDF 上传入库后，重生成单元会作为
-          可追溯参考来源注入讲解（讲解尾部出现"参考材料（可追溯来源）"）。
+          引用材料（{materials.length}）：**教材＝权威真源**——大纲由书的目录派生、单元讲解与题目只从
+          教材正文出（服务端逐字校验，教材里查不到的题会被丢弃、查不到的事实句会让整单元不出稿）。
         </div>
 
         {/* 联网候选清单（C1：provider 抽象 + 勾选入库） */}
@@ -509,8 +561,14 @@ export default function OutlinePage() {
                   <strong>{m.title}</strong>{" "}
                   <span className="badge">{KIND_LABEL[m.kind] ?? m.kind}</span>{" "}
                   <span className="dim">{m.source}</span>
+                  {m.text_health?.checked && !m.text_health.healthy && (
+                    <span className="badge error">无可用文本层</span>
+                  )}
                   {m.filename && <div className="dim" style={{ fontSize: 12 }}>文件：{m.filename}</div>}
                   {m.url && <div className="dim" style={{ fontSize: 12, wordBreak: "break-all" }}>{m.url}</div>}
+                  {m.text_health?.checked && !m.text_health.healthy && (
+                    <div className="dim" style={{ fontSize: 12, color: "#b3261e" }}>{m.text_health.note}</div>
+                  )}
                 </div>
                 <button className="ghost" disabled={busy} style={{ whiteSpace: "nowrap" }}
                         onClick={() => void deleteMaterial(m.id)}>
@@ -554,8 +612,10 @@ export default function OutlinePage() {
             <div className="dim">
               起草仅生成候选（不落盘）；审阅后点“采纳”（大纲版本 revision+1）。无 LLM_KEY 时为离线启发式候选。
               {materials.length > 0
-                ? `起草会读取上方引用材料（当前 ${materials.length} 份，按分节摘要注入、受字符预算约束）：每个单元须标注依据的材料与章节，服务端校验不通过会被驳回重生成。`
-                : "（当前无引用材料：起草只按学科简介进行；上传材料后起草会读它。）"}
+                ? `起草会**先读懂教材**（当前 ${materials.length} 份）：按章/节地图注入完整正文（默认不设预算，
+                   书太大按章分批），由书的目录派生单元——每个章节都必须映射到单元，未映射的按教材目录补齐；
+                   每个单元的依据（材料 + 章节标签）由服务端逐字校验。`
+                : "（当前无引用材料：起草只按学科简介进行，会在覆盖账本里显式标注「本内容无教材依据」。）"}
             </div>
           </>
         )}
@@ -613,6 +673,48 @@ export default function OutlinePage() {
               {materialTitles(outline.source_materials, materials).map((t) => `《${t}》`).join("、")}
             </div>
           )}
+          {coverage && coverage.has_materials && (
+            <div className="card" style={{ borderColor: coverage.uncovered.length ? "#e6a23c" : "#90caf9", margin: "8px 0" }}>
+              <h2 style={{ margin: "0 0 4px" }}>
+                教材覆盖账本 · 已覆盖节 {coverage.covered} / {coverage.total}
+              </h2>
+              <div className="dim" style={{ fontSize: 12 }}>
+                教材结构：
+                {coverage.materials.map((m) => `${m.title}（${m.structure_kind}：${m.structure_note}）`).join("；")}
+              </div>
+              {coverage.uncovered.length === 0 ? (
+                <div className="badge pass">未覆盖清单为空：书的每个章/节都有对应单元</div>
+              ) : (
+                <div className="banner warn">
+                  未覆盖清单（{coverage.uncovered.length}）：{coverage.uncovered.join("、")}
+                  ——教材有而内容没覆盖的部分**不会被编造**，请补充/调整单元后重新生成大纲。
+                </div>
+              )}
+              <details style={{ marginTop: 6 }}>
+                <summary className="dim">逐单元覆盖状态（{coverage.units.length}）</summary>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <tbody>
+                    {coverage.units.map((u) => (
+                      <tr key={u.unit_id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                        <td style={{ padding: "4px", width: 120 }} className="dim">{u.unit_id}</td>
+                        <td style={{ padding: "4px" }}>{u.title}</td>
+                        <td style={{ padding: "4px", width: 90 }}>
+                          <span className={`badge ${COVERAGE_CLS[u.status] ?? ""}`}>{u.status}</span>
+                        </td>
+                        <td style={{ padding: "4px" }} className="dim">
+                          {u.sources.length > 0
+                            ? u.sources.map((s) => `${s.title} · ${s.section}`).join("；")
+                            : "无教材依据"}
+                          {u.grounded_facts > 0 && ` · ${u.grounded_facts} 条事实句逐字出自教材`}
+                          {u.dropped_exercises > 0 && ` · 丢弃 ${u.dropped_exercises} 题`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            </div>
+          )}
           {groups.map((g: string) => (
             <div key={g}>
               <h2>▸ {g}</h2>
@@ -628,6 +730,16 @@ export default function OutlinePage() {
                           <td style={{ padding: "6px 4px" }}>
                             <strong>{u.title}</strong>
                             {u.status === "reviewed" && <span className="badge pass">转正</span>}
+                            {(() => {
+                              const c = coverage?.units.find((x) => x.unit_id === u.id);
+                              if (!c || c.status === "未知") return null;
+                              return (
+                                <span className={`badge ${COVERAGE_CLS[c.status] ?? ""}`}
+                                      title={c.note}>
+                                  教材：{c.status}
+                                </span>
+                              );
+                            })()}
                             {u.materials && u.materials.length > 0 && (
                               <div className="dim" style={{ fontSize: 12 }}>
                                 依据：{u.materials.map((r) => `《${r.title}》${r.section ? " · " + r.section : ""}`).join("；")}
