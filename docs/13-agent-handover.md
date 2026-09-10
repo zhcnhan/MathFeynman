@@ -59,6 +59,16 @@
 > 规格见 docs/09 **R33 §2/§3** 与 `.runtime/EULER_TICKET_R34.md`。
 > 规格/工单：`.runtime/EULER_TICKET_INIT_R33.md`；实现记录：NOTES **§52–§55**；
 > 提交：`51c6a62`（NOTES §52 + docs/02）、`b90c160`（NOTES §53/§54 + docs/15）、收尾提交（NOTES §55 + 本文件）。
+>
+> **R34-fin 收尾批已完成（Euler，2026-09-10 · 待架构侧验收）**：数据清空后的合规确认——
+> ① 回归全绿：pytest **325+2 / 327**、content validate **ok 25/48**（清空所致，如实记录）、
+> audit **27/31/81/59/60**（未受影响）、`tsc` exit 0；
+> ② 清空后体验：math 停用态下 `/api/dashboard`、`/api/graph`（0 节点 0 边）、`/api/campaign`（关卡 0 节点）
+> 均**空但 200**；学科列表落到「已移除」分组（**未真点重新启用**，保住现场）；
+> 新建学科 → 起草大纲 → 采纳 → 懒生成内容 → 硬删，全链路 **0 个 500、错误全中文**；
+> ③ **发现 1 处显示层缺陷**：仪表盘"数学已停用"横幅**不显示**（NOTES §58-6，一行可修，待裁决）；
+> ④ 口径登记：**auto 内容随生成即入版控**（NOTES §57.3，未写自动提交逻辑）。
+> 记录：NOTES **§57**（本批）+ **§58「待架构裁决 / 未决」= 挂账总表，续接先读**。
 > 提交链：443efb0（后端账本/双提交）→ bfd5bea（UI）→ a3dbddc（协议）→ 65282e9/8927a20（R28 裁决）
 > → fe9902d（R29 热修 + 回归用例）→ b1c1b05（R30 规格）
 > → **4f7990b（F6）→ 23fc603（F5）→ 49e5149（F4）→ f66af5f（R29 引申 flow 自愈）→ f8c856d（F2 行尾）**。
@@ -95,23 +105,31 @@
 - 测试内容根已隔离（conftest 会话级临时副本）；真模型冒烟需 `MF_ALLOW_LIVE_AI=1`。
 - `.env`（仓库根，git 忽略）：LLM_API_KEY 等；`MF_AUTO_EXTEND=1` 控制全自动续关；
   `LLM_MAX_TOKENS_PER_DAY=0` 不限额。
-- 当前基线（**架构侧于 R32 独立复跑确认，2026-09-10**）：pytest **325 passed + 2 skipped**
-  （327 collected，exit 0，130.48s；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
-  均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60）；
-  content validate **26/54**（真实库，随运行期 auto 增补；测试 hermetic 基线 13 人工节点不变）；
-  前端 `npx tsc --noEmit` 通过（`npm run build` 在受限沙箱内会因 esbuild 子进程 EPERM 失败，
-  属环境限制而非代码问题，需在普通终端复核）；git 仓库不含 data/、_drafts、resume/。
+- 当前基线（**Euler 于 R34-fin 复跑确认，2026-09-10 · 数据清空后**）：pytest **325 passed + 2 skipped**
+  （327 collected，exit 0；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
+  均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60，**未受清空影响**）；
+  content validate **ok 25 节点 / 48 练习**（＝清空后保留的 math 内容 + 12 个 `*_auto.md`；
+  清空前为 26/54，差＝已硬删的行星科学内容）；前端 `npx tsc --noEmit` 通过
+  （`npm run build` 在受限沙箱内会因 esbuild 子进程 EPERM 失败，属环境限制而非代码问题，需在普通终端复核）；
+  git 仓库不含 data/、_drafts。
+  > 注：**pytest 数字不随真实库清空变化**——`backend/tests/conftest.py` 在导入 app 之前就隔离了
+  > `MF_DB_PATH`（临时库）与 `MF_CONTENT_ROOT`（会话级内容副本），真实库与测试完全隔离。
   R30 前基线为 306+2（R30 批 +19 = F6 7 / F5 2 / flow 自愈 10）。
 - 工作目录已改名：`D:\DeepseekHarness\YanHui`（旧名 MathFeynman；执行记录见 docs/09 R32 §3）。
-- **数据库（R33 任务 B 已归一，2026-09-10）**：真实库＝`backend/data/yanhui.db`（六项计数
-  user_nodes 26 / sessions 3 / attempts 31 / subjects 2 / concepts 113 / reviews 0）。改名前的旧库备份在
-  `D:\DeepseekHarness\_backups\yanhui-db-20260910-160212\`（含 SHA256 核对记录）。
-  ⚠️ **启动后端前先确认环境里没有旧值**：`load_dotenv()` 默认**不覆盖**已存在的环境变量，
-  若终端继承了 `MF_DB_PATH=backend/data/mathfeynman.db`（旧 DSH 进程的残留），应用会**静默新建空库**——
-  排查与处置见 NOTES §54 B4/B7。**建议重启 DSH/换新终端后再 `scripts\dev.ps1`。**
+- **数据库（R33 任务 B 已归一为 `backend/data/yanhui.db`，2026-09-10）**：
+  - **清空后现状**（docs/15 §3.1 + NOTES §57.2e）：`subjects 1`（math，**enabled=0 停用**）、
+    `nodes 28`（25 启用 + 3 行 R34-fin 走查残影 `enabled=0`）、`edges 28`、`concepts 83`、
+    `user_nodes 25`（默认 `locked`，R34-fin 走查副产物）、
+    `sessions/attempts/reviews/feedback/relearn_logs/user_concepts` **全 0**；
+    清空前整份归档在 `_backups\yanhui-before-wipe-20260910-170347\`；迁移前旧库备份在
+    `_backups\yanhui-db-20260910-160212\`（含 SHA256 核对记录）。
+  - ⚠️ **启动后端前先确认环境里没有旧值**：`load_dotenv()` 默认**不覆盖**已存在的环境变量，
+    若终端继承了 `MF_DB_PATH=backend/data/mathfeynman.db`（旧 DSH 进程的残留），应用会**静默新建空库**——
+    排查与处置见 NOTES §54 B4/B7。**`dev.ps1` 已显式定值 + 读回校验（`17646f8`），仍建议换新终端启动。**
 - `.runtime/pids.txt` 记的是 `dev.ps1` 启动的**父进程** PID（uvicorn 父 / cmd.exe 包装），真正 listen 的是
-  **子进程**（实测：记录 9084/2944，监听者 19852/6816）——属正常现象，不是记录失效。`stop.ps1` 杀父进程后
-  子进程随之退出（R33 实测通过）；但停服仍请**以端口复核**（8000/5173 无监听才算停干净）。
+  **子进程**——属正常现象，不是记录失效。`stop.ps1` 已升级为**按进程树停止**（`e55c8b3`）+
+  按命令行兜底清理；停服后仍请**以端口复核**（8000/5173 无监听才算停干净；刚停时的"仍在响应"可能是
+  TIME_WAIT 假象，等几秒再判定）。
 - `.venv` 改名后重建时曾漏装 dev 依赖（pytest 缺失）→ 已补装 `pytest 9.1.1`/`pytest-cov 7.1.0`
   （`pip install -e "backend[dev]"`）。**改名/重建 venv 后必跑这一步，否则基线不可复跑。**
 - 品牌：YanHui（颜回）全科教练。当前工单见 §3（R32 已验收，下一批 R33）。
