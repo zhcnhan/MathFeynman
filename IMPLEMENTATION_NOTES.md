@@ -2106,6 +2106,37 @@ sessions 3 / attempts 31 / subjects 2 / concepts 113）。根因＝`.env` 的 `M
 
 ---
 
+## 57. R34：`dev.ps1` 库路径确定性 + `.gitignore` 编码修复（2026-09-10 · **架构侧直接执行**）
+
+> 本批由架构侧直办（用户指示"一口气修一下"）；Euler 的下一批实现记录请从 **§58** 起顺延。
+
+**改动 1 · `scripts/dev.ps1`（根因第三层，见 docs/09 R33 §2）**
+- 在启动 uvicorn 前**显式设定** `$env:MF_DB_PATH = <root>\backend\data\yanhui.db`，并加**读回校验**
+  （不一致即中文报错中止，把"静默建空库"变成"响亮失败"）。
+- **未采用** `load_dotenv(override=True)`（会覆盖 conftest 的临时库 → 测试写真实库，已被 R33 §2 否决）。
+- ⚠️ **执行踩坑与修复（重要教训）**：编辑工具重写该文件时**丢掉了 UTF-8 BOM**，导致
+  Windows PowerShell 5.1 按 ANSI/GBK 解析中文注释 → **整脚本语法错误、`dev.ps1` 一度跑不起来**；
+  修回时又因"`ReadAllText(UTF8)` 把 BOM 解成 `U+FEFF` 字符 + 再手写 BOM"造成**双 BOM**
+  （`EF BB BF EF BB BF`），报错落在 `param()` 的 `8000` 上（`InvalidLeftHandSide`）。
+  最终状态：**恰好 1 个 BOM + LF + 解析 0 错误**。
+  **纪律**：`.ps1` 属"Windows PowerShell 5.1 按 BOM 判编码"的文件，改动后必须复核
+  `前 3 字节 = EF BB BF`、无 CRLF、`Parser::ParseFile` 零错误。
+
+**改动 2 · `.gitignore`**：由 **GBK** 重写为 **UTF-8 无 BOM + LF**，注释恢复可读中文，
+**规则逐条不变**（11 条忽略用例 + `!content/_drafts/.gitkeep` 例外均经 `git check-ignore -v` 复核命中）。
+
+**验收自证（架构侧）**
+- 改前先停服 → 库三件套整份备份 `_backups\yanhui-db-before-r34-20260910-161534\`，
+  三件 **SHA256 逐位一致**，副本 `integrity_check=ok`、计数 26/3/31/2/113。
+- **修法实测（污染终端法）**：终端内先设 `MF_DB_PATH=backend/data/mathfeynman.db`（模拟残留）
+  → 跑 `scripts\dev.ps1` → 后端**仍连真实库**：`/api/subjects` 返回 **math + 行星科学（2 个）**，
+  `backend\data\` **未新建** `mathfeynman.db`；`yanhui.db-wal` 于启动时刻被正常写入。
+- 全量回归：pytest **325 passed + 2 skipped**（112.9s，exit 0）——与基线逐位一致。
+- 服务就绪：后端 8000 / 前端 5173 均 200，前端为 **vite dev**（直接服务最新源码，
+  含 R32 批那 5 个前端文案文件，故真人走查看到的是最新 UI）。
+
+---
+
 ## 52. 会话续接（2026-09-10 16:00）—— 基线复核通过（Euler · R33 开机）
 
 > 本节为**新任 Euler 开机自证**（工单 `.runtime/EULER_TICKET_INIT_R33.md` §2）；

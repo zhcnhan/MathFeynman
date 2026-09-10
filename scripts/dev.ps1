@@ -13,6 +13,17 @@ $runtime = Join-Path $root ".runtime"
 New-Item -ItemType Directory -Force -Path $runtime | Out-Null
 $pyExe = Join-Path $venv "Scripts\python.exe"
 
+# --- 库路径确定性（docs/09 R33 §2 第三层根因；R34 修）---
+# config.py 用 load_dotenv()，python-dotenv 默认【不覆盖】已存在的环境变量；
+# 若调用终端残留 MF_DB_PATH（如旧值 backend/data/mathfeynman.db），
+# 后端会指回旧库名并【静默新建空库】。故此处显式定值，使启动不依赖终端环境。
+# 注意：若用户要换库位置，需同时改 .env 与本处常量（两处保持一致）。
+$dbPath = Join-Path $root "backend\data\yanhui.db"
+$env:MF_DB_PATH = $dbPath
+if ($env:MF_DB_PATH -ne $dbPath) {
+    throw "MF_DB_PATH 未能生效（实际为 '$env:MF_DB_PATH'）——请检查终端环境，已中止启动以免误建空库。"
+}
+
 if (-not (Test-Path $pyExe)) {
     Write-Host "[1/4] 创建 venv: $venv"
     python -m venv $venv
