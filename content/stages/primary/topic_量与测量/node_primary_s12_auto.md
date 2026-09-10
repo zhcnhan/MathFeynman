@@ -49,7 +49,7 @@ exercises:
         b: {range: [1, 4], exclude: [0]}
       constraint: "a >= b"
       answer_expr: "a-b"
-      basis: {quote: "同学们，我们每天买东西都要用到钱"}
+      basis: {quote: "方法很简单：付出的钱减去商品的价格，就是找回的钱。"}
       semantics:
         expect: "a + (-b)"
         requires: ["a >= b"]

@@ -40,7 +40,7 @@ exercises:
         a: {range: [10, 100], exclude: [0]}
         b: {range: [1, 99], exclude: [0]}
       answer_expr: "a*b/100"
-      basis: {quote: "同学们，今天我们来认识一种特殊的分数——百分数"}
+      basis: {quote: "百分数就是分母为 $100$ 的分数，求一个数的百分之几，就用这个数乘以对应的百分数。"}
       semantics:
         expect: "Rational(a*b, 100)"
         requires: []

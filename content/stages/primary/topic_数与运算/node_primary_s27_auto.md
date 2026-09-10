@@ -64,7 +64,7 @@ exercises:
         b: {range: [2, 30], exclude: [0]}
       constraint: "b % a == 0"
       answer_expr: "b"
-      basis: {quote: "我们先认识“整除”"}
+      basis: {quote: "特别地，当 $b$ 是 $a$ 的倍数时，$a$ 和 $b$ 的最大公因数是 $a$，最小公倍数是 $b$。"}
       semantics:
         expect: "lcm(a, b)"
         requires: ["b % a == 0"]
@@ -81,7 +81,7 @@ exercises:
         b: {range: [2, 30], exclude: [0]}
       constraint: "b % a == 0"
       answer_expr: "a"
-      basis: {quote: "我们先认识“整除”"}
+      basis: {quote: "特别地，当 $b$ 是 $a$ 的倍数时，$a$ 和 $b$ 的最大公因数是 $a$，最小公倍数是 $b$。"}
       semantics:
         expect: "gcd(a, b)"
         requires: ["b % a == 0"]

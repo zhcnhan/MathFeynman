@@ -49,7 +49,7 @@ exercises:
         c: {range: [0, 9]}
         d: {range: [0, 9]}
       answer_expr: "(a*1000 + b*100 + c*10 + d + 50) // 100 * 100"
-      basis: {quote: "同学们，我们先来认识数位"}
+      basis: {quote: "四舍五入：要保留到某一位，就看它后面一位，如果小于 5 就舍去，如果大于等于 5 就向前一位进 1。"}
       semantics:
         expect: "floor((a*1000 + b*100 + c*10 + d + 50) / 100) * 100"
         requires: []
@@ -65,7 +65,7 @@ exercises:
         a: {range: [11, 99], exclude: [0]}
         b: {range: [11, 99], exclude: [0]}
       answer_expr: "(a + 5) // 10 * 10 + (b + 5) // 10 * 10"
-      basis: {quote: "同学们，我们先来认识数位"}
+      basis: {quote: "估算时，先取近似数再计算。"}
       semantics:
         expect: "10 * floor((a + 5) / 10) + 10 * floor((b + 5) / 10)"
         requires: []

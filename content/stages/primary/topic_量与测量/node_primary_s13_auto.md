@@ -57,7 +57,7 @@ exercises:
       params:
         a: {range: [1, 9], exclude: [0]}
       answer_expr: "a*100"
-      basis: {quote: "同学们，我们已经学过长度单位，今天我们来学习面积单位和体积单位的换算"}
+      basis: {quote: "相邻两个面积单位之间的进率是100。"}
       semantics:
         expect: "100 * a"
         requires: []
@@ -72,7 +72,7 @@ exercises:
       params:
         a: {range: [1, 9], exclude: [0]}
       answer_expr: "a*1000"
-      basis: {quote: "同学们，我们已经学过长度单位，今天我们来学习面积单位和体积单位的换算"}
+      basis: {quote: "常用体积单位有立方厘米、立方分米、立方米，相邻两个体积单位之间的进率是1000。"}
       semantics:
         expect: "1000 * a"
         requires: []
@@ -87,7 +87,7 @@ exercises:
       params:
         a: {range: [1, 9], exclude: [0]}
       answer_expr: "a*1000"
-      basis: {quote: "同学们，我们已经学过长度单位，今天我们来学习面积单位和体积单位的换算"}
+      basis: {quote: "所以，1升等于1000毫升。"}
       semantics:
         expect: "1000 * a"
         requires: []

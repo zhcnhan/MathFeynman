@@ -41,6 +41,14 @@ NO_L1_MARKER = "本模板无独立验算（该学科未注册 L1 验算插件—
 CONDITION_HINTS = ("其中", "倍数", "余数", "商", "按", "还剩", "剩下", "至少", "不超过", "最多", "不少于",
                    "平均", "比", "率", "占")
 
+# R35b §18 提升项：模板依据的**引文精度**——引文必须指向"支撑该模板规则的那句规则句"，
+# 不得是**开场白/自我介绍/课程过渡句**（引文校验能过 ≠ 引用得准：开场白也逐字出自讲解）。
+# 判据只有一条、且**只告警不拒绝入库**：机械规则分不干净"过渡句"与"以『我们』开头的规则句"
+# （如"我们把两个数同时除以公有的质因数"是真规则），故按架构侧口径"实现为告警即可"。
+OPENING_QUOTE_HINTS = (
+    "同学们", "大家好", "各位", "今天", "这节课", "本节课", "上节课", "接下来", "首先", "我们",
+)
+
 
 @dataclass
 class TemplateVerdict:
@@ -115,6 +123,26 @@ def l1_for(subject: str) -> L1Verifier | None:
 # ---------------------------------------------------------------------------
 # 通用层：领域谓词（吃声明；无声明 → finding，不猜）
 # ---------------------------------------------------------------------------
+def opening_quote_warning(quote: str) -> str:
+    """R35b §18：引文是否落在"开场白/过渡句"模式 → 中文告警（空串 = 不像开场白）。
+
+    **只告警**（不是违规）：引文校验只能证明"逐字出自讲解"，证明不了"引用得准"——
+    "同学们，今天学习……"同样逐字出自讲解，却支撑不了任何模板。此处给内容侧一个可读信号，
+    由人工/生成端改成支撑该模板的规则句；**不得**据此拒绝入库（机械规则分不干净
+    "过渡句"与"以『我们』开头的规则句"）。
+    """
+    text = str(quote or "").strip()
+    if not text:
+        return ""
+    # 去掉 Markdown 强调/标题等前缀后再看开头（"**目标**：……" 也属"目标/导入"类开场）
+    head = text.lstrip("*#>` \t　")
+    for hint in OPENING_QUOTE_HINTS:
+        if head.startswith(hint):
+            return (f"引文疑似**开场白/过渡句**（以「{hint}」开头）：它能通过逐字校验，"
+                    "但通常支撑不了本模板的规则——请改引**支撑该模板的那句规则句**")
+    return ""
+
+
 def effective_domain(doc: NodeDoc, tpl: TemplateDoc) -> tuple[dict, bool]:
     """生效的领域谓词 = 内容声明 ∪ 学段政策。返回 (domain, declared)。
 
@@ -239,6 +267,11 @@ def check_template(node_id: str, doc: NodeDoc, ex: ExerciseDoc, *, seeds: int = 
             verdict.problems.append(
                 f"模板依据（basis.quote）不成立：{'未给出引文' if not _q else '引文不逐字出自本节点讲解'}"
                 f"（须为支撑本模板的那句规则句，≥{_cit.MIN_QUOTE_CHARS} 字）")
+        else:
+            # R35b §18：引文"能过校验"≠"引对了"——落在开场白/过渡句 → **告警**（不拒绝入库）
+            _warn = opening_quote_warning(_q)
+            if _warn:
+                verdict.findings.append(f"模板依据引文精度：{_warn}")
     elif verdict.l1_available:
         verdict.findings.append("未声明模板级依据（basis.quote）——建议给出支撑本模板的规则句（R35 §14）")
 
@@ -316,6 +349,7 @@ def library_stats() -> dict:
 __all__ = [
     "PRIMARY_LEVEL",
     "CONDITION_HINTS",
+    "OPENING_QUOTE_HINTS",
     "NO_EXPECT_PROBLEM",
     "NO_L1_MARKER",
     "TemplateVerdict",
@@ -323,6 +357,7 @@ __all__ = [
     "register_l1",
     "l1_for",
     "subject_of",
+    "opening_quote_warning",
     "effective_domain",
     "check_domain_rule",
     "check_template",

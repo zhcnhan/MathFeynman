@@ -56,7 +56,7 @@ exercises:
         a: {range: [1, 9], exclude: [0]}
         b: {range: [1, 9], exclude: [0]}
       answer_expr: "a/10 + b/10"
-      basis: {quote: "同学们，我们已经学会了整数的加减乘除，今天我们来学习小数的四则运算"}
+      basis: {quote: "计算小数加减法时，关键是要把小数点对齐，也就是相同数位对齐，然后按照整数加减法的方法计算，最后在结果中点上小数点，使小数点与上面的小数点对齐。"}
       semantics:
         expect: "(a + b) / 10"
         requires: []

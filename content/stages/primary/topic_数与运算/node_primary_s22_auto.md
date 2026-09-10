@@ -53,7 +53,7 @@ exercises:
         b: {range: [2, 9], exclude: [0]}
         c: {range: [2, 9], exclude: [0]}
       answer_expr: "a*(b+c)"
-      basis: {quote: "同学们，今天我们学习运算律"}
+      basis: {quote: "乘法分配律：两个数的和与一个数相乘，可以先把它们分别与这个数相乘，再相加。"}
       semantics:
         expect: "a*b + a*c"
         requires: []

@@ -56,7 +56,7 @@ exercises:
         b: {range: [2, 9], exclude: [0]}
       constraint: "b <= a"
       answer_expr: "(a - (a % b)) / b"
-      basis: {quote: "同学们，我们已经学过乘法，今天来认识它的“好朋友”——除法"}
+      basis: {quote: "所以做有余数除法，只要找到“除数乘几最接近被除数、又不超过它”，那个几就是商，差就是余数。"}
       semantics:
         expect: "floor(a / b)"
         requires: ["b <= a"]
@@ -73,7 +73,7 @@ exercises:
         b: {range: [2, 9], exclude: [0]}
       constraint: "b <= a"
       answer_expr: "a % b"
-      basis: {quote: "同学们，我们已经学过乘法，今天来认识它的“好朋友”——除法"}
+      basis: {quote: "余数就是“分到最后剩下的、不够再分一份”的数。"}
       semantics:
         expect: "a - b * floor(a / b)"
         requires: ["b <= a"]

@@ -50,7 +50,7 @@ exercises:
         b: {range: [10, 49], exclude: [0]}
       constraint: "(a % 10) + (b % 10) >= 10"
       answer_expr: "a + b"
-      basis: {quote: "今天我们来学习一百以内的加法和减法，重点是**进位加法**和**退位减法**"}
+      basis: {quote: "记住两条口诀：加法个位满十就进位，减法个位不够减就退位。"}
       semantics:
         expect: "b + a"
         requires: ["(a % 10) + (b % 10) >= 10"]
@@ -67,7 +67,7 @@ exercises:
         b: {range: [10, 89], exclude: [0]}
       constraint: "a > b and (a % 10) < (b % 10)"
       answer_expr: "a - b"
-      basis: {quote: "今天我们来学习一百以内的加法和减法，重点是**进位加法**和**退位减法**"}
+      basis: {quote: "记住两条口诀：加法个位满十就进位，减法个位不够减就退位。"}
       semantics:
         expect: "-(b - a)"
         requires: ["a > b", "(a % 10) < (b % 10)"]

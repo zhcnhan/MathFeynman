@@ -45,7 +45,7 @@ exercises:
       params:
         a: {range: [1, 9], exclude: [0]}
       answer_expr: "a*100"
-      basis: {quote: "同学们，我们在生活中经常需要测量物体的长度、质量和时间"}
+      basis: {quote: "例如，3米=300厘米，因为1米=100厘米，3×100=300。"}
       semantics:
         expect: "100 * a"
         requires: []
@@ -60,7 +60,7 @@ exercises:
       params:
         a: {range: [1, 9], exclude: [0]}
       answer_expr: "a*1000"
-      basis: {quote: "同学们，我们在生活中经常需要测量物体的长度、质量和时间"}
+      basis: {quote: "1千克=1000克，1吨=1000千克。"}
       semantics:
         expect: "1000 * a"
         requires: []

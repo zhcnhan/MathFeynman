@@ -61,7 +61,7 @@ exercises:
         a: {range: [2, 9], exclude: [0]}
         b: {range: [2, 9], exclude: [0]}
       answer_expr: "a*b"
-      basis: {quote: "同学们，今天我们学习乘法"}
+      basis: {quote: "于是，数学家想了一个简便的方法，用乘法来表示“几个相同加数的和”。"}
       semantics:
         expect: "b * a"
         requires: []
