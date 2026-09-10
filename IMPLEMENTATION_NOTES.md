@@ -2619,13 +2619,17 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     实际几乎不成立）——理由：给未被引用的单元硬加溯源＝伪溯源（R36 D2 红线）。
     若架构侧希望"即使在章级也合并"，请裁定"合并后的溯源语义"（是把节挂到章级单元上，还是只记 `meta`）；
     ② **"未纳入注入清单"在无材料时为空**：`not_injected` 只在有材料时出现（无材料 → 空）；
+    → **R46 D1 判定：正确语义，已写明口径并关闭**（无材料就没有"未纳入"可言；界面在无材料时
+    已显式说明「当前无引用材料…覆盖账本里显式标注『本内容无教材依据』」）。
     ③ **降档记账的粒度**：当前只在 `SessionService._resolve_tier`（会话路径）记账；
     **outline 起草/单元出稿两条路径不走 tier 决策**（固定 `strategy="fast"`）→ 它们**不产生**降档账目
     ——若要求"这两条也按档位策略跑"，属功能变更（请裁定）；
     ④ **`MF_MIN_ENTRY_CHARS` 默认 200** 为拍定值（R40 原文"如 < 阈值如 200 字"）；
     ⑤ **B4 节级依据的匹配口径**：归一化后"相等或互相包含"（长度 ≥4）＋**行首编号节名**兜底；
     若教材用非编号节名（如"第一节 恒星"）则匹配不到 → 不给（宁缺勿造）。要不要扩到中文序数节名？
+    → **R46 C 已扩展**（`第<一~九十九>[节讲课篇]`，定位改空白弹性；**仍未放宽到模糊匹配**）；
     ⑥ **审计清理只在启动时跑一次**（无后台定时器）；长跑进程内不会自动再清（可手动 `POST /ai-traces/cleanup`）。
+    → **R46 B 已定时化**（启动一次 + 每 N 小时一次，默认 6；守护线程 + 干净退出；手动入口保留）。
 
 18. **【R44 待架构侧确认】（2026-09-10）**：
     ① **审计写入 / 换名记账走独立连接**：`ai_trace.write_trace` 落全文与 `ledger.note` 都用
@@ -2634,6 +2638,8 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     审计侧**本批未改**（超出 A/B 范围，且属 R39 既有设计：sink 与账本同走独立连接）。
     影响：极端情况下审计文件仍**绝不覆盖**（三层保证），但"换名账目"可能只落到 stderr 兜底日志；
     是否要给审计也开一条"调用方事务内落库"的口子（`ledger.write_via`）请裁定；
+    → **R45 §3-1 裁定：不改连接口径；改为把换名说明写进审计文件正文**（R46 A 已落地，
+    文件自证"原拟名/实际名/原因"，总账那条保留）。**本条闭合** ✅
     ② **审计重试口径**（本批自行选定并落地）：每次 `write_trace` ＝ 一条独立记录 + **独立文件**，
     重试次数作为该条元数据（`retries`/结局）；**不覆盖、不合并**已落的失败痕迹。理由：provider
     对重试循环**合成一条**审计（R39 §3），故多次 `write_trace` 只可能来自不同调用/不同重试轮；
@@ -2641,6 +2647,16 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     `单元 s-xxxx.u03 · 回炉`，数学节点非"单元"，故用"节点"）；若要求统一成"单元"请裁定；
     ④ **回炉索引账目与回炉同事务**：走 `ledger.write_via(db, …)`，回炉回滚则索引条目一并回滚
     （索引指向的那次回炉确实存在）；若希望索引条目"即便回炉回滚也留痕"，需要另一种口径。
+
+19. **【R46 待架构侧确认】（2026-09-10）**：
+    ① **bookmap 目录级节解析仍只认数字编号**（`_TOC_SECTION`）：中文序数书目录拿不到
+    `entry.sections`，本批只扩"正文行首节名"兜底；是否一并扩目录解析（影响章节地图/单元派生）？
+    ② **定时与手动清理并发无锁**：可能记两条清理账目、其中一条 `unlink` 失败被忽略（不损坏数据）；
+    是否加锁？
+    ③ **锚点红线用例的守备范围**：只覆盖人工内容（排除 `*_auto.md`，与 conftest 口径一致）；
+    被 git 跟踪的 12 个 `*_auto.md` 节点 id 不在守备内（是否要读真实仓库另立口径？）；
+    ④ **`MF_AI_TRACE_DIR` 现由 conftest 指向临时目录**（本批补掉"测试写真实审计目录"的静默出口）；
+    若有必须用真实目录的诉求，请明示。
 
 
 ---
@@ -3545,6 +3561,35 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
   - **复用点**：`OutlinePage` 既有覆盖卡 + 既有"并入过短条目 N"徽标（不新建卡片）
   - **断言/用例**：`npx tsc --noEmit` exit 0 + `vite build` exit 0 + 文案两处并列
 
+### 67.4e 融合对照表（**R46 行**：新增件 → 复用点 → 断言）
+
+> 写法同 §67.4d：按 docs/13 §2 写成**并列列表项**，不新建表格。
+
+- **新增件**：审计正文「命名情况」小节 `ai_trace.NAMING_HEAD/_naming_block/_rename_reason`
+  - **复用点**：`_write_file` 唯一落盘点（正文渲染闭包）；**不改** `_split_trace`/`get_detail`/DB 形状
+  - **断言/用例**：`test_r46_a1_*`（第 1 个"无需换名"、`-02` 写明原拟名+实际名）、`test_r46_a2_*`（预置占用）、`test_r46_a3_*`（`full.system/user/response` 分段回归）
+- **新增件**：换名文案**单源**（总账原因与文件正文同一句 `_rename_reason`）
+  - **复用点**：R39 账本 `ledger.note(CAT_OTHER, …)`（**保留**，不因文件自证而删）
+  - **断言/用例**：`test_r46_a1_*`（账目 4 条 + `detail.reason_in_body` + 文案同源）
+- **新增件**：定时清理 `PeriodicCleanup` / `start_periodic_cleanup` / `cleanup_once` / `clean_interval_hours`
+  - **复用点**：既有 `cleanup_old`（唯一清理实现）+ R39 账本；启动/定时/手动**三处同源**
+  - **断言/用例**：`test_r46_b1_*`（删文件 + 中文账目）、`test_r46_b2_*`（幂等 no-op）
+- **新增件**：lifespan 启动/停止（`app.state.ai_trace_cleanup`）
+  - **复用点**：`main.lifespan` 既有 try/except 口径（失败只 warning）+ 守护线程
+  - **断言/用例**：`test_r46_b5_*`（TestClient 退出不挂起 + 线程已停 + 手动入口保留）、`test_r46_b4_*`（daemon + 真的跑 + `stop()` 幂等）
+- **新增件**：`MF_AI_TRACE_CLEAN_INTERVAL_HOURS`（默认 6）
+  - **复用点**：既有 `MF_AI_TRACE_*` 环境变量族 + `.env.example`；非法值**回默认**（不许静默关掉）
+  - **断言/用例**：`test_r46_b3_*`
+- **新增件**：测试审计目录隔离（`conftest.py` 设 `MF_AI_TRACE_DIR` 到临时目录）
+  - **复用点**：既有 `MF_DB_PATH`/`MF_CONTENT_ROOT` 隔离套路（同一处、同一风格）
+  - **断言/用例**：全套回归（真实 `.runtime/ai_trace` 不再被测试写入）
+- **新增件**：中文序数节名（`materials._HEADING_LINE/_NEXT_HEADING/_section_text` 空白弹性）
+  - **复用点**：R42 B4 既有节级依据链路 + `content/citations.normalize` 同一把尺子（**不新建匹配器**）
+  - **断言/用例**：`test_r46_c1_*`（第一节/第一讲取到且逐字）、`test_r46_c2_*`（匹配不到不给）、`test_r46_c3_*`（全角空格/全角数字）、`test_r46_c4_*`（切片不跨节）
+- **新增件**：人工内容锚点基线 `backend/tests/anchor_baseline.py` + `anchor_baseline.json` + 用例
+  - **复用点**：`app.content.loader.load_node_file`（内容解析唯一实现）；口径＝conftest 的"排除 `*_auto.md`"
+  - **断言/用例**：`test_r46_e1_*`（13 节点/30 练习逐位一致）、`test_r46_e2_*`（与真实仓库一致 + 基线不被改写）、`test_r46_e3/e4_*`（造错：改节点/练习 id → 中文点名）
+
 ### 67.4b 融合对照表（**R38 / R39 行**：新增件 → 复用点 → 断言）
 
 | 新增件 | 复用点（禁新建平行机制） | 断言/用例 |
@@ -4005,6 +4050,144 @@ B 后端（`progress.py`/`session.py`/`ledger.py` + B 用例）→ 附带 UI + �
 2. 审计**重试口径**为本批自选（每次尝试各留一个文件）→ §58-18-②；
 3. 回炉条目 `object` 用"节点"（问题单示例为"单元"，数学节点非单元）→ §58-18-③；
 4. 回炉索引与回炉**同事务**（回滚则索引一并回滚）→ §58-18-④。
+
+
+---
+
+## 72. R46 收口小批：审计换名留痕（A）＋ 定时清理（B）＋ 中文序数节名（C）＋ 挂账清理（D）＋ 锚点红线用例（E）（2026-09-10）
+
+来源：`docs/09` **R45**（R44 验收裁决）§3-1 与 NOTES **§58-17 / §58-18** 未闭合观察项；
+工单 `.runtime/EULER_TICKET_R46.md`；验收批 **R47**。**只改 `backend/`、`frontend/`（无改动）、
+`docs/`、`IMPLEMENTATION_NOTES.md`**；真实库与 `content/`（含人工锚点）**未动**。
+
+### 72.1 任务 A · 审计换名说明写进**文件正文**（P1，R45 §3-1 裁定）
+
+- **背景**：R44 已修掉"同秒同名静默覆盖"（三层防护），但"为什么会有 `-02`"只写在总账里，
+  而换名记账走**独立连接**——调用方持写事务时账目可能只落 stderr（§58-18-①）。
+  R45 §3-1 明确：**不许**把审计改成"调用方事务内落库"（会把记审计变成主流程死锁源，违反 R39 §3）。
+- **落地**：`_write_file` 的正文渲染改为闭包 `render(final_name, base_name, rename_reason)`，
+  在 system 段**之前**插入一节 `==== 本文件命名情况（R46 A）====`：
+  `本文件实际文件名` / `原拟文件名` / `命名说明`（中文）。
+  - 未换名 → "本文件是该秒该调用点的**第 1 个**（目标名未被占用），**无需换名**。"；
+  - 换名（同秒多次 / 目标被占用）→ 原拟名 + 实际名 + 原因（"已改名为 `…-02.txt`…不被覆盖"）。
+- **文案单源**：新增 `_rename_reason(...)`——**总账账目与文件正文共用同一句**（不写两份）；
+  总账那条**保留**（`detail.reason_in_body=True`），文件正文是**第二道**可见性。
+- **不破坏分段**：命名小节落在 `_meta_block`（system 段之前），`_split_trace` 按自己的
+  `==== … ====` 找段 → `full.system/user/response` 一字不变（`test_r46_a3_*` 锁死）。
+- **必交用例（3 条，实际名）**：`test_r46_a1_first_file_says_no_rename_second_says_original_and_actual`、
+  `test_r46_a2_preexisting_file_note_says_occupied`（还把账本整表清空后重读文件，证明"不依赖数据库"）、
+  `test_r46_a3_detail_segments_still_intact`。
+
+### 72.2 任务 B · 审计保留期清理**定时化**（P1，§58-17-⑥）
+
+- **间隔选择：6 小时**（`MF_AI_TRACE_CLEAN_INTERVAL_HOURS`，非法/≤0 **回默认**——不许用它把清理静默关掉）。
+  **理由**：保留期是**天**级（默认 30 天），清理成本只有一次目录 glob；6 小时（≈每天 4 次）
+  把"过期后最长滞留"压到 6 小时以内（相对 30 天可忽略），又不至于频繁唤醒；
+  24 小时虽也可，但长跑进程重启少时残留会久一倍。
+- **落地**：新增 `cleanup_once(reason)`（启动 / 定时 / 手动**三处同源**）+ `PeriodicCleanup`
+  （`threading.Thread(daemon=True)` + `Event.wait(interval)`，`stop()` 置事件并 `join(2s)`，**幂等**）
+  + `start_periodic_cleanup()` + `clean_interval_hours()`；`main.lifespan` 启动时清一次再启动定时器，
+  **关闭时 `stop()` 干净退出**（句柄同时挂 `app.state.ai_trace_cleanup` 便于观测/测试）。
+  清理异常一律 **warning**（不清就下次再清），**不阻塞主流程**；`POST /api/ai-traces/cleanup` 原样保留。
+- **顺手补掉一个真实静默出口（本批实测发现）**：此前测试跑在后端 lifespan 上，而 `MF_AI_TRACE_DIR`
+  **没有**被 conftest 隔离 → **测试会写进并从真实 `.runtime/ai_trace` 清理文件**
+  （现场实测：真实目录 420 个 `.txt`，其中多个是刚跑测试时写进去的；R42 C3 起每次 TestClient 启动
+  还会对真实目录跑一次保留期清理）。本批在 `conftest.py` 把 `MF_AI_TRACE_DIR` 也指到临时目录
+  （与既有 `MF_DB_PATH` / `MF_CONTENT_ROOT` 同一套隔离套路），真实审计文件**只在真人使用或显式
+  手动清理时**变动。
+- **必交用例（5 条，实际名）**：`test_r46_b1_scheduled_cleanup_deletes_old_and_logs_zh`、
+  `test_r46_b2_cleanup_is_idempotent`、`test_r46_b3_interval_config_default_and_guard`、
+  `test_r46_b4_periodic_thread_daemon_runs_and_stops_cleanly`、
+  `test_r46_b5_app_shutdown_stops_cleanup_and_does_not_hang`。
+- **随实现更新一条旧断言**：R42 的 `test_r42_c3_lifespan_calls_cleanup` 原本用**源码字符串**
+  `"cleanup_old" in main.py` 锁接线；入口更名后同步改为锁 `cleanup_once` + `start_periodic_cleanup`
+  + `.stop()`（意图不变、覆盖更全）。
+
+### 72.3 任务 C · 节级依据支持**中文序数节名**（P2，§58-17-⑤）
+
+- **落地**（`outline/materials.py`，仍走 R42 B4 同一条链路，不新建匹配器）：
+  - 行首节标题形态扩到 `第<一~九十九>[节讲课篇]`（`_HEADING_LINE` / `_NEXT_HEADING`）；
+  - `_section_text` 定位改**空白弹性**：先按"行首标题 + 标题文字"匹配（全角空格/多空格都认），
+    落不到再退回原来的子串查找；"切到下一节"用同一套形态。
+- **口径不变**：匹配仍是"归一化相等或互相包含（≥4 字）"，**没有**放宽到模糊匹配——
+  匹配不到就不给依据（宁缺勿造）。
+- **必交用例（4 条，实际名）**：`test_r46_c1_zh_ordinal_section_names_give_section_level_basis`
+  （含 `第一讲`）、`test_r46_c2_unmatched_section_name_still_gives_nothing`（回归）、
+  `test_r46_c3_normalization_still_holds_fullwidth_and_whitespace`（U+3000 + 全角数字章号）、
+  `test_r46_c4_section_text_slices_only_that_section`（切片不跨节）。
+
+### 72.4 任务 D · 两条挂账的处置（P2）
+
+- **D1（§58-17-②）："未纳入注入清单在无材料时为空" → 判定为正确语义，已写明口径并关闭**。
+  无材料就没有"未纳入"可言（`not_injected` 由材料章/节派生）；且界面在无材料时**已显式说明**：
+  `OutlinePage.tsx` L750-754「当前无引用材料：起草只按学科简介进行，会在覆盖账本里显式标注
+  『本内容无教材依据』」，覆盖卡整体也只在 `coverage.has_materials` 时渲染 → 不存在"静默为空"。
+- **D2（旧账 · R36 发现）：`user_nodes` 每次启动被 `sync_content` 重建 → 判定为引擎既有语义（非缺陷），
+  已写明口径并关闭**。口径：**`user_nodes` 行数＝状态物化行数（≈图内节点数），不等于"进度"**；
+  进度＝ `state ∈ {mastered, learning}`（活动另见 sessions/attempts/reviews）；
+  `sync_content` **只重算 state、不删行、不丢 mastered/learning**（`recompute_states` 先读
+  `_sets()` 保留），并按节点 id 保留（`service/library.py` docstring 本来就写明）。
+  **本批实测探针**（`.runtime/r46_d2_probe.py`，临时库/临时内容副本）：
+  `首次 sync_content: nodes_synced=13 edges_synced=14 errors=[]`；造进度后 `user_nodes` 行数 **13**
+  （其中 mastered/learning **3**）；**再次** sync_content（模拟重启）后行数仍 **13**（== 图内节点数）、
+  状态分布 `{mastered: 2, learning: 1, locked: 10}`、进度保留 `['high.0201','middle.0101','middle.0102']`
+  与重启前**完全一致**。既有用例亦锁此口径：`test_math_outline.py:174`、`test_generic_subject_e2e.py:155`
+  （"原内容节点仍在 user_nodes mastered（节点级进度本来就不丢）"）。
+- **D3（R40 §2-5）：已由 R42 B3 落地 → 关闭**。落点：`frontend/src/pages/OutlinePage.tsx` L741-749
+  「⚠️ **「单元数」只在没有教材时生效**：本学科有引用材料时，**单元数由书的章节结构决定**…这是按书出稿，
+  不是 bug」（NOTES §70.2 B3 亦有记录）。
+
+### 72.5 任务 E · 人工内容**锚点红线**防回归用例（P1，架构侧要求）
+
+- **入库基线**：`backend/tests/anchor_baseline.json`（`schema=yanhui.anchor_baseline/1`）——
+  **13 个人工节点 / 30 道练习**的"节点 id → 练习 id 集合"；**口径与 conftest 一致**：
+  只覆盖人工内容，**排除 `*_auto.md`**（运行期生成、测试环境里本就不存在）。
+- **生成方式（一行）**：`.\.venv\Scripts\python backend/tests/anchor_baseline.py --write`
+  （`--check` 只比对不写）。**用例只比对、绝不改写**（`test_r46_e2_*` 跑完再读一次字节不变）。
+- **用例（4 条，实际名）**：`test_r46_e1_stages_node_and_exercise_ids_match_baseline`（逐位一致）、
+  `test_r46_e2_baseline_never_auto_rewritten`（与仓库真实人工内容一致 + 不被改写）、
+  `test_r46_e3_comparator_catches_id_change_with_zh_message`、
+  `test_r46_e4_comparator_catches_exercise_id_change`。
+- **造错验证（真实用例失败原文，临时文件跑完即删）**：把临时副本里 `node_0101_…md` 的
+  `id: middle.0101` 改成 `id: middle.0101__TYPO` 后调用**真实**红线用例，失败输出为：
+  「人工内容锚点清单与基线不一致（红线：既有节点/练习 id 不得改动；清单文件 anchor_baseline.json）：
+  **节点 id 缺失**（基线有、现状没有 → 疑似被改名/删除，违反锚点红线）：middle.0101；
+  **节点 id 新增**（现状有、基线没有 → 若确为新增，请架构侧批准后刷新基线）：middle.0101__TYPO」
+  —— **中文点名到 id**，改回后恢复一致；练习 id 的造错同理由 `test_r46_e4_*` 锁定。
+
+### 72.6 回归与验收自证（**实测，非推算**）
+
+- **开工基线**（`.runtime/r46_baseline.xml`，HEAD `e29e6b2`）：`pytest backend/tests` ＝
+  **478 passed + 2 skipped / 480 collected**，0 failed / 0 error，exit 0。
+- **收尾实测**（`.runtime/r46_final.xml`）：`pytest backend/tests` ＝
+  **494 passed + 2 skipped / 496 collected**，0 failed / 0 error，exit 0 ——**+16 用例全绿**
+  （A 3 + B 5 + C 4 + E 4），**回归不降**。
+- `content validate` ＝ **ok=True nodes=26 exercises=55**；roadmap audit 五学段 ＝ **27 / 31 / 81 / 59 / 60**
+  （`ok: True`）；`semantics_stats()` ＝ **{templates: 30, violations: 0, verified: 30, unverified: 0,
+  l1_subjects: ['math']}**；只读 `audit_material_binding.py s-f2decfcf` ＝ **9/9、5/5、19%、54%**
+  —— 四项与基线**逐位一致**。
+- 前端：`npx tsc --noEmit` **exit 0**；`npx vite build` **exit 0**（`✓ built in 1.16s`）；本批未改 UI。
+- 真实库 / `content/`：**只读**（工作树只剩用户自己的未跟踪 `content/stages|subjects/s-f2decfcf/`）。
+
+### 72.7 疑点 / 需架构侧确认（已登记 §58-19）
+
+1. **bookmap 的"目录级"节解析仍只认数字编号**（`_TOC_SECTION`）：中文序数书在**目录**层面拿不到
+   `entry.sections`，本批只扩了"正文行首节名"这条兜底（够用且零风险）。要不要把目录解析也扩到
+   中文序数？（会改变章节地图 → 影响单元派生与覆盖账，影响面大，**未擅改**）
+2. **定时/手动清理并发**：`cleanup_old` 无锁，若同一秒内定时与手动同时清同一批文件，
+   可能记**两条**清理账目、其中一条的 `unlink` 失败被忽略（不抛、不损坏数据）。单机场景可接受，
+   是否要加锁请裁定。
+3. **E 的守备范围**：只覆盖**人工**内容（排除 `*_auto.md`）。仓库里**被 git 跟踪的 12 个 `*_auto.md`**
+   的节点 id **不在**该用例守备内（它们可再生成，且测试环境里根本不存在副本）。若要连它们一起冻结，
+   需要读**真实仓库**（而非临时副本）的另一套口径——请裁定是否要。
+4. **测试隔离口径新增一条**：`MF_AI_TRACE_DIR` 现由 conftest 指向临时目录（本批补的真实静默出口）。
+   若有"必须用真实审计目录"的测试诉求，需显式 `monkeypatch.setenv` 覆盖（现有用例已如此做）。
+
+### 72.8 提交链（每子步单独提交，均标 R46，不与 R44/R45 混提）
+
+`60c50d9`（A 后端+用例）→ `a1bbee2`（B 后端+lifespan+conftest 隔离+用例）→
+`a8bef40`（C 材料节名+用例）→ `94d5924`（E 基线清单+红线用例）→ 本批收尾（R42 C3 接线断言更新 +
+B5 线程断言更新 + 本 NOTES/docs 同步）。
 
 
 
