@@ -54,6 +54,7 @@ exercises:
         a: {range: [3, 90], exclude: [0]}
       constraint: "a % 3 == 0"
       answer_expr: "a / 3"
+      basis: {quote: "同学们，我们已经学过除法和分数，今天要认识一个新朋友——比"}
       semantics:
         expect: "a * 1 / (1 + 2)"
         requires: ["a % 3 == 0"]
@@ -69,6 +70,7 @@ exercises:
         a: {range: [5, 100], exclude: [0]}
       constraint: "a % 5 == 0"
       answer_expr: "a * 3 / 5"
+      basis: {quote: "同学们，我们已经学过除法和分数，今天要认识一个新朋友——比"}
       semantics:
         expect: "a * 3 / (2 + 3)"
         requires: ["a % 5 == 0"]

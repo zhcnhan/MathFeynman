@@ -45,6 +45,11 @@ exercises:
       params:
         a: {range: [1, 9], exclude: [0]}
       answer_expr: "a*100"
+      basis: {quote: "同学们，我们在生活中经常需要测量物体的长度、质量和时间"}
+      semantics:
+        expect: "100 * a"
+        requires: []
+        domain: {nonneg: true, integer: true}
     check:
       mode: numeric_value
   - id: ex2
@@ -55,6 +60,11 @@ exercises:
       params:
         a: {range: [1, 9], exclude: [0]}
       answer_expr: "a*1000"
+      basis: {quote: "同学们，我们在生活中经常需要测量物体的长度、质量和时间"}
+      semantics:
+        expect: "1000 * a"
+        requires: []
+        domain: {nonneg: true, integer: true}
     check:
       mode: numeric_value
 feynman:

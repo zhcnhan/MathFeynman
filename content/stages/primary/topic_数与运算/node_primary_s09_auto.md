@@ -56,6 +56,11 @@ exercises:
         a: {range: [1, 9], exclude: [0]}
         b: {range: [1, 9], exclude: [0]}
       answer_expr: "a/10 + b/10"
+      basis: {quote: "同学们，我们已经学会了整数的加减乘除，今天我们来学习小数的四则运算"}
+      semantics:
+        expect: "(a + b) / 10"
+        requires: []
+        domain: {nonneg: true}
     check:
       mode: numeric_value
 feynman:

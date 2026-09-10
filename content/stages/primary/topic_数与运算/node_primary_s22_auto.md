@@ -53,6 +53,11 @@ exercises:
         b: {range: [2, 9], exclude: [0]}
         c: {range: [2, 9], exclude: [0]}
       answer_expr: "a*(b+c)"
+      basis: {quote: "同学们，今天我们学习运算律"}
+      semantics:
+        expect: "a*b + a*c"
+        requires: []
+        domain: {nonneg: true, integer: true}
     check:
       mode: numeric_value
 feynman:

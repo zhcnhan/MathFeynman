@@ -57,6 +57,11 @@ exercises:
       params:
         a: {range: [1, 9], exclude: [0]}
       answer_expr: "a*100"
+      basis: {quote: "同学们，我们已经学过长度单位，今天我们来学习面积单位和体积单位的换算"}
+      semantics:
+        expect: "100 * a"
+        requires: []
+        domain: {nonneg: true, integer: true}
     check:
       mode: numeric_value
   - id: ex2
@@ -67,6 +72,11 @@ exercises:
       params:
         a: {range: [1, 9], exclude: [0]}
       answer_expr: "a*1000"
+      basis: {quote: "同学们，我们已经学过长度单位，今天我们来学习面积单位和体积单位的换算"}
+      semantics:
+        expect: "1000 * a"
+        requires: []
+        domain: {nonneg: true, integer: true}
     check:
       mode: numeric_value
   - id: ex3
@@ -77,6 +87,11 @@ exercises:
       params:
         a: {range: [1, 9], exclude: [0]}
       answer_expr: "a*1000"
+      basis: {quote: "同学们，我们已经学过长度单位，今天我们来学习面积单位和体积单位的换算"}
+      semantics:
+        expect: "1000 * a"
+        requires: []
+        domain: {nonneg: true, integer: true}
     check:
       mode: numeric_value
 feynman:

@@ -61,6 +61,11 @@ exercises:
         a: {range: [2, 9], exclude: [0]}
         b: {range: [2, 9], exclude: [0]}
       answer_expr: "a*b"
+      basis: {quote: "同学们，今天我们学习乘法"}
+      semantics:
+        expect: "b * a"
+        requires: []
+        domain: {nonneg: true, integer: true}
     check:
       mode: numeric_value
 feynman:

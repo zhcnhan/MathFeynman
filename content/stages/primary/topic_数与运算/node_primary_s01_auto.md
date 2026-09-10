@@ -49,6 +49,11 @@ exercises:
         c: {range: [0, 9]}
         d: {range: [0, 9]}
       answer_expr: "(a*1000 + b*100 + c*10 + d + 50) // 100 * 100"
+      basis: {quote: "同学们，我们先来认识数位"}
+      semantics:
+        expect: "floor((a*1000 + b*100 + c*10 + d + 50) / 100) * 100"
+        requires: []
+        domain: {nonneg: true, integer: true}
     check:
       mode: numeric_value
   - id: ex2
@@ -60,6 +65,11 @@ exercises:
         a: {range: [11, 99], exclude: [0]}
         b: {range: [11, 99], exclude: [0]}
       answer_expr: "(a + 5) // 10 * 10 + (b + 5) // 10 * 10"
+      basis: {quote: "同学们，我们先来认识数位"}
+      semantics:
+        expect: "10 * floor((a + 5) / 10) + 10 * floor((b + 5) / 10)"
+        requires: []
+        domain: {nonneg: true, integer: true}
     check:
       mode: numeric_value
 feynman:

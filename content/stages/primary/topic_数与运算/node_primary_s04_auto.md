@@ -56,6 +56,7 @@ exercises:
         b: {range: [2, 9], exclude: [0]}
       constraint: "b <= a"
       answer_expr: "(a - (a % b)) / b"
+      basis: {quote: "同学们，我们已经学过乘法，今天来认识它的“好朋友”——除法"}
       semantics:
         expect: "floor(a / b)"
         requires: ["b <= a"]
@@ -72,6 +73,7 @@ exercises:
         b: {range: [2, 9], exclude: [0]}
       constraint: "b <= a"
       answer_expr: "a % b"
+      basis: {quote: "同学们，我们已经学过乘法，今天来认识它的“好朋友”——除法"}
       semantics:
         expect: "a - b * floor(a / b)"
         requires: ["b <= a"]

@@ -64,6 +64,7 @@ exercises:
         b: {range: [2, 30], exclude: [0]}
       constraint: "b % a == 0"
       answer_expr: "b"
+      basis: {quote: "我们先认识“整除”"}
       semantics:
         expect: "lcm(a, b)"
         requires: ["b % a == 0"]
@@ -80,6 +81,7 @@ exercises:
         b: {range: [2, 30], exclude: [0]}
       constraint: "b % a == 0"
       answer_expr: "a"
+      basis: {quote: "我们先认识“整除”"}
       semantics:
         expect: "gcd(a, b)"
         requires: ["b % a == 0"]
