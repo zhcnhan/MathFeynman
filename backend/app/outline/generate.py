@@ -344,7 +344,7 @@ def generate_unit_content(
     if subj is None:
         raise OutlineError(f"学科未注册: {subject_id}")
     if subj.kind == "preset":
-        raise OutlineError("math preset 内容由 roadmap 蓝图流水线生成（不走本模块）")
+        raise OutlineError("预置学科内容由课程蓝图流水线生成（不走本模块）")
     outline = outline_store.get_outline(subject_id)
     if outline is None:
         raise OutlineError(f"学科 {subject_id} 尚无大纲")

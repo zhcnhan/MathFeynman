@@ -165,10 +165,10 @@ function WorkbenchUI({ exercise, disabled, feedback, onSubmit, draftPrefix }: Pr
 }
 
 const GUIDED_STEPS = [
-  "① 理解题意：把已知量与所求量写出来。",
-  "② 设未知数：问什么设什么为 x（并写明单位）。",
-  "③ 找等量关系并列出方程。",
-  "④ 求解、回代检验（结果必须符合题意）。",
+  "① 理解题意：把已知与所求写清楚。",
+  "② 找到连接已知与所求的关键关系。",
+  "③ 写出你的推理步骤。",
+  "④ 检查结果是否符合题意与边界。",
 ];
 
 function GuidedDemo({ exercise, disabled, feedback, onSubmit }: Props) {

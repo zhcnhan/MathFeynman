@@ -155,7 +155,7 @@ class PathEngine:
         if own is not None:
             e = own
             if not self.level_unlocked(e.level):
-                return False, [f"需先完成前序学段（{e.level} 尚未解锁）"]
+                return False, [f"需先完成前序内容/关卡组（学段 {e.level} 尚未解锁）"]
             if not self.prereq_ok(e):
                 return False, [f"请先完成：{'、'.join(self._pending_titles(e) or ['前置条目'])}"]
             return True, []
@@ -163,7 +163,7 @@ class PathEngine:
             return self._boss_allowed(level, topic)
         # 孤儿（无所属条目的人工预修节点）→ 学段解锁 + 内容 prereq 兜底
         if not self.level_unlocked(level):
-            return False, [f"需先完成前序学段（{level} 尚未解锁）"]
+            return False, [f"需先完成前序内容/关卡组（学段 {level} 尚未解锁）"]
         for p in prereqs:
             if p not in self.mastered:
                 return False, [f"内容前置未达成：{p}"]
@@ -172,12 +172,12 @@ class PathEngine:
     def _boss_allowed(self, level: str, topic: str) -> tuple[bool, list[str]]:
         rd = self.roadmaps.get(level)
         if rd is None:
-            return False, ["该学段无蓝图"]
+            return False, ["该关卡组（学段）无课程蓝图"]
         group = boss_group_topic(level, topic, rd)
         if group is None:
             return False, [f"首领主题无匹配蓝图主题组（内容 topic={topic!r}）"]
         if not self.level_unlocked(level):
-            return False, [f"需先完成前序学段（{level} 尚未解锁）"]
+            return False, [f"需先完成前序内容/关卡组（学段 {level} 尚未解锁）"]
         pending = [e.title for e in rd.entries if e.topic == group and not self.entry_achieved(e)]
         if pending:
             return False, [f"首领战需本组全部条目达成，尚缺：{'、'.join(pending[:5])}"]

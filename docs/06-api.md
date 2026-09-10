@@ -52,7 +52,7 @@
 ### 练习与判题（幂等，供前端直接调用或经由 step）
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/exercises/check` | body `{exercise_id, params_seed, user_answer, session_id?}` → sympy 判题结果 + hint（不泄答案） |
+| POST | `/exercises/check` | body `{exercise_id, params_seed, user_answer, session_id?}` → 该学科判题器结果（math=sympy）+ hint（不泄答案） |
 | POST | `/exercises/next` | body `{node_id, exclude_ids}` → 下一道题（模板渲染或 AI 变体） |
 
 ### 复习

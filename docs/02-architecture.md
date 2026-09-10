@@ -33,9 +33,9 @@ UI 只能经 API 通信，绝不直连 LLM 或数据库。
 | # | 决策 | 理由 | 状态 |
 |---|---|---|---|
 | A1 | **本地单机形态**：本地 FastAPI 进程 + 浏览器访问，一键启动脚本 | 公式/图形交互体验最好；数据本地；无账号成本；引擎与 UI 分离便于日后公众化 | 不可变 |
-| A2 | **后端 Python**：FastAPI + SQLite(SQLAlchemy) | sympy 判题是硬需求；numpy/scipy/pandas 通向量化/ML 内容；Python 是 LLM 生态第一语言 | 不可变 |
+| A2 | **后端 Python**：FastAPI + SQLite(SQLAlchemy) | sympy 判题是硬需求（math 预置学科口径；通用学科走学科判题器插件，见 docs/14）；numpy/scipy/pandas 通向量化/ML 内容；Python 是 LLM 生态第一语言 | 不可变 |
 | A3 | **前端 TypeScript + React + Vite** | 公式/几何/状态机交互生态成熟；TS 防低级错误；AI 编码质量高 | 不可变 |
-| A4 | **sympy 唯一判题器**（数值/表达式/方程/等价判断），LLM 永不判对错 | 判题可信是学习系统的地基；AI 判题幻觉不可接受 | 不可变 |
+| A4 | **sympy 唯一判题器**（数值/表达式/方程/等价判断），LLM 永不判对错（math 预置学科口径；通用学科走学科判题器插件，见 docs/14） | 判题可信是学习系统的地基；AI 判题幻觉不可接受 | 不可变 |
 | A5 | **LLM Provider 抽象层**：OpenAI 兼容接口；默认 DeepSeek；模型按环节配置 | 换模型=改配置；成本与能力可按环节调配；本地 ollama 可作零成本后备 | 不可变 |
 | A6 | **内容库与代码分离**：`content/` 目录为结构化文本文件 | 内容可增量演进、可 git 追踪、可被流水线批量生成与审核 | 不可变 |
 | A7 | **教学会话状态机**（见 05 文档）：程序编排，LLM 在槽位生成 | 这是"AI 被限定、与程序有机结合"的实现机制 | 不可变 |
@@ -102,5 +102,5 @@ UI 只能经 API 通信，绝不直连 LLM 或数据库。
 
 - `domain/` 必须有单元测试（图谱可达性、掌握度规则、FSRS 推进、判题等价性）。
 - 所有 LLM 调用点的 schema 用 pydantic 定义并校验（AI 层失败不影响 domain 状态一致性）。
-- 任何入库内容需通过 `content validate`（结构校验 + 模板可渲染 + 答案 sympy 可验算）才算合法。
+- 任何入库内容需通过 `content validate`（结构校验 + 模板可渲染 + 答案 sympy 可验算）才算合法。（math 预置学科口径；通用学科走学科判题器插件，见 docs/14）
 - 数据库变更用 SQLAlchemy `create_all` + 版本字段起步（MVP 不必上 alembic，但保留升级路径）。

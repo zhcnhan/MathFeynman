@@ -329,7 +329,7 @@ class OpenAICompatibleGateway:
             whitelist=[],
             core_concepts=[],
             extra_bans=[
-                "这是提示生成：**绝对禁止给出完整解答或答案表达式**，只给方向性提示（哪一步可疑、检查什么）。",
+                "这是提示生成：**绝对禁止给出完整解答或最终答案表达式**，只给方向性提示（哪一步可疑、检查什么）。",
             ],
         )
         user = task_json(

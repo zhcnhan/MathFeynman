@@ -94,8 +94,8 @@ export default function Dashboard() {
       <h1>仪表盘</h1>
       {mathEnabled === false && (
         <div className="banner warn">
-          数学（预置学科）已停用：数学学习内容与关卡地图已按停用隐藏（引擎同步拒绝越级学习）。
-          请前往「学科列表 → 已移除」重新启用数学以继续；其它学科不受影响。
+          预置学科（数学）已停用：其学习内容与进度暂不可见（关卡地图同步隐藏，引擎仍拒绝越级学习）。
+          请前往「学科列表 → 已移除」重新启用后继续；其它学科不受影响。
         </div>
       )}
       <div className="stats-bar">

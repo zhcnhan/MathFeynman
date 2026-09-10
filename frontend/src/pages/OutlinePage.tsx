@@ -388,7 +388,7 @@ export default function OutlinePage() {
         <>
           <h1>
             {subject.label}{" "}
-            <span className="badge">{isPreset ? "预置（数学=roadmap 治理）" : "自定义学科"}</span>
+            <span className="badge">{isPreset ? "预置学科（roadmap 治理）" : "自定义学科"}</span>
           </h1>
           <div className="dim">{subject.id} · {subject.description}</div>
         </>
@@ -518,7 +518,7 @@ export default function OutlinePage() {
         <h2>大纲起草与审阅</h2>
         {isPreset ? (
           <div className="dim">
-            预置学科（数学）大纲由五学段 roadmap 派生治理（docs/14 §5）。当前版本：
+            预置学科大纲按其课程蓝图（roadmap）派生治理（docs/14 §5）。当前版本：
             v{outline?.revision ?? "-"} · {outline?.units?.length ?? 0} 单元。
             <button style={{ marginLeft: 10 }} disabled={busy} onClick={() => draft(true)}>
               由 roadmap 重新派生（regenerate）

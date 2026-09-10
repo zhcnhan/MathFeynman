@@ -259,7 +259,7 @@ def draft_outline(subject_id: str, body: DraftOutlineBody, db: Session = Depends
     _require_enabled(db, subject_id)
     row = outline_store.get_subject(db, subject_id)
     if row.kind == "preset":
-        raise _err(409, "conflict", "math preset 大纲由 roadmap 治理（使用 regenerate 派生）")
+        raise _err(409, "conflict", "预置学科大纲由课程蓝图（roadmap）治理，请使用派生/再生成接口")
     from ..outline.draft import draft_outline as _draft
 
     return _draft(subject_id, brief=body.brief, count=body.count, group_hint=body.group_hint)
@@ -269,7 +269,7 @@ def draft_outline(subject_id: str, body: DraftOutlineBody, db: Session = Depends
 def generate_unit_content(subject_id: str, unit_id: str, db: Session = Depends(get_db)) -> dict:
     """懒生成单元内容（source:auto 落盘 + 库/DB 同步；幂等；docs/14 §2.3 · A4）。
 
-    math preset 内容由 roadmap 流水线治理 → 本端点仅 custom 学科。
+    预置学科内容由课程蓝图（roadmap）流水线治理 → 本端点仅 custom 学科。
     """
     _require_enabled(db, subject_id)
     from ..outline.generate import generate_unit_content as _gen

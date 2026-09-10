@@ -137,7 +137,7 @@ export default function SubjectsPage() {
       </div>
       {s.kind === "preset" && (
         <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
-          预置学科（数学）仅可停用/重新启用；内容文件与 roadmap 受治理，不提供"连同文件删除"。
+          预置学科仅可停用/重新启用；内容文件与 roadmap 受治理，不提供"连同文件删除"。
         </div>
       )}
     </div>

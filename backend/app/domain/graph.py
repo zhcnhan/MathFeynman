@@ -61,7 +61,7 @@ class KnowledgeGraph:
         for n in self.nodes:
             head = n.id.partition(".")[0] if "." in n.id else ""
             if head in LEVELS and n.level not in LEVELS:
-                raise GraphError(f"节点 {n.id} 学段非法: {n.level!r}（{head} 命名空间须用合法学段）")
+                raise GraphError(f"节点 {n.id} 学段非法（通用学科即所属分组非法）: {n.level!r}（{head} 命名空间须用合法学段）")
             for p in n.prereqs:
                 if p not in self._by_id:
                     raise GraphError(f"节点 {n.id} 的 prereq {p!r} 不存在")
