@@ -7,7 +7,8 @@
 - **缺口**：未达标维度 → ``{key, description（学生视角"要补什么"）, evidence_quote, comment,
   score}``，按权重倒序 = 弱到强；追问定向第一项（一次一个）。
 - **evidence 纪律（硬校验）**：评分卡 ``evidence_quote`` 必须逐字出自**本轮**提交文本。
-  校验用"归一化子串包含"（去空白 + 统一标点/引号，容忍 LLM 的排版差异），
+  校验用"归一化子串包含"（去空白 + 统一标点/引号，容忍 LLM 的排版差异）**+ 最短长度门槛**
+  （归一化后 < 6 字视为无效，R30 F5：极短引文能平凡通过校验），
   失败 → 该维度 score 降级（默认 ×0.5）并标记 ``evidence_valid=False / evidence_reason``，
   防"没读新内容还打分"。原始引文保留以便用户复盘时肉眼核对。
 """
@@ -34,6 +35,10 @@ _GAP_TEMPLATES = {
 # evidence 校验失败时的降级系数（不归零：允许"分低但认账"，且学生可见原因）
 EVIDENCE_PENALTY = 0.5
 
+# evidence **最短门槛**（R30 F5）：归一化（去空白/标点/省略号）后 < 6 字视为无效引文——
+# 极短引文（单字/词）能平凡通过"子串包含"校验，等于没有依据（R28 F5 加固建议）。
+MIN_EVIDENCE_CHARS = 6
+
 
 def normalize_quote(text: str) -> str:
     """归一化文本用于包含校验：剔除空白与标点（保留字母/数字/汉字）。"""
@@ -41,11 +46,22 @@ def normalize_quote(text: str) -> str:
 
 
 def quote_valid(quote: str, transcript: str) -> bool:
-    """evidence_quote 是否逐字出自本轮文本（归一化子串包含）。"""
+    """evidence_quote 是否逐字出自本轮文本（归一化子串包含 + 最短长度门槛 R30 F5）。"""
     q = normalize_quote(quote)
-    if not q:
+    if len(q) < MIN_EVIDENCE_CHARS:
         return False
     return q in normalize_quote(transcript)
+
+
+def quote_invalid_reason(quote: str, transcript: str, *, where: str = "本轮提交文本") -> str:
+    """引文无效的中文原因（区分"过短"与"不在本轮文本中"；面向学生展示）。"""
+    q = normalize_quote(quote)
+    if len(q) < MIN_EVIDENCE_CHARS:
+        return (
+            f"引文过短（归一化后 {len(q)} 字 < {MIN_EVIDENCE_CHARS} 字），"
+            f"不足以作为依据（服务端已降级）"
+        )
+    return f"引文不在{where}中（服务端包含校验未通过，已降级）"
 
 
 # --------------------------------------------------------------------------
@@ -138,7 +154,7 @@ def clean_card(
             "evidence_valid": valid,
         }
         if not valid:
-            row["evidence_reason"] = "引文不在本轮提交文本中（服务端包含校验未通过，已降级）"
+            row["evidence_reason"] = quote_invalid_reason(quote, transcript)
         clean.append(row)
     return clean, penalty
 
@@ -229,7 +245,7 @@ def update_dimension(
         "evidence_valid": valid,
     }
     if not valid:
-        row["evidence_reason"] = "引文不在本轮补答文本中（服务端包含校验未通过，已降级）"
+        row["evidence_reason"] = quote_invalid_reason(evidence_quote, transcript, where="本轮补答文本")
     return row, (not valid)
 
 
@@ -361,8 +377,10 @@ def gap_view(ledger: dict[str, Any], threshold: float) -> dict[str, Any]:
 
 __all__ = [
     "EVIDENCE_PENALTY",
+    "MIN_EVIDENCE_CHARS",
     "normalize_quote",
     "quote_valid",
+    "quote_invalid_reason",
     "empty_ledger",
     "normalize_ledger",
     "candidate_acknowledged",

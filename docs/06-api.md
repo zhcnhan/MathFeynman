@@ -114,7 +114,8 @@
 - `verdict`：`fail`（完整稿未达标，附本轮 `dimension_scores`）/ `gap`（补答结果，附
   `gap_filled`、`gap_key`、`gap_update`）/ `pass`（由 `mastered` + `feynman_passed` 事件体现）
   / `deferred`（评分服务不可用，进人工复核）。
-- `dimension_scores[].evidence_valid`：服务端**包含校验**结论（引文必须逐字出自本轮提交文本）；
+- `dimension_scores[].evidence_valid`：服务端**包含校验**结论（引文必须逐字出自本轮提交文本，
+  且归一化后 **≥6 字**——极短引文视为无效，R30 F5）；
   `false` 时该维度分数已降级（×0.5），并带 `evidence_reason`。
 - **通过判定**：只有完整稿（`feynman_submit`）评分 ≥ threshold 才 pass → mastery；
   补答只涨账本与展示进度，不能单独过关（R27 §5）。

@@ -327,6 +327,60 @@ def test_r27_evidence_discipline_downgrades_foreign_quote(client):
         assert not any(e["type"] == "node_mastered" for e in j["events"])
 
 
+# --------------------------------------------------------------------------
+# ④' R30 F5：evidence 最短长度门槛（归一化后 < 6 字视为无效）
+# --------------------------------------------------------------------------
+def test_r30_f5_evidence_min_length_threshold():
+    """极短引文可平凡通过"子串包含" → 归一化后 < 6 字一律判无效（R28 F5 / docs/09 R30）。"""
+    text = "方程是含有未知数的等式；一元一次方程只有一个未知数且最高次数是一。"
+    assert fl.MIN_EVIDENCE_CHARS == 6
+    # 归一化后 2/4/5 字：虽为原文子串，仍判无效
+    assert fl.quote_valid("方程", text) is False
+    assert fl.quote_valid("方程是含", text) is False
+    assert fl.quote_valid("方程是含有", text) is False
+    # 归一化后 6 字（含标点/空白干扰也算数）→ 有效
+    assert fl.quote_valid("方程是含有未", text) is True
+    assert fl.quote_valid("方 程，是 含 有 未", text) is True
+    # 原因文案可区分"过短"与"不在本轮文本中"（错误全中文）
+    assert "过短" in fl.quote_invalid_reason("方程", text)
+    assert "不在本轮提交文本中" in fl.quote_invalid_reason("完全不在这段话里的句子", text)
+
+
+def test_r30_f5_short_quote_downgraded_end_to_end(client):
+    """真实模型给"极短但在文本中"的引文 → 服务端仍标记无效 + 降级（不平凡通过）。"""
+    _reset_node(NODE)
+    sid = _drive_to_feynman(client)
+    good = "方程是含有未知数的等式；一元一次方程只有一个未知数且最高次数是一。"
+
+    class ShortQuoteGateway:
+        name = "fake-r30-f5"
+
+        def feynman_evaluate(self, ctx, *, strategy=None):
+            del strategy
+            return FeynmanEvaluateOut(
+                dimension_scores=[
+                    FeynmanDimScore(key="correctness", score=0.9,
+                                    evidence_quote="方程", comment="极短引文（原文子串）"),
+                    FeynmanDimScore(key="own_words", score=0.8,
+                                    evidence_quote=ctx.transcript[:12], comment="正常长度引文"),
+                ],
+                overall_note="",
+                recommend_action="pass",
+            )
+
+    with _use_gateway(ShortQuoteGateway()):
+        j = _step(client, sid, "feynman_submit", transcript=good)
+
+    card = {d["key"]: d for d in j["payload"]["dimension_scores"]}
+    assert card["correctness"]["evidence_valid"] is False, "极短引文一律无效（R30 F5）"
+    assert card["correctness"]["score"] == pytest.approx(0.9 * fl.EVIDENCE_PENALTY)
+    assert "过短" in card["correctness"]["evidence_reason"]
+    assert card["own_words"]["evidence_valid"] is True
+    assert card["own_words"]["score"] == 0.8
+    assert j["payload"]["evidence_penalty"] is True
+    assert any(e["type"] == "feynman_evidence_flagged" for e in j["events"])
+
+
 def test_r27_gap_check_call_registered_and_light():
     spec = CALLS["feynman_gap_check"]
     assert spec is CALL_FEYNMAN_GAP_CHECK
