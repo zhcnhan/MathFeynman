@@ -89,6 +89,17 @@
 **附带纪律（再次踩到）**：`.ps1` 含中文时**必须有 UTF-8 BOM**，否则 Windows PowerShell 5.1 按 ANSI
 解码 → 中文注释变乱码 → **整脚本语法错误**（本轮 `stop.ps1`/`stop-dsh.ps1` 都因此一度解析失败，
 补 BOM 后 4 个脚本解析错误数全为 0）。纯 ASCII 的脚本（如 `start-dsh.ps1`）无此问题。
+
+**4. `start-dsh.ps1` 端口占用诊断（可读性加固）**：原先只要 3080 有任何 HTTP 响应就断言
+"already serving DSH"，不说**是谁占的**。现改为：
+- `Get-PortOwnerInfo`：`Get-NetTCPConnection` → `netstat -ano` 双路取监听者 PID + 名称 + 命令行；
+- `Test-DshServing`：探 `/api/health`（DSH 返回 JSON；401 亦视为 DSH），
+  经此区分"真是 DSH"与"别的程序占了 3080"；
+- 真 DSH → 照旧只开浏览器并打印占用者；**非 DSH → 中文报错、打印占用者与 `taskkill /PID … /T /F`
+  的解决办法、exit 1**；
+- 顺带把 `-Port` 变成**真参数**（原先硬编码 3080，提示里却让人用 `-Port`，属自相矛盾）。
+实测：3080（现役 DSH）→ 识别 `PID 2864 node.exe`；用普通 `http.server` 占 3999 →
+`Test-PortBusy=True`、`Test-DshServing=False`、占用者 `python.exe` 正确列出。
 - .env：LLM_API_KEY / MF_AUTO_EXTEND / LLM_MAX_TOKENS_PER_DAY；git 三端镜像 git-mirror（GitHub↔Gitee，
   仓库 zhcnhan/颜回（YanHui） 与 gengzisama/颜回（YanHui））。
 - **备份政策（用户 2026-09-10 定，长期有效）**：
