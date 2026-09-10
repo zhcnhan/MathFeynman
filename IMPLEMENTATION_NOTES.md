@@ -2812,3 +2812,12 @@ check(quote, source, *, where=…) -> (bool, str)
 即 `college.c16←high.h47`、`college.c44←high.h06`、`ai.a11←college.c20` 这 3 条跨学段边）。
 校验器实现只比对**同文件内**前置 → **只会漏检、不会误拒**，与架构侧结论一致（**非缺陷**，登记备查）。
 
+### 61.7 本批自曝（纪律）：ad-hoc 探针污染过真实内容库
+
+调试可答性判定时用了一个临时探针脚本（只隔离了 `MF_DB_PATH`，**未隔离 `MF_CONTENT_ROOT`**）
+→ 在**真实 `content/`** 下写入了 `content/subjects/r35probe/`（outline.yaml + 空 materials 目录），
+并被本批第一次提交 `f9e68c8` 一并带上。**处置**：`8b0fe8a` `git rm` 删除 + 磁盘清理 + 复核
+（`content/subjects` 仅 `math/`；`content validate` 仍 ok 25/48；真实库无 `r35probe` 行——探针当时用的是临时库）。
+**教训（写入纪律）**：**调试脚本必须同时隔离 `MF_CONTENT_ROOT` 与 `MF_DB_PATH`**（`conftest.py` 就是这么做的），
+只隔离 DB 不够；提交前一律 `git status` 检查是否混入 `content/` 产物。
+
