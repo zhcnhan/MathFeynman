@@ -241,6 +241,17 @@ class OutlineDraftIn(BaseModel):
     brief: str = ""
 
 
+class OutlineDraftMaterial(BaseModel):
+    """起草输出的单条材料溯源（R36 D2）：材料标题 + 该材料的章节名/逐字引文。
+
+    服务端在 ``outline.materials.check_unit_material`` 里校验（title 必须属于该学科引用库；
+    section 必须是真实章节名或逐字出自材料正文的引文）。
+    """
+
+    title: str = ""
+    section: str = ""
+
+
 class OutlineDraftUnit(BaseModel):
     """AI 起草输出的单个大纲单元（终稿由 outline.finalize 收尾：id 化/修剪/校验）。"""
 
@@ -251,6 +262,9 @@ class OutlineDraftUnit(BaseModel):
     prereqs: list[str] = Field(default_factory=list)  # 更早单元本地序（u01…）或既有单元 id
     difficulty: int = 2
     requires_thinking: bool = False
+    # R36 D2：逐单元材料溯源。**必须在此声明**——pydantic 默认丢弃未声明字段，
+    # 漏声明会让"模型给了引用、服务端却收到空数组"（活体冒烟 2026-09-10 实测踩到，已加固用例）。
+    materials: list[OutlineDraftMaterial] = Field(default_factory=list)
 
 
 class OutlineDraftOut(BaseModel):

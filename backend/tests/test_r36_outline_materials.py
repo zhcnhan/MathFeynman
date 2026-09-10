@@ -372,6 +372,27 @@ def test_p2_p3_p4_constraints_are_in_draft_prompt(app_client, ai_provider):
         app_client.delete(f"/api/subjects/{sid}?hard=true")
 
 
+# ---------- 接线加固：AI 输出 schema 必须携带 materials ----------
+
+def test_outline_draft_call_schema_carries_material_citations():
+    """R36 D2 接线锁：``CALL_OUTLINE_DRAFT`` 的**输出 schema 必须声明 materials**。
+
+    背景（活体冒烟 2026-09-10 实测踩到）：provider 用 ``model_validate`` 校验输出，
+    pydantic 默认**丢弃未声明字段** —— schema 漏声明时"模型给了引用、服务端收到空数组"，
+    溯源链路静默失效（假 provider 的单测**测不出**这一类接线缺口，故单独立锁）。
+    """
+    from app.ai.calls import CALL_OUTLINE_DRAFT
+
+    parsed = CALL_OUTLINE_DRAFT.output_schema.model_validate({
+        "units": [{"title": "第一讲", "difficulty": 1,
+                   "materials": [{"title": "天文学入门讲义", "section": "第 1 页"}]}],
+    })
+    unit = parsed.units[0]
+    assert unit.materials, "输出 schema 丢失了 materials —— D2 溯源链路会静默失效"
+    assert unit.materials[0].title == "天文学入门讲义"
+    assert unit.materials[0].section == "第 1 页"
+
+
 # ---------- 引文尺子单一来源 ----------
 
 def test_citation_ruler_is_shared_with_feynman_evidence():
