@@ -2474,7 +2474,9 @@ sessions 3 / attempts 31 / subjects 2 / concepts 113）。根因＝`.env` 的 `M
   `const math = subs.subjects.find((x) => x.id === "math"); setMathEnabled(math ? math.enabled : true);`
   → math 停用时该列表为空 → `find` 得 `undefined` → **回退成 `true`** → L95 `mathEnabled === false`
   的横幅（L96–99 中文提示"预置学科（数学）已停用…"）**不渲染**。
-- 实测接口：`GET /api/subjects` → `{"subjects":[]}`（与上述推断一致）。
+- 实测接口：`GET /api/subjects` → `{"subjects":[]}`；**按前端原逻辑对活接口复刻演算**（本会话执行）：
+  `find(math)=None` → `mathEnabled=True` → 横幅条件 `mathEnabled === false` 为 **False**
+  → **中文停用提示实际"不会显示"**。
 - 拟修（**一行，待架构裁决，本批严禁改逻辑故只登记**）：改取 `"/subjects?include_removed=1"`
   （回退表达式可保持不变）。
 
