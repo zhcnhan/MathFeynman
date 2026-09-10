@@ -42,7 +42,28 @@
   b) **真人浏览器验收（用户动作）**：遗留会话 `s-f2decfcf.u01:a7689b7ebf` 走"首讲 → 补答 → 整合重讲"；
      真实 SearXNG 端到端、PDF 上传 UI、math 停用/重启用演示、材料可追溯重生成；
   c) 数学内容（roadmap 到段精核/内容懒生成）持续治理项照旧。
-- 下一枚裁决编号：**R33**（R31 已被 R30 验收裁决占用；R32 已用于立心批验收）。
+- 下一枚裁决编号：**R35 已出（可答性 · 产品级）；下一枚 R36**。
+
+### 3.1 学习数据清空（用户指令 · 2026-09-10 由架构侧直办）
+
+用户为**测试"生成大纲"**要求清空现有大纲/题库/进度，并**直接删掉行星科学**。执行与状态：
+
+- **先归档**（不可逆操作前的退路）：
+  `_backups\yanhui-before-wipe-20260910-170347\`（数据库三件套 + `stages`/`subjects`/`roadmap` 全量
+  42 文件 + `db_snapshot.json` 全表导出）；清空后另存新基线 `_backups\yanhui-after-wipe-20260910-170452\`。
+- **行星科学**：`DELETE /subjects/s-f2decfcf?hard=true` → 204（内容文件 + 大纲 + 材料 + 注册行
+  一并物理删除）。
+- **数学**：`DELETE /subjects/math`（preset 仅可停用）→ 204：`enabled=0`、进度与概念证据清空，
+  **大纲/roadmap 留盘可重新启用**（258 单元大纲文件仍在）。
+- **进度清空**：`user_nodes`/`sessions`/`attempts`/`reviews`/`user_concepts`/`feedback`/`relearn_logs`
+  归零；3 行行星科学残节点（enabled=0）删除。
+- **清空后新基线**：`subjects=1(math,禁用)`、`nodes=25`（math 内容）、`edges=28`、
+  `concepts=83`（注册表，非进度），其余全 0；dashboard 全 0、graph 0 节点 0 边；前端 5173 正常。
+- 另清掉 `content/subjects/` 下两个历史空壳目录（`s-14e1e9d1`、`s-3f9fbc5f`）。
+- **数学未彻底删**（preset 不支持 hard；且它是"从零建学科"的对照）。若要走**纯白纸**（连 25 个
+  math 内容文件一并清），属另一条指令。
+- **运行期 auto 内容**（走查时生成的 `node_primary_s27_auto.md` 等）当前**未入库**；
+  "auto 内容是否自动纳入 git"待用户定口径（架构侧倾向：纳入，因其即内容库）。
 
 
 ## 4. 常见口径（前车之鉴，直接沿用）
