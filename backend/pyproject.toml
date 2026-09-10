@@ -1,7 +1,7 @@
 [project]
 name = "yanhui-backend"
 version = "0.1.0"
-description = "YanHui 后端：本地单机 AI 数学导师（图谱/判题/会话状态机/复习/费曼）"
+description = "YanHui 后端：通用费曼学习教练（任意学科；数学为首个预置学科）——图谱/判题/会话状态机/复习与费曼闭环"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110",

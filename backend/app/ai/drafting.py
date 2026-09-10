@@ -28,7 +28,7 @@ def _draft_messages(spec: dict) -> list[dict]:
     与 JSON 模式冲突 → 400（R13 补记）。
     """
     system = (
-        "你是数学教学内容编辑。本次必须输出 JSON（不要输出 JSON 以外的任何文字），"
+        "你是学科教学内容编辑（数学 / 科学 / 人文同一套纪律）。本次必须输出 JSON（不要输出 JSON 以外的任何文字），"
         "格式：{\"draft_md\": \"<完整节点 .md 文件内容，作为单个 JSON 字符串>\"}。"
         "draft_md 内的换行请用 \\n 转义。draft_md 是 YanHui content 节点文件，"
         "**必须包含全部必填字段且 key 拼写与本骨架一致**：\n"
