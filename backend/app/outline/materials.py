@@ -394,11 +394,15 @@ def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
     - ``blocked``：健康度不合格（扫描/图片版）而被挡下的材料 ``[{title, note}]``（S7）；
     - ``ledger``：本次就地账目（**就地提示**通道；同时已落总账）。
 
-    预算纪律（R37＋R38 §3）：默认**不省成本**（``MF_MATERIAL_INJECT_MAX_CHARS=0``）——整本书按结构
-    完整注入，仅按 ``MF_MATERIAL_BATCH_CHARS`` 在章/页边界分成多次调用；**预算上限＝单次调用预算**
-    （取 ``min(预算, 分批阈值)``），**不因预算小就丢章节**（单节超预算时整节注入，宁可不截断）。
-    R38 A4 安全阀：按"字符 ≈ token"粗估，若**将超过模型上下文窗口** → 不硬发，改为**自动分批**
-    并中文说明"本书较大，已分 N 批处理"（**任何情况不得静默失败**）。
+    预算纪律（R37＋R38 §3 ＋ **R42 A**）：
+    - **滑块 A（单次调用预算）**：默认不省成本，书太大按 ``MF_MATERIAL_BATCH_CHARS`` 在章/页边界
+      分批；**调小只分更多批，绝不丢章节**（``dropped`` 恒空、覆盖账不变）；
+    - **滑块 B（总注入上限 `MF_MATERIAL_INJECT_MAX_CHARS`）**：**真硬上限**（R41 §3-① 裁定）——
+      跨批次累计注入字符，到顶后**在章/节边界停止**，剩余章节**整条不注入**，
+      每一处未注入都进账本（中文原因）+ 进 ``usage.not_injected``（``reason=总注入上限``）；
+      默认 0 = 不限，此时**行为与 R38 逐字一致**；
+    - R38 A4 安全阀：按"字符 ≈ token"粗估，若**将超过模型上下文窗口** → 不硬发，改为**自动分批**
+      并中文说明"本书较大，已分 N 批处理"（**任何情况不得静默失败**）。
     """
     from ..service import ledger
 
@@ -432,15 +436,20 @@ def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
                                                 ("limit_chars", "context_tokens", "batch_count")}},
         )
     batches = valve["batches"]
-    # R38 A1/滑块 B：**总注入上限**是"花费天花板"的事实报告（**绝不为了上限丢章节**）
-    cap_info = _inject_cap_note(batches, max_chars, subject_id)
+    # **R42 A：滑块 B「总注入上限」＝真硬上限**（架构侧 R41 §3-①）——
+    # 跨批次累计到顶后**在章/节边界停止**，剩余章节整条不注入；每一处未注入都记账 + 进 not_injected。
+    # ⚠️ cap=0（默认/不限）时不改变任何行为（与 R38 逐字一致）。
+    batches, cap_skipped, cap_info = _apply_inject_cap(batches, max_chars, subject_id)
+    if cap_info["configured"]:
+        _note_inject_cap_skips(cap_skipped, index, cap_info, subject_id)
     used = sum(len(b["text"]) for b in batches)
-    # R38 B1：任何因预算/取文策略未纳入的材料或章节都**显式列出**（覆盖账里看得见）
-    unmapped = _unmapped_entries(index, blocks)
+    # R38 B1：任何**未被注入**的章/节都显式列出（含健康度挡下、未进批次、**因总上限跳过**三种原因）
+    unmapped = _unmapped_entries(index, blocks) + _cap_skip_entries(cap_skipped, index)
     for u in unmapped:
         ledger.note(
             ledger.CAT_MATERIAL, f"材料《{u['material']}》· {u['label']}",
-            "该章/节**未被注入任何批次**（不在任何材料块里）：" + str(u.get("note") or "未知原因"),
+            (u.get("reason_zh") or "该章/节**未被注入任何批次**（不在任何材料块里）")
+            + ("：" + str(u.get("note") or "") if u.get("note") else ""),
             impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
             detail={"kind": "entry_not_injected", **u},
         )
@@ -449,6 +458,19 @@ def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
                     impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
                     detail={"kind": "no_material"})
     per_material = _per_material_usage(index, batches)
+    cap_detail = {
+        "configured": bool(cap_info.get("configured")),
+        "cap": int(cap_info.get("cap") or 0),
+        "used_chars": int(cap_info.get("used_chars") or 0),
+        "remaining": int(cap_info.get("remaining") or 0),
+        # **R42 A3-⑤：预算视图必须能显示"因总上限未注入的章节数"**（不许两处都没有）
+        "skipped_count": int(cap_info.get("skipped_count") or 0),
+        "skipped_batches": int(cap_info.get("skipped_batches") or 0),
+        "skipped_chars": int(cap_info.get("skipped_chars") or 0),
+        "skipped_labels": list(cap_info.get("skipped_labels") or []),
+        "first_batch_over_cap": bool(cap_info.get("first_batch_over_cap")),
+        "skipped_by_material": _cap_skips_by_material(cap_skipped, index),
+    }
     usage = {
         "used_chars": used, "batches": len(batches),
         "injected_chars_per_batch": [len(b["text"]) for b in batches],
@@ -456,7 +478,7 @@ def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
         "blocked": blocked, "not_injected": unmapped,
         "truncated": False, "dropped": [],
         "order_basis": order_basis(index),
-        "inject_cap": cap_info,
+        "inject_cap": cap_detail,
         "context_valve": {"applied": bool(valve["applied"]), "limit_chars": valve["limit_chars"],
                           "context_tokens": valve["context_tokens"]},
     }
@@ -627,12 +649,18 @@ def _budget_zh(v) -> str:
 
 
 def budget_view(db, subject_id: str) -> dict:
-    """R38 A1 必显数据：两档当前值 + 来源 + 上一轮实际注入总量与批次数 + 逐材料明细。"""
+    """R38 A1 必显数据（**R42 A3-⑤ 增补**）：两档当前值 + 来源 + 上一轮实际注入总量/批次数
+    + **因总注入上限未注入的章节数** + 逐材料明细。
+
+    ⚠️ **两个滑块的承诺不同**（R42 A1，界面必须分开写清）：
+    滑块 A 调小只是分更多批（不丢章节）；滑块 B 是**真上限**（超了就真的不注入，但明说哪些没进去）。
+    """
     eff = resolve_budget(db, subject_id)
     index = _material_index(db, subject_id)
     blocks = _full_blocks(index)
     valve = context_valve(db, batch_chars=int(eff["per_call_chars"]), blocks=blocks)
-    used = sum(len(b["text"]) for b in valve["batches"])
+    keep, skipped, cap = _apply_inject_cap(valve["batches"], int(eff["inject_max_chars"]), subject_id)
+    used = sum(len(b["text"]) for b in keep)
     row = outline_store.get_subject(db, subject_id)
     meta = dict((row.meta_json if row is not None else None) or {})
     return {
@@ -648,16 +676,42 @@ def budget_view(db, subject_id: str) -> dict:
             "batch": [{"label": lb, "value": v} for lb, v in BATCH_TIERS],
             "inject": [{"label": lb, "value": v} for lb, v in INJECT_TIERS],
         },
+        # R42 A1：两个滑块各自的承诺（前端直接渲染，**不许**一句话糊两个滑块）
+        "promises_zh": {
+            "batch_chars": "调小「单次调用预算」→ 只是分更多批，**一个章节都不会少学**"
+                           "（丢弃恒空、覆盖账不变）",
+            "inject_max_chars": "「总注入上限」是**真上限**：超了就真的不再注入，"
+                                "但**每一处没进去的章节都会被明确列出 + 中文原因**",
+        },
         "last_usage": {
             "used_chars": used,
-            "batch_count": len(valve["batches"]),
-            "per_material": _per_material_usage(index, valve["batches"]),
+            "batch_count": len(keep),
+            "per_material": _per_material_usage(index, keep, skipped),
             "truncated": False,
             "dropped": [],
             "order_basis": order_basis(index),
-            "summary_zh": (f"共注入 {used:,} 字，分 {len(valve['batches'])} 批"
-                           if valve["batches"] else "尚无材料可注入"),
+            "summary_zh": (f"共注入 {used:,} 字，分 {len(keep)} 批"
+                           if keep else "尚无材料可注入"),
+            # R42 A2：因总注入上限未注入的章节数（**不许两处都没有**）
+            "cap_skipped_count": int(cap.get("skipped_count") or 0),
+            "cap_skipped_labels": list(cap.get("skipped_labels") or []),
+            "cap_skipped_by_material": _cap_skips_by_material(skipped, index),
             "note_zh": "调小「单次调用预算」只会分成更多批，**不会少学章节**（覆盖账不变）",
+            "cap_note_zh": (
+                f"因「总注入上限」{int(cap.get('cap') or 0):,} 字已用完，本教材有 "
+                f"{int(cap.get('skipped_count') or 0)} 章/节**未纳入**（已在下方向你列明）"
+                if int(cap.get("skipped_count") or 0) else ""),
+        },
+        "inject_cap": {
+            "configured": bool(cap.get("configured")),
+            "cap": int(cap.get("cap") or 0),
+            "used_chars": int(cap.get("used_chars") or 0),
+            "remaining": int(cap.get("remaining") or 0),
+            "skipped_count": int(cap.get("skipped_count") or 0),
+            "skipped_chars": int(cap.get("skipped_chars") or 0),
+            "skipped_labels": list(cap.get("skipped_labels") or []),
+            "skipped_by_material": _cap_skips_by_material(skipped, index),
+            "first_batch_over_cap": bool(cap.get("first_batch_over_cap")),
         },
         "context_valve": {"applied": bool(valve["applied"]), "context_tokens": valve["context_tokens"],
                           "limit_chars": valve["limit_chars"]},
@@ -667,7 +721,7 @@ def budget_view(db, subject_id: str) -> dict:
                        "healthy": m["text_health"]["healthy"], "chars": len(m.get("body") or ""),
                        "entries": len((m["structure"] or {}).get("entries") or []),
                        "note": m["text_health"]["note"]} for m in index],
-        "not_injected": _unmapped_entries(index, blocks),
+        "not_injected": _unmapped_entries(index, blocks) + _cap_skip_entries(skipped, index),
     }
 
 
@@ -717,24 +771,32 @@ def _ordered(index: list[dict]) -> list[dict]:
     return sorted(index, key=lambda m: 0 if (m.get("role_explicit") and m.get("role") == ROLE_MAIN) else 1)
 
 
-def _per_material_usage(index: list[dict], batches: list[dict]) -> list[dict]:
-    """逐材料吸纳明细（注入了多少字 / 几批 / 哪些章进了批次）。"""
+def _per_material_usage(index: list[dict], batches: list[dict],
+                        skipped: list[dict] | None = None) -> list[dict]:
+    """逐材料吸纳明细（注入了多少字 / 几批 / 哪些章进了批次 / **哪些因总上限被跳过**）。"""
     label_to_material: dict[str, str] = {}
     for m in index:
         for e in (m["structure"] or {}).get("entries") or []:
             label_to_material[str(e.label)] = m["title"]
-    injected: dict[str, int] = {m["title"]: 0 for m in index}
     batch_of: dict[str, set[int]] = {m["title"]: set() for m in index}
     for i, b in enumerate(batches):
         for lab in b.get("labels") or []:
             title = label_to_material.get(str(lab))
             if title:
-                injected[title] = injected.get(title, 0) + len(str(lab))
                 batch_of.setdefault(title, set()).add(i + 1)
+    skipped_of: dict[str, list[str]] = {m["title"]: [] for m in index}
+    for b in skipped or []:
+        for src in _block_sources(b):
+            title = str(src.get("material") or "")
+            if not title:
+                title = label_to_material.get(str(src.get("label") or ""), "")
+            if title:
+                skipped_of.setdefault(title, []).append(str(src.get("label") or ""))
     out = []
     for m in index:
         ent = (m["structure"] or {}).get("entries") or []
         chars_total = len(m.get("body") or "")
+        skipped_labels = skipped_of.get(m["title"]) or []
         out.append({
             "material_id": m["id"], "title": m["title"],
             "role": m.get("role") or ROLE_UNSET,
@@ -744,8 +806,11 @@ def _per_material_usage(index: list[dict], batches: list[dict]) -> list[dict]:
             "entries_total": len(ent),
             "entries_chars_total": sum(int(e.chars) for e in ent),
             "batches": sorted(batch_of.get(m["title"]) or []),
-            "injected": m["text_health"]["healthy"],
+            "injected": m["text_health"]["healthy"] and not skipped_labels,
             "blocked_reason": "" if m["text_health"]["healthy"] else m["text_health"]["note"],
+            # R42：因**总注入上限**跳过的章/节（按材料分组，供界面就地展示）
+            "cap_skipped": skipped_labels,
+            "cap_skipped_count": len(skipped_labels),
         })
     return out
 
@@ -844,34 +909,123 @@ def _split_block_at_pages(block: dict, limit: int) -> list[dict]:
              "chars": p.chars} for p in parts]
 
 
-def _inject_cap_note(batches: list[dict], inject_max_chars: int, subject_id: str) -> dict:
-    """R38 滑块 B（**总注入上限**）的如实报告。
+def _apply_inject_cap(batches: list[dict], inject_max_chars: int,
+                      subject_id: str) -> tuple[list[dict], list[dict], dict]:
+    """**R42 A（架构侧 R41 §3-① 裁定）**：滑块 B「总注入上限」＝**真硬上限**。
 
-    ⚠️ **不为满足上限而丢章节**（R38 A3 ＋ R39 铁则）：用户明示"不省成本、要教材真源"，
-    所以这里是**花费事实 + 可选裁剪入口**，不是静默削减——
-    - 用户想要更省的生成 → 调**滑块 A（单次调用预算）**，那只会分更多批、不会少学章节；
-    - 上限被越过 → 逐条写账本（总账/就地可见），把"实际花了多少"摆到台面上。
+    与滑块 A 的承诺**不同**（这是本批最重要的一句话）：
+
+    - **滑块 A（单次调用预算）**：调小 → 只是分更多批，**绝不丢章节**（``dropped`` 恒空、覆盖账不变）；
+    - **滑块 B（总注入上限）**：**是真上限**——跨批次累计正文注入字符，到达上限后**在章/节边界停止**，
+      剩余章节**整条不注入**；但**每一处未注入都必须在账本里有中文原因 + 覆盖账显式列出**
+      （不许静默截断、不许"名不副实地不封顶"）。
+
+    口径：
+    - 累计量＝已装入批次的 ``len(text)`` 之和（跨批次递增）；
+    - 触顶后**不再装入**后续批次——按章/节边界整条停，**绝不在句子中间截断**；
+    - 首批总是装入（单个章/节是原子单位；宁可不截断，也不"设了上限就一章都不给"）；
+    - ``cap <= 0`` → 不限，**行为与 R38 逐字一致**（不动任何东西）。
+
+    返回 ``(kept, skipped, info)``；``info`` 含 ``configured / cap / used_chars / remaining /
+    skipped_count / skipped_chars / skipped_labels / first_batch_over_cap``。
     """
     cap = int(inject_max_chars or 0)
-    total = sum(len(str(b.get("text") or "")) for b in batches)
     if cap <= 0:
-        return {"configured": False, "cap": 0, "would_inject_chars": total, "exceeded": False}
-    exceeded = total > cap
-    if exceeded:
-        from ..service import ledger
+        return list(batches), [], {"configured": False, "cap": 0,
+                                   "used_chars": sum(len(str(b.get("text") or "")) for b in batches),
+                                   "remaining": -1, "skipped_count": 0, "skipped_chars": 0,
+                                   "skipped_labels": [], "first_batch_over_cap": False}
+    kept: list[dict] = []
+    skipped: list[dict] = []
+    used = 0
+    for b in batches:
+        blen = len(str(b.get("text") or ""))
+        # 首批无条件装入（章/节是原子单位：宁可不截断，也不"一章都不给"）
+        if not kept or used + blen <= cap:
+            kept.append(b)
+            used += blen
+            continue
+        skipped.append(b)
+    skipped_chars = sum(len(str(b.get("text") or "")) for b in skipped)
+    skipped_labels = [_block_labels(b) for b in skipped]
+    skipped_labels = [lb for group in skipped_labels for lb in group]
+    first_over = bool(kept) and used > cap
+    info = {"configured": True, "cap": cap, "used_chars": used,
+            "remaining": max(0, cap - used), "skipped_count": len(skipped_labels),
+            "skipped_batches": len(skipped), "skipped_chars": skipped_chars,
+            "skipped_labels": skipped_labels, "first_batch_over_cap": first_over}
+    return kept, skipped, info
 
+
+def _block_labels(block: dict) -> list[str]:
+    """块/批次的标签集合（批次用 ``labels``，单块用 ``label``）。"""
+    labels = [str(x) for x in (block.get("labels") or [])]
+    if not labels and block.get("label"):
+        labels = [str(block.get("label"))]
+    return labels
+
+
+def _cap_skip_entries(skipped: list[dict], index: list[dict]) -> list[dict]:
+    """被总注入上限**跳过**的章/节（逐条给中文原因，进 ``not_injected`` 与账本）。"""
+    by_id = {str(m["id"]): m for m in index}
+    out: list[dict] = []
+    for b in skipped:
+        for src in _block_sources(b):
+            mid = str(src.get("material_id") or "")
+            m = by_id.get(mid) or {}
+            out.append({
+                "material": str(src.get("material") or m.get("title") or ""),
+                "material_id": mid,
+                "label": str(src.get("label") or ""),
+                "chars": int(src.get("chars") or 0),
+                "reason": "总注入上限",
+                "reason_zh": "因「总注入上限」已用完，本章/节未注入",
+                "note": "该章/节因「总注入上限」已用完而**未注入**（按章/节边界整条停止，未截断正文）",
+            })
+    return out
+
+
+def _cap_skips_by_material(skipped: list[dict], index: list[dict]) -> list[dict]:
+    """因总注入上限跳过的章节，**按材料分组**（覆盖账/预算视图用；R42 A2/A3）。"""
+    by_id = {str(m["id"]): m for m in index}
+    buckets: dict[str, dict] = {}
+    for b in skipped:
+        for src in _block_sources(b):
+            mid = str(src.get("material_id") or "")
+            title = str(src.get("material") or (by_id.get(mid) or {}).get("title") or "")
+            bucket = buckets.setdefault(mid, {"material_id": mid, "title": title, "items": []})
+            bucket["items"].append({"label": str(src.get("label") or ""),
+                                    "chars": int(src.get("chars") or 0),
+                                    "reason_zh": "因「总注入上限」已用完，本章/节未注入"})
+    return list(buckets.values())
+
+
+def _note_inject_cap_skips(skipped: list[dict], index: list[dict], info: dict,
+                           subject_id: str) -> None:
+    """R42 A2：**每一处未注入都写一条中文账目**（不是只写一条汇总）。"""
+    from ..service import ledger
+
+    cap = int(info.get("cap") or 0)
+    if info.get("first_batch_over_cap"):
         ledger.note(
             ledger.CAT_MATERIAL, "材料注入（总注入上限）",
-            f"本次**实际注入 {total:,} 字**，超过你设定的总注入上限 {cap:,} 字"
-            f"（超出 {total - cap:,} 字）：为不丢任何章节，系统仍按批次完整注入；"
-            "想要更省，请调小「单次调用预算」（只分更多批，**不会少学章节**），"
-            "或把「总注入上限」设为 0（不限）以免误解",
+            f"你设定的总注入上限 {cap:,} 字**小于第一章/节本身**：为不截断正文，首批仍整章注入"
+            f"（实际 {int(info.get('used_chars') or 0):,} 字，超出 {max(0, int(info.get('used_chars') or 0) - cap):,} 字）——"
+            "请调大上限或设 0（不限），或改用「单次调用预算」分更多批（那样不会少学章节）",
             impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
-            detail={"kind": "inject_cap_exceeded", "cap": cap, "used_chars": total,
-                    "exceeded_chars": total - cap},
+            detail={"kind": "inject_cap_first_over", "cap": cap,
+                    "used_chars": int(info.get("used_chars") or 0)},
         )
-    return {"configured": True, "cap": cap, "would_inject_chars": total, "exceeded": exceeded,
-            "exceeded_chars": max(0, total - cap)}
+    entries = _cap_skip_entries(skipped, index)
+    for e in entries:
+        ledger.note(
+            ledger.CAT_MATERIAL, f"材料《{e['material']}》· {e['label']}",
+            f"总注入上限 {cap:,} 字已用完，**本章/节未注入**（已注入 {int(info.get('used_chars') or 0):,} 字）——"
+            "按章/节边界整条停止，**未在句中截断**；调大上限或设 0（不限）后重新起草即可全部纳入",
+            impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
+            detail={"kind": "inject_cap_skipped", "cap": cap, "label": e["label"],
+                    "material": e["material"], "chars": e["chars"]},
+        )
 
 
 def _make_batches(blocks: list[dict], batch_chars: int) -> list[dict]:
@@ -900,9 +1054,28 @@ def _make_batches(blocks: list[dict], batch_chars: int) -> list[dict]:
 
 def _batch_of(blocks: list[dict]) -> dict:
     text = "\n\n".join(b["text"] for b in blocks)
+    materials = sorted({b["material"] for b in blocks})
     return {"text": text, "used_chars": len(text),
             "labels": [b["label"] for b in blocks],
-            "materials": sorted({b["material"] for b in blocks})}
+            "materials": materials,
+            # R42 A：批次保留"主要来源材料"（单材料批直给；跨材料批给材料列表）
+            # ——用于「因总注入上限未注入」按材料分组（R42 A2/A3 的界面口径）。
+            "material": materials[0] if len(materials) == 1 else "、".join(materials),
+            "material_ids": sorted({str(b.get("material_id") or "") for b in blocks}),
+            "blocks": [{"material": b["material"], "material_id": b.get("material_id", ""),
+                        "label": b["label"], "chars": len(str(b.get("text") or ""))}
+                       for b in blocks]}
+
+
+def _block_sources(block: dict) -> list[dict]:
+    """批次（或单块）里的**逐块来源**：``[{material, material_id, label, chars}]``。"""
+    src = block.get("blocks")
+    if src:
+        return [dict(x) for x in src]
+    return [{"material": str(block.get("material") or ""),
+             "material_id": str(block.get("material_id") or ""),
+             "label": str(block.get("label") or ""),
+             "chars": len(str(block.get("text") or ""))}]
 
 
 def valid_sections(hit: dict) -> set[str]:
@@ -1211,6 +1384,14 @@ def coverage_ledger(db, subject_id: str) -> dict:
     doc = outline_store.get_outline(subject_id)
     units = list(doc.units) if doc is not None else []
     mapping = _covered_entries(units, index)
+    # **R42 A3：覆盖账如实降** —— 因「总注入上限」未注入的章节，即便有单元映射也**不算真覆盖**
+    # （"没喂给模型"就谈不上"覆盖"）；同时在 not_injected 里说明它们去哪了。
+    blocks = _full_blocks(index)
+    eff = resolve_budget(db, subject_id)
+    valve = context_valve(db, batch_chars=int(eff["per_call_chars"]), blocks=blocks)
+    _keep, _skipped, cap = _apply_inject_cap(valve["batches"], int(eff["inject_max_chars"]), subject_id)
+    cap_skips = _cap_skip_entries(_skipped, index)
+    skipped_keys = {(str(x.get("material_id") or ""), str(x.get("label") or "")) for x in cap_skips}
     entries: list[dict] = []
     uncovered: list[str] = []
     page_total = 0
@@ -1218,15 +1399,22 @@ def coverage_ledger(db, subject_id: str) -> dict:
     for m in index:
         for e in (m.get("structure") or {}).get("entries") or []:
             hit = sorted(set(mapping.get((m["id"], e.label)) or []))
-            if not hit:
+            cap_skipped = (str(m["id"]), str(e.label)) in skipped_keys
+            covered = bool(hit) and not cap_skipped
+            if not covered:
                 uncovered.append(f"{m['title']} · {e.label}")
             pages = list(e.pages)
             page_total += len(pages)
-            if hit:
+            if covered:
                 page_covered += len(pages)
             entries.append({"material": m["title"], "material_id": m["id"], "label": e.label,
                             "chapter": e.chapter, "chars": e.chars, "sections": list(e.sections),
-                            "pages": pages, "units": hit, "covered": bool(hit)})
+                            "pages": pages, "units": hit, "covered": covered,
+                            # R42：这一条"去哪了"（可解释性——不许凭空消失）
+                            "not_injected_reason": ("总注入上限" if cap_skipped
+                                                    else ("" if covered else "无单元映射/未注入")),
+                            "reason_zh": ("因「总注入上限」未注入（覆盖账如实降）" if cap_skipped
+                                          else ("" if covered else "尚无单元映射到本章/节"))})
     # R38 B1：按材料分组统计（覆盖账跨全部材料）
     by_material: list[dict] = []
     uncovered_by_material: list[dict] = []
@@ -1244,6 +1432,9 @@ def coverage_ledger(db, subject_id: str) -> dict:
             "pages": sum(len(e["pages"]) for e in mine),
             "healthy": m["text_health"]["healthy"],
             "note": m["text_health"]["note"],
+            # R42 A3：本材料因「总注入上限」未注入的章节（覆盖账里看得出"它去哪了"）
+            "cap_skipped": [x["label"] for x in cap_skips if x["material_id"] == m["id"]],
+            "cap_skipped_count": len([x for x in cap_skips if x["material_id"] == m["id"]]),
         })
         if miss:
             uncovered_by_material.append({
@@ -1276,6 +1467,18 @@ def coverage_ledger(db, subject_id: str) -> dict:
         "total": len(entries),
         "covered": len(entries) - len(uncovered),
         "uncovered": uncovered,
+        # R42 A3：**未纳入清单**（三种原因：健康度不合格 / 未进批次 / **总注入上限**），
+        # 覆盖账与预算视图同源——"每一处没进去的都必须能解释"。
+        "not_injected": (_unmapped_entries(index, blocks) + cap_skips),
+        "inject_cap": {
+            "configured": bool(cap.get("configured")),
+            "cap": int(cap.get("cap") or 0),
+            "used_chars": int(cap.get("used_chars") or 0),
+            "remaining": int(cap.get("remaining") or 0),
+            "skipped_count": int(cap.get("skipped_count") or 0),
+            "skipped_labels": list(cap.get("skipped_labels") or []),
+            "skipped_by_material": _cap_skips_by_material(_skipped, index),
+        },
         "page_total": page_total,
         "page_covered": page_covered,
         "by_material": by_material,

@@ -184,12 +184,15 @@ def test_r37_s1_injection_defaults_to_unlimited_and_grows_with_book(app_client):
         assert pack["used_chars"] > len(big)
         assert pack["used_chars"] >= sum(e.chars for m in pack["index"]
                                          for e in m["structure"]["entries"])
-        # 显式设上限 → **单次调用预算**（分批，不丢章节；R37/R38 §3 ＋ R39 铁则）
+        # 显式调小**单次调用预算（滑块 A）** → 分批，**不丢章节**（R37/R38 §3 ＋ R39 铁则）
+        # ⚠️ R42 A：`max_chars=`/`inject_max_chars=` 现在是**总注入上限（滑块 B，真硬上限）**，
+        # 语义不同（会真的少注入后段章节）；"调小不丢章节"的承诺归属**滑块 A**＝`batch_chars=`。
         with SessionLocal() as db:
-            capped = mat.draft_materials(db, sid, max_chars=500)
+            capped = mat.draft_materials(db, sid, batch_chars=500)
         assert capped["per_call_chars"] == 500
         assert capped["dropped"] == [] and capped["truncated"] is False
         assert capped["batch_count"] >= 2
+        assert capped["usage"]["inject_cap"]["skipped_count"] == 0, "滑块 A 不得跳过任何章节"
         from app.content import citations
 
         flat = lambda p: "\n".join(b["text"] for b in p["batches"])  # noqa: E731
@@ -224,7 +227,9 @@ def test_r37_s1_large_book_is_batched_by_structure(app_client, monkeypatch):
 
 
 def test_r37_s1_small_budget_still_covers_every_chapter(app_client, monkeypatch):
-    """**R38 §3 共存口径**：把单次预算调小 → 只改"每次喂多少"，**章节一个不丢**（覆盖账不变）。"""
+    """**R38 §3 共存口径**：把**单次调用预算（滑块 A）**调小 → 只改"每次喂多少"，
+    **章节一个不丢**（覆盖账不变）。⚠️ R42 A：`max_chars=` 已是**总上限（滑块 B，真硬上限）**，
+    语义不同；"不丢章节"的承诺归属 `batch_chars=`。"""
     from app.db import SessionLocal
     from app.outline import materials as mat
 
@@ -232,11 +237,12 @@ def test_r37_s1_small_budget_still_covers_every_chapter(app_client, monkeypatch)
     try:
         _add_material(app_client, sid)                      # 两章伪教材
         with SessionLocal() as db:
-            unlimited = mat.draft_materials(db, sid, max_chars=0)
-            tight = mat.draft_materials(db, sid, max_chars=60)   # 远小于单章字数
+            unlimited = mat.draft_materials(db, sid, batch_chars=0)
+            tight = mat.draft_materials(db, sid, batch_chars=60)   # 远小于单章字数
         assert tight["dropped"] == [] and tight["truncated"] is False
         assert tight["per_call_chars"] == 60
         assert tight["batch_count"] >= 2
+        assert tight["usage"]["inject_cap"]["skipped_count"] == 0, "滑块 A 不得跳过任何章节"
         flat = lambda p: "\n".join(b["text"] for b in p["batches"])  # noqa: E731
         assert CHAPTER_1 in flat(tight) and CHAPTER_2 in flat(tight), "预算调小不得丢章节"
         from app.content import citations
