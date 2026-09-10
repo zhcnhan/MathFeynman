@@ -121,14 +121,89 @@ def new_flow() -> dict[str, Any]:
     }
 
 
-def _backfill_feynman_keys(f: dict[str, Any]) -> None:
-    """R29：回填 R27 之前老会话缺失的费曼键（answers_done / ledger / followup_gap …）。
+# --------------------------------------------------------------------------
+# R29 引申（R30）：flow schema 演进的**单一自愈入口**（读会话即深度补齐 + 类型校验）
+#
+# R29 热修曾用 `_backfill_feynman_keys(f)` 单点回填费曼键；本批按裁决收敛为 `_ensure_flow_shape`
+# （超集：费曼键 + practice 子键 + ledger 结构 + lecture_cache + stage/类型校验），
+# 热修行为与回归用例（test_r27_legacy_session.py）保持不变。
+# --------------------------------------------------------------------------
+# 各子键的期望类型（None 一并列出 = 允许空值；bool 是 int 子类，故数值判断宽松）
+_PRACTICE_SHAPE: dict[str, tuple[type, ...]] = {
+    "issued": (int,),
+    "streak": (int,),
+    "streak_min": (int, float, type(None)),
+    "attempts_this": (int,),
+    "hints_this": (int,),
+    "current": (dict, type(None)),
+    "passed": (bool,),
+    "cap_reached": (bool,),
+    "excluded": (list,),
+}
+_FEYNMAN_SHAPE: dict[str, tuple[type, ...]] = {
+    "rounds_done": (int,),
+    "passed": (bool,),
+    "last_combined": (int, float, type(None)),
+    "last_scores": (list,),
+    "last_transcript": (str,),
+    "followup": (str, type(None)),
+    "followup_gap": (str, type(None)),
+    "answers_done": (int,),
+    "ledger": (dict,),
+    "edge_think": (bool,),
+    "last_strategy": (str, type(None)),
+}
 
-    费曼分支按 ``f["answers_done"]`` 直接取值（非 ``.get``）——老会话缺键会
-    ``KeyError`` → 500（用户看到"会话不可用"）；此处按当前默认结构补齐，不覆盖已有值。
+
+def _ensure_block(flow: dict[str, Any], name: str, shape: dict[str, tuple[type, ...]]) -> dict[str, Any]:
+    """补齐/校验 flow 的一个子块（整块缺失 → 建默认块；单键缺/错类型 → 单键回退默认）。"""
+    defaults = new_flow()[name]
+    block = flow.get(name)
+    if not isinstance(block, dict):
+        block = {}
+        flow[name] = block
+    for key, types in shape.items():
+        if key not in block or not isinstance(block[key], types):
+            block[key] = deepcopy(defaults[key])
+    return block
+
+
+def _ensure_flow_shape(flow: dict[str, Any] | None) -> dict[str, Any]:
+    """R29 引申：flow schema 演进的**单一自愈入口**（幂等；合法值一律保留）。
+
+    治的是同一类历史缺陷：**新增 flow 键没有迁移**，而分支按 ``flow[...]`` 直接取值
+    → ``KeyError`` → 500（真人阻断，见 docs/09 R29）。规则：
+
+    - **整块缺失 / 非 dict**（``flow`` 本身、``practice`` / ``feynman`` 子块）→ 按 ``new_flow()`` 补；
+    - **缺键**（R12 lecture_cache / R21 cache 子键 / R25 regen_reissue_used / R27 answers_done +
+      ledger + followup_gap …）→ 补当前默认值，**不覆盖已有值**；
+    - **错类型 / 非法取值**（stage 越界、streak 变字符串、ledger 变数组…）→ 该键**单键回退默认**，
+      不牵连其它字段的真实进度；
+    - ``ledger`` 深结构（``dims`` / ``gaps`` / ``rounds``）→ 复用 ``feynman_ledger.normalize_ledger``
+      的同一口径，不另写一套。
     """
-    for key, value in new_flow()["feynman"].items():
-        f.setdefault(key, value)
+    if not isinstance(flow, dict):
+        return new_flow()
+    for key, default in new_flow().items():
+        if key not in flow:
+            flow[key] = deepcopy(default)
+    if flow.get("stage") not in STAGE_ORDER:
+        flow["stage"] = STAGE_EXPLAIN
+    _ensure_block(flow, "practice", _PRACTICE_SHAPE)
+    f = _ensure_block(flow, "feynman", _FEYNMAN_SHAPE)
+    # R21/R12：lecture_cache 合法形态 = None 或含 lecture_md(str) 的 dict（脏缓存宁可重生成）
+    cache = flow.get("lecture_cache")
+    if cache is not None and not (isinstance(cache, dict) and isinstance(cache.get("lecture_md"), str)):
+        flow["lecture_cache"] = None
+    # R25/R12 的单次/临时键：缺省即合法；类型不对则回退默认
+    for key, default, types in (
+        ("regen_reissue_used", 0, (int,)),
+        ("regen_think_override", False, (bool,)),
+    ):
+        if key in flow and not isinstance(flow[key], types):
+            flow[key] = default
+    fl.normalize_ledger(f, ())  # R27 账本结构（dims/gaps/rounds）自愈——与账本口径同一实现
+    return flow
 
 
 def _feynman_reset(f: dict[str, Any]) -> None:
@@ -264,9 +339,9 @@ class SessionService:
         payload = payload or {}
         sess = self._get_session(db, session_id)
         node = self._node_of(db, sess)
-        # R29：stepping 不经过 resume/_ensure_invariants → 在此回填老会话费曼键（无其它副作用）
-        if isinstance(sess.flow_json, dict) and isinstance(sess.flow_json.get("feynman"), dict):
-            _backfill_feynman_keys(sess.flow_json["feynman"])
+        # R29 引申：flow schema 演进自愈（缺键/错类型/整块缺失）——step() 是真正的 choke point，
+        # 不能只挂在 resume()（R29 首修只改 _ensure_invariants → 探针仍复现的教训）。
+        sess.flow_json = _ensure_flow_shape(sess.flow_json)
         if action == "next":
             return self._act_next(db, sess, node)
         if action == "ask_question":
@@ -532,10 +607,9 @@ class SessionService:
         - R30 F6：本轮综合分落**边缘带**（threshold −0.05/+0.08）且本轮非 think → 以 think
           复评一次，取两次较高者并入账本（防"同一篇讲解这次过、下次不过"的阈值抖动）。
         """
-        flow = sess.flow_json
+        flow = sess.flow_json = _ensure_flow_shape(sess.flow_json)  # R29 引申：进费曼前再自愈一次
         p = flow["practice"]
         f = flow["feynman"]
-        _backfill_feynman_keys(f)  # R29：老会话（R27 前）缺键自愈
         if not p["passed"]:
             raise SessionError("费曼环节需要先完成练习达标（连续答对 3 题）", code="invalid_state")
         dims = [d.model_dump() for d in node.feynman.rubric.dimensions]
@@ -724,10 +798,9 @@ class SessionService:
         - **不能单独过关**：补答只涨账本与展示进度，通过仍需完整稿 ≥ threshold（防挤牙膏式被动应答）；
         - 预算 ≤2；同一缺口答不对 → 缺口保留、可再追一次；额度尽且无剩余缺口 → review 请求整合终验。
         """
-        flow = sess.flow_json
+        flow = sess.flow_json = _ensure_flow_shape(sess.flow_json)  # R29 引申：补答前再自愈一次
         p = flow["practice"]
         f = flow["feynman"]
-        _backfill_feynman_keys(f)  # R29：老会话（R27 前）缺键自愈
         if not p["passed"]:
             raise SessionError("费曼环节需要先完成练习达标（连续答对 3 题）", code="invalid_state")
         dims = [d.model_dump() for d in node.feynman.rubric.dimensions]
@@ -1178,18 +1251,9 @@ class SessionService:
         return loaded.doc
 
     def _ensure_invariants(self, db: Session, sess: models.Session) -> None:
-        """读取时自愈：stage 回退等不变量 + R29 老会话费曼键回填。"""
-        flow = sess.flow_json or new_flow()
-        if "practice" not in flow or "feynman" not in flow:
-            base = new_flow()
-            base.update(flow)
-            flow = base
-        # R29（真人阻断热修）：R27 之前的会话 flow.feynman 无 answers_done / followup_gap / ledger，
-        # 而费曼分支按 f["answers_done"] 取值（非 .get）→ KeyError → 500（"会话不可用"）。
-        # 此处按当前默认结构回填缺失键（不覆盖已有值），老会话可直接续走费曼。
-        fey = flow.get("feynman")
-        if isinstance(fey, dict):
-            _backfill_feynman_keys(fey)
+        """读取时自愈：flow 结构（R30 单一入口 `_ensure_flow_shape`）+ stage 回退等不变量。"""
+        # R29 → R30：老会话缺键/错类型/整块缺失一律由单一入口深度补齐（含 R27 费曼键）
+        flow = _ensure_flow_shape(sess.flow_json)
         sess.flow_json = flow
         stage = flow["stage"]
         if stage == STAGE_PRACTICE and flow["practice"]["current"] is None:
@@ -1203,7 +1267,9 @@ class SessionService:
     # 响应组装（06 §2 契约：step/payload/events/session）
     # ------------------------------------------------------------------
     def _response(self, db: Session, sess: models.Session, events: list[dict], *, extra_payload: dict | None = None, first_open: bool = False) -> dict[str, Any]:
-        flow = sess.flow_json
+        # R30：响应组装前再自愈一次（读会话即补齐；响应体是"永不下发半截结构"的最后一道闸）
+        flow = _ensure_flow_shape(sess.flow_json)
+        sess.flow_json = flow
         stage = flow["stage"]
         payload: dict[str, Any] = {"first_open": first_open}
         node = self._node_of(db, sess)
