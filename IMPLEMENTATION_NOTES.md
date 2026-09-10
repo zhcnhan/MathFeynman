@@ -3045,3 +3045,76 @@ seed=3: 求 5 和 7 的最小公倍数，其中 7 是 5 的倍数。   -> 模板
 `service/guardrails.py`（`semantics_stats`）、`tests/audit_template_semantics.py`、`tests/test_r35_semantics_gate.py`（15 条）、
 5 个节点重生成。
 
+---
+
+## 65. R35b · §14：题面泄漏清零 + 全库模板补 expect/basis + P4 机器校验（2026-09-10）
+
+> 本批目标：把"答案正确"这条线一次收干净（顺序按架构侧 §14 指令）。
+> **提交 `3348c55`（内容声明）→ `ca2f072`（闸门/P4 代码）**；步骤 1–4 完成，**步骤 5–6（S3/S4）未做**（见 §65.5）。
+
+### 65.1 步骤 1 · 题面泄漏：7 处示例改占位 + 升为**违规**
+
+- 新增 `verify.leak_problems()`：**只扫题干的"提示/示例片段"**（`（…）` 内或「如/例如」之后）
+  —— 题干正文里的数字（比例 `1:2`、被减数）是题目本身的一部分，不算泄漏；
+  示例「如 x=5」「如 3/5」等于某 seed 的答案才是**直接漏答案**。判为 **violation**（可拒绝入库）。
+- **实测修正了一处架构侧口径**：架构侧列的 8 处命中里，`primary.0103/0104/s04` 等是**参数值出现在题干**
+  的假阳性（我的旧规则扫全静态文本）→ 收紧到"提示片段"后 **真泄漏 2 处**、
+  **含数字示例共 7 处**，全部按"占位形式"修掉：
+  `middle.0102`×3（并顺手把"填数字"与 `x=` 形状不一致的提示改成「直接输入数字，不要写 x=」）、
+  `middle.0201`、`middle.0202`、`primary.0102`、`primary.0104`。
+- 复扫（16 seeds）：**泄漏 0 命中**；**含数字提示片段 0 条**（该类隐患清零）。
+
+### 65.2 步骤 2 · 全部模板补 `semantics`（含 21 条人工锚点）→ **violations = 0**
+
+- 纯**加字段**（不改解题路径/答案/节点 id）：21 条模板补 `expect`（**独立写法**，如 `Rational(c - b, a)`、
+  `b * a`、`a*b + a*c`、`100 * a`、`10 * floor((a + 5)/10) + …`）+ `domain`（nonneg/integer，按题面量纲声明）。
+- 顺带修 `_as_number`：方程解展示形如 `x = 2` → 取等号右侧数值再判 domain（否则"方程题无法验算"是假阳性）。
+- **`guardrails.semantics_stats()` 现为 `{templates: 30, violations: 0, verified: 30, unverified: 0}`** ✓
+
+### 65.3 步骤 3 · 数学路径 template-level basis
+
+- `TemplateDoc.basis: BasisDoc`（复用**同一个** basis 模型，不新建结构）；
+- 闸门校验：`basis.quote` 必须**逐字出自本节点讲解**（`content/citations.py`，≥6 字）→ 不成立即**违规**；
+  已为 **30 条模板**落盘 `basis.quote`。
+- ⚠️ **如实说明取值口径**：本批的 quote 是**机械取值**（该节点讲解里首个 ≥6 字的句子），
+  语义上"支撑该模板的规则句"更精确 → **建议下批按内容精细化**（属提升，不是缺陷）。
+- 参数化**不解到每道渲染题**（参数不产生新知识）——与架构侧口径一致。
+
+### 65.4 步骤 4 · **P4 机器校验（R36 欠账，点名交付）**
+
+`answerability.check_progression(doc, prereq_docs)`（学科无关，纯 `taught_facts`/`derivable` 判定）：
+1. **引用必须已教**：题/追问的 `basis.fact_ids` ⊆「已教集合 = 本单元 ∪ 已学前置单元的 taught_facts」，
+   否则违规（等于问没教过的）；
+2. **加难必须加事实**：练习难度高于全部前置单元，却**没有新增任何已述事实** → 违规（不得凭空加难）；
+   前置为空而难度≥2 且无 `taught_facts` → 违规。
+- **已接生成端**：`outline/generate.py` 在可答性闸门后一并跑 P4（前置单元内容从大纲 prereq 解析），
+  问题并入重试反馈 → 过不了就不入库。
+- 用例：`test_p4_rejects_fact_not_taught_anywhere`（含正例）/ `test_p4_rejects_harder_without_new_facts`。
+
+### 65.5 未完成（下一批，明确遗留）
+
+- **步骤 5 · S3 挑战题双池**（可开始/取消/放弃 + 独立调模型 + **四不变**断言）——**未做**；
+- **步骤 6 · S4 追问 `reteach`**（学生无可引用内容 → 退回讲解）——**未做**；
+- 步骤 7 · 融合对照表**部分**补全（S3/S4/P4 三行待补）、`docs/06`/`docs/07` 同步**未做**；
+- 原因：本会话预算有限；按架构侧此前口径"**先把'答案正确'做对，再谈交互**"，
+  本批把 1–4 做完做净（库里模板已 100% 独立验算），S3/S4 留作下一批第一件事。
+
+### 65.6 回归与提交
+
+| 项 | 实测 |
+|---|---|
+| `pytest backend/tests` | **378 collected / 376 passed + 2 skipped / 0 failed / 0 error，exit 0**（+3 用例） |
+| `content validate` | **ok 25 节点 / 50 练习** |
+| `guardrails.semantics_stats()` | **violations 0 / verified 30 / unverified 0** |
+| roadmap audit | **27/31/81/59/60**，错误项 0 |
+| `npx tsc --noEmit` | exit 0 |
+
+**融合对照表补行（§3b）**
+
+| 新增件 | 复用点 | 断言/用例 |
+|---|---|---|
+| 题面泄漏判定 | 复用 `templates.render_exercise` 渲染 + 纯静态文本分析（无新机制） | 闸门违规 + 16-seed 复扫 0 命中 |
+| 模板级 basis | **复用 `content/citations.py`** 与 `BasisDoc`（与题/追问同一结构） | `test_template_basis_quote_must_be_verbatim` |
+| P4 机器校验 | 复用 `taught_facts`/`derivable` + 既有大纲 prereq（不新建"已学表"） | 2 条 P4 用例（含造错必报） |
+| 验证覆盖率统计 | **接 `service/guardrails.py`**（`semantics_stats()` 委托 `verify.library_stats()`） | `test_non_math_subject_is_marked_unverified_and_counted` |
+
