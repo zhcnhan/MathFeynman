@@ -120,6 +120,34 @@ def _next_name(entry_dir: Path, stamp: str, call_name: str) -> tuple[Path, str, 
         return entry_dir / name, base, (why or f"同秒同名次数过多（>{_MAX_NAME_TRIES}），已换名")
 
 
+NAMING_HEAD = "==== 本文件命名情况（R46 A）===="
+_COLLISION_FALLBACK = "同一秒内对同一调用点多次记录："
+
+
+def _rename_reason(*, base_name: str, final_name: str, collision: str) -> str:
+    """换名的中文原因——**总账账目与文件正文共用同一句文案**（不写两份）。"""
+    return ((collision + "；" if collision else _COLLISION_FALLBACK)
+            + f"已改名为 `{final_name}`（原拟 `{base_name}.txt`），"
+            "以确保每次调用的完整 prompt/response **各自独立留存、不被覆盖**")
+
+
+def _naming_block(*, final_name: str, base_name: str, rename_reason: str) -> str:
+    """**R46 A**：把"本文件为什么叫这个名字"写进文件正文（第二道可见性）。
+
+    换名记账走独立连接——调用方持有写事务时可能只落到 stderr（R45 §3-1 保留该口径）。
+    **不把审计改成持写事务**（那会把记审计变成主流程死锁源，违反 R39 §3）；改用文件自证：
+    文件本身说明"原拟名 / 实际名 / 为什么换名"，**不依赖数据库**。
+    """
+    if final_name == f"{base_name}.txt":
+        why = "本文件是该秒该调用点的**第 1 个**（目标名未被占用），**无需换名**。"
+    else:
+        why = rename_reason
+    return (f"{NAMING_HEAD}\n"
+            f"本文件实际文件名：{final_name}\n"
+            f"原拟文件名：{base_name}.txt\n"
+            f"命名说明：{why}\n")
+
+
 def _write_file(*, call_name: str, subject_id: str, unit_id: str, at: str,
                 model: str, tier: str, retries: int, outcome: str,
                 latency_ms: int, prompt_tokens: int, completion_tokens: int,
@@ -128,8 +156,7 @@ def _write_file(*, call_name: str, subject_id: str, unit_id: str, at: str,
     d = trace_dir()
     d.mkdir(parents=True, exist_ok=True)
     stamp = at.replace(":", "").replace("-", "").replace("+0000", "Z")
-    name_hint = f"{stamp}-{call_name}"
-    body = (
+    meta = (
         "==== 提示词监听 / AI 对话审计（R39 §3）====\n"
         f"时间：{at}\n调用点：{call_name}\n学科：{subject_id or '（无）'}\n单元：{unit_id or '（无）'}\n"
         f"档位：{tier}\n模型：{model}\n重试次数：{retries}\n"
@@ -137,29 +164,42 @@ def _write_file(*, call_name: str, subject_id: str, unit_id: str, at: str,
         f"结局：{OUTCOME_LABELS_ZH.get(outcome, outcome)}\n提示词版本：{prompt_versions}\n"
         f"解析/校验结果：{'通过' if parse_ok else '未通过'}｜{parse_result}\n"
         f"system 字符数：{len(system)}\nuser 字符数：{len(user)}\n原始返回字符数：{len(raw)}\n"
-        "\n==== 发给 AI 的完整内容 · system ====\n" + redact(system) + "\n"
-        "\n==== 发给 AI 的完整内容 · user ====\n" + redact(user) + "\n"
-        "\n==== AI 返回的完整内容（原始，未解析） ====\n" + redact(raw) + "\n"
-        "\n==== 解析/校验结果 ====\n" + redact(parse_result) + "\n"
     )
+
+    def render(final_name: str, base_name: str, rename_reason: str) -> str:
+        """正文＝元信息 + **命名情况**（R46 A）+ 三段完整内容（分段标记与解析器一致）。"""
+        return (
+            meta
+            # 命名情况放在 system 段**之前**：`_split_trace`/`_meta_block` 按 `==== … ====`
+            # 找自己的段，system/user/response 三段不受影响（`meta` 里可看到命名说明）
+            + "\n" + _naming_block(final_name=final_name, base_name=base_name,
+                                   rename_reason=rename_reason) + "\n"
+            "==== 发给 AI 的完整内容 · system ====\n" + redact(system) + "\n"
+            "\n==== 发给 AI 的完整内容 · user ====\n" + redact(user) + "\n"
+            "\n==== AI 返回的完整内容（原始，未解析） ====\n" + redact(raw) + "\n"
+            "\n==== 解析/校验结果 ====\n" + redact(parse_result) + "\n"
+        )
+
     # ① 取候选名（同秒序号）+ ② 冲突换名；③ 再以 `x` 原子独占创建，彻底杜绝覆盖
     path, base_name, collision = _next_name(d, stamp, call_name)
     for _ in range(_MAX_NAME_TRIES):
+        renamed = path.name != f"{base_name}.txt"
+        reason = (_rename_reason(base_name=base_name, final_name=path.name, collision=collision)
+                  if renamed else "")
+        body = render(path.name, base_name, reason)
         try:
             with open(path, "x", encoding="utf-8", newline="") as fh:
                 fh.write(body)
-            if path.name != f"{base_name}.txt":
-                # 换了名（同秒多次 / 目标被占用）→ **必须显式记账**（不许静默）
+            if renamed:
+                # 换了名（同秒多次 / 目标被占用）→ **必须显式记账**（不许静默）；
+                # 同一句原因也写在文件正文里（R46 A：锁冲突下仍有第二道可见性）
                 ledger.note(
-                    ledger.CAT_OTHER, f"AI 对话审计文件（{call_name}）",
-                    (collision + "；" if collision else
-                     "同一秒内对同一调用点多次记录：") +
-                    f"已改名为 `{path.name}`（原拟 `{base_name}.txt`），"
-                    "以确保每次调用的完整 prompt/response **各自独立留存、不被覆盖**",
+                    ledger.CAT_OTHER, f"AI 对话审计文件（{call_name}）", reason,
                     impact=ledger.SCOPE_THIS_RUN, remedy=ledger.REMEDY_YES,
                     subject_id=subject_id, unit_id=unit_id,
                     detail={"kind": "trace_name_renamed", "base_name": f"{base_name}.txt",
-                            "final_name": path.name, "collision": collision or ""},
+                            "final_name": path.name, "collision": collision or "",
+                            "reason_in_body": True},
                 )
             return str(path), len(body)
         except FileExistsError:
