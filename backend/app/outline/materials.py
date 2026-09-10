@@ -1199,11 +1199,49 @@ def coverage_problems(units: list, index: list[dict]) -> list[str]:
             + "。请为每个条目至少派生 1 个单元（小条目可合并，但合并后 materials 必须列出全部被合并的条目标签）。"]
 
 
-def coverage_summary(units: list, index: list[dict]) -> dict:
-    """覆盖摘要（供起草候选/大纲页显示）：``{total, covered, uncovered:[标签]}``。"""
+def coverage_summary(units: list, index: list[dict], *,
+                     min_entry_chars: int | None = None) -> dict:
+    """覆盖摘要（供起草候选/大纲页显示）：``{total, covered, uncovered}``。
+
+    **R42 B1**：``uncovered`` 口径修正——**过短条目**（< ``MF_MIN_ENTRY_CHARS``）若仍是缺口，
+    归入 ``skipped_short``（"标为跳过/未成为单元"），**不计入 uncovered**（它不是"该覆盖却没覆盖"，
+    而是"按规则跳过"）；两者都在返回值里显式列出，便于界面解释"它去哪了"。
+    """
     mapping = _covered_entries(units, index)
-    unmapped = [key[1] for key, ids in mapping.items() if not ids]
-    return {"total": len(mapping), "covered": len(mapping) - len(unmapped), "uncovered": unmapped}
+    cap = _min_entry_chars(min_entry_chars)
+    unmapped = [key for key, ids in mapping.items() if not ids]
+    short = [key for key in unmapped if _entry_chars(index, key) < cap]
+    short_set = set(short)
+    real = [key for key in unmapped if key not in short_set]
+    return {"total": len(mapping), "covered": len(mapping) - len(unmapped),
+            "uncovered": [k[1] for k in real],
+            "skipped_short": {"count": len(short), "labels": [k[1] for k in short],
+                              "min_chars": cap},
+            "short_entry_min_chars": cap}
+
+
+def _min_entry_chars(override: int | None = None) -> int:
+    """过短条目阈值（R42 B1；默认取 ``MF_MIN_ENTRY_CHARS``=200）。"""
+    if override is not None:
+        return max(0, int(override))
+    try:
+        from ..config import get_settings
+
+        return max(0, int(getattr(get_settings(), "min_entry_chars", 200) or 0))
+    except Exception:
+        return 200
+
+
+def _entry_chars(index: list[dict], key: tuple[str, str]) -> int:
+    """地图条目字数（``(material_id, label)`` → chars；找不到 → 很大值，视作**非**过短）。"""
+    mid, label = key
+    for m in index:
+        if str(m.get("id")) != str(mid):
+            continue
+        for e in (m.get("structure") or {}).get("entries") or []:
+            if str(e.label) == str(label):
+                return int(getattr(e, "chars", 0) or 0)
+    return 10 ** 9
 
 
 # ---------- R37 S3/S4：单元出稿的教材注入包 ----------
@@ -1250,9 +1288,108 @@ def unit_material_pack(db, subject_id: str, unit, *, batch_chars: int | None = N
                 sources.append({"title": m["title"], "section": hit.label, "match": "retrieved"})
     text = "\n\n".join(f"【教材段落：{p['label']}（材料《{p['material']}》）】\n{p['text']}"
                        for p in picked)
+    # **R42 B4（提升项）**：把依据从"章节级"细化到"**章内该节**"——
+    # R40 裁决 §2-3 原文："单元的 basis.quote 目前多为章节级引用 → 应改为章内该节的引用"。
+    basis = _section_level_basis(healthy, picked, unit)
     return {"text": text, "entries": [p["label"] for p in picked], "sources": sources,
             "binding_text": binding, "covered": bool(picked), "no_materials": False,
-            "note": "" if picked else "教材中未检索到与本节相关的章/节"}
+            "note": "" if picked else "教材中未检索到与本节相关的章/节",
+            # 章内该节的依据（有则给：basis_section/basis_quote；无 → 空，出稿端不编造）
+            "basis_section": basis.get("section", ""), "basis_quote": basis.get("quote", ""),
+            "basis_note": basis.get("note", "")}
+
+
+def _section_level_basis(healthy: list[dict], picked: list[dict], unit) -> dict:
+    """**R42 B4**：在该单元对应条目**内部**再定位到"该节"，并取该节的**逐字引文**作为依据。
+
+    两个来源（都不编造）：
+    ① ``bookmap`` 目录级结构给出的 ``entry.sections``（章 → 节）；
+    ② 条目正文里**行首编号节名**（``1.1 太阳系的组成``）——教材正文常自带这种节标题。
+    只有节名与单元标题/概念标签**确定性匹配**（归一化相等或互相包含）时才给；
+    否则返回空（宁缺勿造，与 R36 D2 / R37 S5 口径一致）。
+    """
+    from ..content import citations
+
+    want = [citations.normalize(str(getattr(unit, "title", "") or ""))]
+    want += [citations.normalize(str(t)) for t in (getattr(unit, "concept_tags", None) or [])]
+    want = [w for w in want if len(w) >= 2]
+    if not want:
+        return {}
+    best: dict = {}
+    for m in healthy:
+        labels = {str(p.get("label")) for p in picked if p.get("material") == m["title"]}
+        for e in (m.get("structure") or {}).get("entries") or []:
+            if labels and e.label not in labels:
+                continue
+            names = [str(s) for s in (e.sections or []) if str(s).strip()]
+            names += [h for h in _body_section_headings(str(e.text or ""))
+                      if h not in names]
+            for sec in names:
+                norm = citations.normalize(sec)
+                if not norm:
+                    continue
+                if not any(norm == w or (len(norm) >= 4 and (norm in w or w in norm)) for w in want):
+                    continue
+                if best and len(norm) <= len(citations.normalize(best.get("section", ""))):
+                    continue
+                quote = _first_quote_sentence(str(e.text), sec)
+                best = {"material": m["title"], "section": sec, "quote": quote,
+                        "note": ("章内该节级依据（R42 B4）：条目《" + e.label + "》下的节「"
+                                 + sec + "」" + ("；引文逐字取自该节" if quote
+                                                 else "（该节正文内未取到合适引文，出稿端不编造）"))}
+    return best
+
+
+_HEADING_LINE = re.compile(r"^\s*(\d{1,2}(?:\.\d{1,2}){1,2})\s+(\S[^\n]{0,60})$")
+
+
+def _body_section_headings(text: str) -> list[str]:
+    """条目正文里**行首编号节标题**（如 ``1.1 太阳系的组成``）——不确定则返回空表。"""
+    out: list[str] = []
+    for line in str(text or "").splitlines():
+        m = _HEADING_LINE.match(line.strip())
+        if m:
+            out.append(f"{m.group(1)} {m.group(2).strip()}")
+    return out
+
+
+def _first_quote_sentence(text: str, section: str, *, min_chars: int = 20) -> str:
+    """在**该节**的正文里取**逐字**一句作为引文（短句跳过；取不到 → 空串，不编造）。
+
+    R42 B4：先把"该节正文"从条目正文里切出来（节标题 → 下一个节标题之间），再取首句；
+    这样 basis 引文才是"**章内该节**"的，而不是整章的。
+    """
+    from ..content import citations
+
+    body = _section_text(str(text or ""), section)
+    if not body:
+        return ""
+    sentences = [s.strip() for s in re.split(r"(?<=[。；！？])", body) if s.strip()]
+    for s in sentences:
+        if len(citations.normalize(s)) >= min_chars:
+            return s
+    return ""
+
+
+def _section_text(entry_text: str, section: str) -> str:
+    """从条目正文里切出**某一节**的正文（节标题行 → 下一个节标题行之前）。
+
+    节标题形态：``1.1 太阳系的组成`` / ``1.1.2 …``（目录里的编号节名）。
+    切不出来（该节名不在正文里）→ 返回空串（调用方不编造引文）。
+    """
+    body = str(entry_text or "")
+    sec = str(section or "").strip()
+    if not body or not sec:
+        return ""
+    idx = body.find(sec)
+    if idx < 0:
+        return ""
+    start = idx + len(sec)
+    rest = body[start:]
+    m = re.search(r"(?m)^\s*\d{1,2}(?:\.\d{1,2}){1,2}\s+\S", rest)
+    if m and m.start() > 0:
+        rest = rest[: m.start()]
+    return rest.strip()
 
 
 def _entry_for_section(m: dict, section: str):
@@ -1394,14 +1531,21 @@ def coverage_ledger(db, subject_id: str) -> dict:
     skipped_keys = {(str(x.get("material_id") or ""), str(x.get("label") or "")) for x in cap_skips}
     entries: list[dict] = []
     uncovered: list[str] = []
+    skipped_short: list[dict] = []
     page_total = 0
     page_covered = 0
+    short_cap = _min_entry_chars()
     for m in index:
         for e in (m.get("structure") or {}).get("entries") or []:
             hit = sorted(set(mapping.get((m["id"], e.label)) or []))
             cap_skipped = (str(m["id"]), str(e.label)) in skipped_keys
             covered = bool(hit) and not cap_skipped
-            if not covered:
+            # **R42 B1**：过短条目**不是**覆盖缺口（它是"按规则跳过/已并入"），单独归类以便解释
+            is_short = int(getattr(e, "chars", 0) or 0) < short_cap
+            if not covered and is_short:
+                skipped_short.append({"material": m["title"], "material_id": m["id"],
+                                      "label": e.label, "chars": int(e.chars)})
+            elif not covered:
                 uncovered.append(f"{m['title']} · {e.label}")
             pages = list(e.pages)
             page_total += len(pages)
@@ -1410,11 +1554,19 @@ def coverage_ledger(db, subject_id: str) -> dict:
             entries.append({"material": m["title"], "material_id": m["id"], "label": e.label,
                             "chapter": e.chapter, "chars": e.chars, "sections": list(e.sections),
                             "pages": pages, "units": hit, "covered": covered,
+                            "short": is_short,
                             # R42：这一条"去哪了"（可解释性——不许凭空消失）
-                            "not_injected_reason": ("总注入上限" if cap_skipped
-                                                    else ("" if covered else "无单元映射/未注入")),
-                            "reason_zh": ("因「总注入上限」未注入（覆盖账如实降）" if cap_skipped
-                                          else ("" if covered else "尚无单元映射到本章/节"))})
+                            "not_injected_reason": (
+                                "总注入上限" if cap_skipped
+                                else ("" if covered
+                                      else ("过短条目（已跳过/未成为单元）" if is_short
+                                            else "无单元映射/未注入"))),
+                            "reason_zh": (
+                                "因「总注入上限」未注入（覆盖账如实降）" if cap_skipped
+                                else ("" if covered
+                                      else (f"过短条目（{int(getattr(e, 'chars', 0) or 0)} 字 < "
+                                            f"{short_cap} 字）：按规则跳过/未成为单元，**不计入未覆盖缺口**"
+                                            if is_short else "尚无单元映射到本章/节")))})
     # R38 B1：按材料分组统计（覆盖账跨全部材料）
     by_material: list[dict] = []
     uncovered_by_material: list[dict] = []
@@ -1460,6 +1612,10 @@ def coverage_ledger(db, subject_id: str) -> dict:
             "material_bound": bool(cov.get("material_bound")),
             "dropped_exercises": int(cov.get("dropped_exercises") or 0),
             "generated_at": str(cov.get("at") or ""),
+            # R42 B4：**章内该节级**依据（R40 裁决 §2-3 的提升项）——大纲页/覆盖账可显示
+            "basis_section": str(cov.get("basis_section") or ""),
+            "basis_quote": str(cov.get("basis_quote") or ""),
+            "basis_note": str(cov.get("basis_note") or ""),
         })
     return {
         "subject": subject_id,
@@ -1467,6 +1623,10 @@ def coverage_ledger(db, subject_id: str) -> dict:
         "total": len(entries),
         "covered": len(entries) - len(uncovered),
         "uncovered": uncovered,
+        # **R42 B1**：过短条目（按规则跳过/未成为单元）——**不计入 uncovered 缺口**，但显式列出
+        "skipped_short": {"count": len(skipped_short), "labels": [x["label"] for x in skipped_short],
+                          "items": skipped_short, "min_chars": short_cap},
+        "short_entry_min_chars": short_cap,
         # R42 A3：**未纳入清单**（三种原因：健康度不合格 / 未进批次 / **总注入上限**），
         # 覆盖账与预算视图同源——"每一处没进去的都必须能解释"。
         "not_injected": (_unmapped_entries(index, blocks) + cap_skips),

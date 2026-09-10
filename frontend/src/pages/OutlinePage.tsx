@@ -18,6 +18,12 @@ type Unit = {
   status: string;
   // R36 D2：逐单元材料溯源（服务端已校验：title 属于本学科引用库，section 为真实章节名或逐字引文）
   materials?: { title: string; section: string }[];
+  // R42 B1/B2：附加元数据（难度被非降钳制抬高 / 过短条目已并入）——大纲页必须看得见
+  meta?: {
+    difficulty_raised?: { from: number; to: number; reason_zh: string; because?: string };
+    absorbed_short?: { label: string; chars: number }[];
+    coverage?: Record<string, unknown>;
+  };
 };
 
 /** R36 D3：把大纲层的 source_materials（material_id 列表）显示为材料标题。 */
@@ -92,6 +98,10 @@ type CoverageUnit = {
   grounded_facts: number;
   material_bound: boolean;
   dropped_exercises: number;
+  /** R42 B4：章内该节级依据（R40 §2-3 提升项） */
+  basis_section?: string;
+  basis_quote?: string;
+  basis_note?: string;
 };
 
 // R38 B1：覆盖账**跨全部材料**统计 + 未覆盖清单**按材料分组**
@@ -135,6 +145,14 @@ type Coverage = {
   uncovered_materials?: { material_id: string; title: string; kind: string; note: string }[];
   order_basis?: string;
   multi_material?: boolean;
+  /** R42 B1：过短条目（按规则跳过/未成为单元；不计入未覆盖缺口） */
+  skipped_short?: {
+    count: number;
+    labels: string[];
+    min_chars?: number;
+    items?: { material: string; material_id?: string; label: string; chars: number }[];
+  };
+  short_entry_min_chars?: number;
   /** R42 A3：未纳入清单（三种原因）+ 总上限状态（覆盖账与预算视图同源） */
   not_injected?: NotInjected[];
   inject_cap?: {
@@ -719,6 +737,15 @@ export default function OutlinePage() {
             </div>
             <div className="dim">
               起草仅生成候选（不落盘）；审阅后点“采纳”（大纲版本 revision+1）。无 LLM_KEY 时为离线启发式候选。
+              {/* R42 B3：`count` 语义的 UI 说明（避免用户以为"我填了 20 却出 46"是 bug） */}
+              {materials.length > 0 && (
+                <>
+                  <br />
+                  ⚠️ <strong>「单元数」只在没有教材时生效</strong>：本学科有引用材料时，
+                  **单元数由书的章节结构决定**（每个章/节至少 1 个单元），
+                  所以实际单元数可能多于/少于你选的数量——这是**按书出稿**，不是 bug。
+                </>
+              )}
               {materials.length > 0
                 ? `起草会**先读懂教材**（当前 ${materials.length} 份）：按章/节地图注入完整正文（默认不设预算，
                    书太大按章分批），由书的目录派生单元——每个章节都必须映射到单元，未映射的按教材目录补齐；
@@ -938,6 +965,22 @@ export default function OutlinePage() {
                   </ul>
                 </details>
               )}
+              {/* R42 B1：过短条目（按规则跳过/未成为单元）——不计入未覆盖缺口，但**显式列出** */}
+              {!!coverage.skipped_short?.count && (
+                <details style={{ marginTop: 6 }}>
+                  <summary className="dim">
+                    过短条目（{coverage.skipped_short.count}，已跳过/未成为单元，**不计入未覆盖缺口**）
+                  </summary>
+                  <ul className="plain" style={{ margin: "4px 0 0 12px", fontSize: 12 }}>
+                    {(coverage.skipped_short.items ?? []).map((x, i) => (
+                      <li key={`${x.material_id ?? x.material}-${x.label}-${i}`}>
+                        {x.material} · {x.label}（{x.chars} 字 &lt; {coverage.skipped_short?.min_chars} 字）
+                        —— 已跳过（过短），不成为单元；账本有中文原因
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               {coverage.uncovered_materials && coverage.uncovered_materials.length > 0 && (
                 <div className="banner error" style={{ marginTop: 4 }}>
                   整份未纳入的材料（{coverage.uncovered_materials.length}）：
@@ -961,6 +1004,13 @@ export default function OutlinePage() {
                             : "无教材依据"}
                           {u.grounded_facts > 0 && ` · ${u.grounded_facts} 条事实句逐字出自教材`}
                           {u.dropped_exercises > 0 && ` · 丢弃 ${u.dropped_exercises} 题`}
+                          {/* R42 B4：章内该节级依据（比"整章"更精确；取不到就不显示，不编造） */}
+                          {u.basis_section && (
+                            <div style={{ fontSize: 12 }}>
+                              📍 依据（章内该节）：{u.basis_section}
+                              {u.basis_quote && <span title={u.basis_quote}> · 引文：{u.basis_quote.slice(0, 60)}…</span>}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -994,6 +1044,20 @@ export default function OutlinePage() {
                                 </span>
                               );
                             })()}
+                            {/* R42 B2：难度被"非降钳制"抬高 —— 大纲页单元行**可见**（不只在库里） */}
+                            {u.meta?.difficulty_raised && (
+                              <span className="badge deferred"
+                                    title={u.meta.difficulty_raised.reason_zh}>
+                                难度被抬高 {u.meta.difficulty_raised.from}→{u.meta.difficulty_raised.to}
+                              </span>
+                            )}
+                            {/* R42 B1：过短条目已并入本单元（覆盖账可解释"它去哪了"） */}
+                            {!!u.meta?.absorbed_short?.length && (
+                              <span className="badge"
+                                    title={u.meta.absorbed_short.map((x) => `${x.label}（${x.chars} 字）`).join("、")}>
+                                并入过短条目 {u.meta.absorbed_short.length}
+                              </span>
+                            )}
                             {u.materials && u.materials.length > 0 && (
                               <div className="dim" style={{ fontSize: 12 }}>
                                 依据：{u.materials.map((r) => `《${r.title}》${r.section ? " · " + r.section : ""}`).join("；")}

@@ -59,6 +59,87 @@ def heuristic_draft(subject_id: str, label: str, *, brief: str, count: int, grou
     return units
 
 
+def _min_entry_chars() -> int:
+    """**R42 B1**：教材条目"过短"阈值（字符；默认 200，可配 ``MF_MIN_ENTRY_CHARS``）。
+
+    过短条目＝标题/目录类（如"附录D 元素周期表" 45 字）：**不许静默成为单元，也不许静默丢弃**——
+    优先并入相邻单元，否则标为跳过，两者都记账 + 覆盖账可解释。
+    """
+    try:
+        from ..config import get_settings
+
+        return max(0, int(getattr(get_settings(), "min_entry_chars", 200) or 0))
+    except Exception:
+        return 200
+
+
+def _absorb_short_entry(units: list[OutlineUnit], index: list[dict], item: dict) -> str | None:
+    """过短条目能否**安全并入**某个单元；不能 → ``None``（调用方标"跳过"）。
+
+    **R42 B1 口径（宁缺勿造）**：只有"**已经有单元落在这一节上**"才允许并入——
+    那种情况下该节本来就被覆盖，只是把粒度更细的条目挂回同一个单元；
+    否则（没有任何单元引用它）**一律标为跳过**——给一个没引用本节的单元硬加溯源
+    就是伪溯源（R36 D2 红线）。当前 ``bookmap`` 的条目标签就是节粒度，
+    因此"没被任何单元映射"通常也就"没有单元落在该节上" → 走跳过路径（可解释、可追溯）。
+    """
+    if not units:
+        return None
+    label = str(item.get("label") or "")
+    grounded = [u for u in units
+                if any(str(r.get("section")) == label for r in (u.materials or []))]
+    if not grounded:
+        return None
+    target = grounded[-1]
+    meta = dict(target.meta or {})
+    absorbed = list(meta.get("absorbed_short") or [])
+    absorbed.append({"label": label, "chars": int(item.get("chars") or 0)})
+    meta["absorbed_short"] = absorbed
+    units[units.index(target)] = target.model_copy(update={"meta": meta})
+    return target.id
+
+
+def _note_short_entries(index: list[dict], short: list[dict], merged: list[str],
+                        skipped: list[str], subject_id: str) -> None:
+    """**R42 B1**：过短条目的两种处理**逐条记中文账目**（"已并入相邻单元" / "已跳过（过短）"）。"""
+    from ..service import ledger
+
+    merged_labels = {x.split("→", 1)[0] for x in merged}
+    for item in short:
+        label = str(item.get("label") or "")
+        where = next((x.split("→", 1)[1] for x in merged if x.split("→", 1)[0] == label), "")
+        if label in merged_labels:
+            ledger.note(
+                ledger.CAT_MATERIAL, f"材料《{item.get('material', '')}》· {label}",
+                f"条目过短（{int(item.get('chars') or 0)} 字，疑似标题/目录类），"
+                f"**已并入相邻单元 {where}**（覆盖账里记为已映射，未丢失）",
+                impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
+                detail={"kind": "short_entry_merged", **item, "into": where},
+            )
+        else:
+            ledger.note(
+                ledger.CAT_MATERIAL, f"材料《{item.get('material', '')}》· {label}",
+                f"条目过短（{int(item.get('chars') or 0)} 字，疑似标题/目录类），"
+                "**已跳过（过短），未成为单元**——不作为覆盖缺口统计，但在此显式留痕（不静默吞掉）",
+                impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
+                detail={"kind": "short_entry_skipped", **item},
+            )
+
+
+def _note_difficulty_raised(raised: list[dict], subject_id: str) -> None:
+    """**R42 B2**：难度被"非降钳制"抬高 → 逐处记账（中文原因 + 影响面 + 可否补救）。"""
+    from ..service import ledger
+
+    for r in raised:
+        ledger.note(
+            ledger.CAT_GENERATION, f"单元难度（{r['unit_id']} · {r['title']}）",
+            f"难度因**先修单调性被抬高**：{r['from']} → {r['to']}"
+            f"（书序上更早的单元 {r.get('because') or '—'} 已是 {r['to']}；"
+            "先修难度不得高于后继，R36 P1/R37 S2）——**这是钳制的副作用，不是模型判断**",
+            impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
+            detail={"kind": "difficulty_raised", **r},
+        )
+
+
 def _entry_unit(subject_id: str, material_title: str, entry: dict, index: int,
                 prev_id: str) -> dict:
     """**教材目录直接补齐**的单元（S2：模型没映射到的条目不得悄悄丢）。
@@ -89,6 +170,10 @@ def finalize_candidate(subject_id: str, raw_units: list[dict], *, label: str, so
     R36 D2：每个单元的 ``materials: [{title, section}]`` 逐条过 ``check_unit_material``——
     不成立的引用**一律剔除并记问题**（宁缺勿造；调用方在 AI 路径上会据此驳回重生成一次）。
     R37 S2：地图条目未映射 → 用**教材目录**补齐单元（教材＝真源；不得悄悄丢章节），并记问题。
+    **R42 B1**：条目**过短**（< ``MF_MIN_ENTRY_CHARS``，默认 200 字）→ **并入相邻单元**或**标为跳过**，
+    两种处理都 ``ledger.note`` 记中文原因，并在覆盖账里可解释（``merged_short`` / ``skipped_short``）。
+    **R42 B2**：难度因"非降钳制"被抬高 → 逐处 ``ledger.note`` 中文原因 + 单元 ``meta.difficulty_raised``
+    （大纲页可见）。
     """
     from . import materials as mat
 
@@ -98,6 +183,11 @@ def finalize_candidate(subject_id: str, raw_units: list[dict], *, label: str, so
     units: list[OutlineUnit] = []
     problems: list[str] = []
     local_map: dict[str, str] = {}
+    # R42 B1：清掉上一轮收尾留下的"并入痕迹"（驳回重生成会再走一次本函数；
+    # 否则第一次并入的过短条目会粘在重生成结果上——那是伪溯源）
+    for raw in raw_units:
+        if isinstance(raw, dict):
+            raw.pop("__absorbed_short__", None)
     for i, raw in enumerate(raw_units[: len(UNIT_LOCAL)], start=1):
         local = UNIT_LOCAL[i - 1]
         node_id = f"{subject_id}.{local}"
@@ -152,8 +242,13 @@ def finalize_candidate(subject_id: str, raw_units: list[dict], *, label: str, so
         )
     # R37 S2：全覆盖——未被任何单元映射的教材条目，先按标题/标签**回捞**已有单元，
     # 回捞不到才用**教材目录**补齐（内容取自书的目录，非编造）；两种情况都记问题（不得悄悄丢章节）
+    # **R42 B1**：条目**过短**（标题/目录类）→ 优先**并入相邻单元**，否则**标为跳过**；
+    # 两种处理都记账（中文原因）+ 覆盖账可解释——**不许静默吞掉**。
     filled: list[str] = []
     recovered: list[str] = []
+    merged_short: list[str] = []
+    skipped_short: list[str] = []
+    short_entries: list[dict] = []
     if index:
         mapping = mat._covered_entries(units, index)
         for m in index:
@@ -173,6 +268,14 @@ def finalize_candidate(subject_id: str, raw_units: list[dict], *, label: str, so
                         update={"materials": [{"title": m["title"], "section": entry.label}]})
                     recovered.append(f"{target.id}←{entry.label}")
                     continue
+                # ①.5 R42 B1：**过短条目**（< 阈值）——不静默成单元、也不静默丢弃
+                if int(getattr(entry, "chars", 0) or 0) < _min_entry_chars():
+                    short_entries.append({
+                        "material_id": m["id"], "material": m["title"], "label": entry.label,
+                        "chars": int(getattr(entry, "chars", 0) or 0),
+                        "chapter": getattr(entry, "chapter", "") or "",
+                    })
+                    continue
                 if len(units) >= len(UNIT_LOCAL):  # ② 目录补齐
                     problems.append(f"教材条目《{entry.label}》无单元映射，且单元数已达上限"
                                     f"（{len(UNIT_LOCAL)}）——请合并过细的节或拆批起草")
@@ -190,6 +293,19 @@ def finalize_candidate(subject_id: str, raw_units: list[dict], *, label: str, so
                     requires_thinking=spec["requires_thinking"], materials=spec["materials"],
                 ))
                 mapping.setdefault((m["id"], entry.label), []).append(spec["id"])
+        # R42 B1 收口：过短条目逐个"并入相邻单元"或"标为跳过"，并逐条记账
+        for item in short_entries:
+            hit = _absorb_short_entry(units, index, item)
+            if hit is None:
+                skipped_short.append(item["label"])
+                problems.append(
+                    f"教材覆盖：条目《{item['label']}》仅 {item['chars']} 字（过短，疑似标题/目录类）"
+                    "——**已标为跳过**，不成为单元（详见账本）")
+            else:
+                merged_short.append(f"{item['label']}→{hit}")
+                problems.append(
+                    f"教材覆盖：条目《{item['label']}》仅 {item['chars']} 字（过短）"
+                    f"——**已并入相邻单元 {hit}**（详见账本）")
     if recovered:
         problems.append("教材覆盖：模型未标注章节依据的单元已按教材章节地图回捞 "
                         + f"{len(recovered)} 个（{('、'.join(recovered[:6]))}"
@@ -198,10 +314,13 @@ def finalize_candidate(subject_id: str, raw_units: list[dict], *, label: str, so
         problems.append("教材覆盖：模型未映射到单元的教材条目已按**教材目录**补齐 "
                         + f"{len(filled)} 个（{('、'.join(filled[:6]))}"
                         + ("…" if len(filled) > 6 else "") + "）——内容取自书的目录，非编造")
+    if merged_short or skipped_short:
+        _note_short_entries(index, short_entries, merged_short, skipped_short, subject_id)
     # R37 S2：**书序为主**——单元按教材章节顺序排列；先修线性串联；难度按书序单调化。
     # 理由：分批起草的批间 `prereqs`（模型按本批局部编号）不可靠；书的结构才是顺序真源
     # （规格原文："单元的顺序/prereqs 以书的顺序为主"）。规范化决定记在 notes 里（不是问题）。
     notes: list[str] = []
+    raised: list[dict] = []
     if index and mat.entry_order(index):
         order = mat.entry_order(index)
         units.sort(key=lambda u: mat.unit_order_key(u, order, len(order)))
@@ -212,11 +331,28 @@ def finalize_candidate(subject_id: str, raw_units: list[dict], *, label: str, so
         for u in units:
             prev = rebuilt[-1].id if rebuilt else ""
             diff = u.difficulty if not rebuilt else max(u.difficulty, rebuilt[-1].difficulty)
+            meta = dict(u.meta or {})
+            if diff != u.difficulty:
+                # **R42 B2：难度被"非降钳制"抬高 → 必须显性**（账本 + 大纲页单元行可见）
+                raised.append({"unit_id": u.id, "title": u.title,
+                               "from": int(u.difficulty), "to": int(diff),
+                               "because": rebuilt[-1].id if rebuilt else ""})
+                meta["difficulty_raised"] = {
+                    "from": int(u.difficulty), "to": int(diff),
+                    "reason_zh": f"难度因先修单调性被抬高：{int(u.difficulty)} → {int(diff)}"
+                                 f"（书序上更早的单元 {rebuilt[-1].id} 已是 {int(diff)}；"
+                                 "先修难度不得高于后继——R36 P1/R37 S2）",
+                    "because": rebuilt[-1].id if rebuilt else "",
+                }
+            elif "difficulty_raised" in meta:
+                meta.pop("difficulty_raised", None)
             rebuilt.append(u.model_copy(update={
-                "prereqs": [prev] if prev else [], "difficulty": diff}))
+                "prereqs": [prev] if prev else [], "difficulty": diff, "meta": meta}))
         units = rebuilt
         notes.append("教材结构：单元已按**书序**重排并重新编号、线性串联先修、难度按书序单调化"
                      "（分批起草的跨章 prereqs 不可靠；R37 S2「顺序以书序为主」）")
+    if raised:
+        _note_difficulty_raised(raised, subject_id)
 
     cand = OutlineDoc(subject=subject_id, label=label, status="draft", source=source, units=units)
     prob = validate_outline_doc(cand)
@@ -232,7 +368,15 @@ def finalize_candidate(subject_id: str, raw_units: list[dict], *, label: str, so
         "units": [u.model_dump(mode="json") for u in units],
         "problems": problems + prob,
         "notes": notes,                                         # R37 S2：已做的规范化决定（非问题）
-        "coverage": mat.coverage_summary(units, index) if index else None,
+        "coverage": (
+            {**(mat.coverage_summary(units, index) if index else {}),
+             # **R42 B1**：覆盖账要能**解释过短条目去哪了**（并入 / 跳过，都不是消失）
+             "skipped_short": {"count": len(skipped_short), "labels": list(skipped_short)},
+             "merged_short": {"count": len(merged_short), "items": list(merged_short)},
+             "short_entry_min_chars": _min_entry_chars()}
+            if index else None),
+        # **R42 B2**：难度被抬高（非降钳制的副作用）——候选里直接可见
+        "difficulty_raised": list(raised),
         "ok": not (problems or prob),
     }
 

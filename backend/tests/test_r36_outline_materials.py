@@ -203,6 +203,9 @@ def test_d2_citation_stripped_when_regeneration_also_fails(app_client, ai_provid
 
     R37 S2 扩展（2026-09-10）：教材＝真源后，**章节不得因溯源不成立而悄悄消失**——
     被剔除引用的单元保持"无溯源"（宁缺勿造的口径不变），同时该章由**教材目录**补齐一个单元并记问题。
+    R42 B1 修正（2026-09-10）：本样本的"章"只有 83 字（**过短条目**，标题/目录类）→ 按 R42 B1
+    走**"标为跳过"**（不成单元、**不计入覆盖缺口**），并**记账 + 记问题**——
+    口径由"按教材目录补齐"改为"过短条目不得静默成单元也不得静默丢弃"。
     """
     bad = lambda i: [{"title": MAT_TITLE, "section": "这句话不在材料正文里出现过的引文"}]  # noqa: E731
     p = ai_provider([{"units": _units(1, materials_for=bad)},
@@ -217,7 +220,8 @@ def test_d2_citation_stripped_when_regeneration_also_fails(app_client, ai_provid
         stripped = [u for u in body["units"] if u["title"] == "第 1 单元"]
         assert stripped and stripped[0]["materials"] == [], "不得硬塞伪溯源"
         assert any("溯源不成立" in x for x in body["problems"]), body["problems"]
-        assert any("教材目录" in x for x in body["problems"]), body["problems"]
+        # R42 B1：过短条目被显式处理（跳过 / 并入），**不是静默消失**
+        assert any(("已标为跳过" in x) or ("已并入相邻单元" in x) for x in body["problems"]), body["problems"]
         assert body["ok"] is False  # 有问题必须如实上报（供 UI 提示）
     finally:
         app_client.delete(f"/api/subjects/{sid}?hard=true")

@@ -271,7 +271,10 @@ def test_r37_s2_draft_units_cover_every_chapter(app_client, ai_provider):
         r = app_client.post(f"/api/subjects/{sid}/outline/draft", json={"count": 2})
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body["coverage"] == {"total": 2, "covered": 2, "uncovered": []}, body["coverage"]
+        # R42 B1：coverage 增 `skipped_short`（过短条目，不计入未覆盖缺口）——断言改为逐字段核对（不减弱）
+        cov = body["coverage"]
+        assert cov["total"] == 2 and cov["covered"] == 2 and cov["uncovered"] == [], cov
+        assert cov["skipped_short"]["count"] == 0, cov
         # 注入的是**整章完整正文**（不是 220 字摘要）
         assert FACT1 in p.user_text and FACT2 in p.user_text
         assert "教材章节地图" in p.user_text and CHAPTER_1 in p.user_text

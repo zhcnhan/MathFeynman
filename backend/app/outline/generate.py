@@ -693,18 +693,25 @@ def _source_refs(pack: dict, material_summaries: list[dict] | None) -> str:
 
 
 def _coverage_of(report, pack: dict, *, has_material: bool) -> dict:
-    """覆盖状态（S6）：完整 / 部分 / 未覆盖 + 可核查计数。"""
+    """覆盖状态（S6）：完整 / 部分 / 未覆盖 + 可核查计数。
+
+    **R42 B4**：附上"**章内该节级**"依据（``basis_section`` / ``basis_quote``，来自
+    ``materials.unit_material_pack`` —— 仅目录级结构且节名可确定性匹配时才有；取不到就不编造）。
+    """
     sources = list(pack.get("sources") or [])
     facts = len(getattr(report, "facts", []) or [])
     dropped_facts = len(getattr(report, "dropped_facts", []) or [])
     dropped_ex = len(getattr(report, "dropped_exercises", []) or [])
+    basis = {"basis_section": str(pack.get("basis_section") or ""),
+             "basis_quote": str(pack.get("basis_quote") or ""),
+             "basis_note": str(pack.get("basis_note") or "")}
     if not has_material:
         return {"status": "未覆盖", "material_bound": False, "grounded_facts": facts,
-                "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex,
+                "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex, **basis,
                 "sources": [], "note": "本内容无教材依据（该学科没有引用材料，或材料未通过健康度检查）"}
     if not getattr(report, "material_checked", False):
         return {"status": "未覆盖", "material_bound": False, "grounded_facts": facts,
-                "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex,
+                "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex, **basis,
                 "sources": sources,
                 "note": "本内容无教材依据（离线启发式出稿：未配置模型，未读教材；"
                         "配置 LLM_API_KEY 后重新生成即可获得教材锚定内容）"}
@@ -716,7 +723,7 @@ def _coverage_of(report, pack: dict, *, has_material: bool) -> dict:
         status = "完整"
         note = f"教材锚定：{facts} 条事实句与全部题目引文均逐字出自教材"
     return {"status": status, "material_bound": True, "grounded_facts": facts,
-            "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex,
+            "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex, **basis,
             "sources": sources, "note": note}
 
 

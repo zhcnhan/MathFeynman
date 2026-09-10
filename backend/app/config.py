@@ -91,6 +91,11 @@ class Settings:
     context_token_limit: int = field(
         default_factory=lambda: int(os.getenv("MF_CONTEXT_TOKEN_LIMIT", "120000") or "0")
     )
+    # R42 B1：教材**过短条目**阈值（字符；默认 200）。低于它的条目（标题/目录类）
+    # **并入相邻单元**或**标为跳过**，两种处理都进账本（不许静默吞掉）。
+    min_entry_chars: int = field(
+        default_factory=lambda: int(os.getenv("MF_MIN_ENTRY_CHARS", "200") or "0")
+    )
 
     # --- 外部检索后端（docs/14 §8 · Phase C C1；默认未启用）---
     # 默认 "none"（未配置检索后端 → UI 标注 + 明确中文提示）；可配 "searxng"：
