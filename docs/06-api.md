@@ -22,11 +22,11 @@
 | POST | `/subjects` | 创建自定义学科（body: label/description/subject_id?，id 须 `^[a-z][a-z0-9-]*$`） |
 | GET / DELETE | `/subjects/{subject_id}` | 学科详情 / 删除自定义学科（preset 不可删） |
 | GET | `/subjects/{subject_id}/outline` | 当前大纲全文（审阅；无大纲 404） |
-| PUT | `/subjects/{subject_id}/outline` | 采纳/整份重生成（custom；revision+1；结构校验：唯一/自指/环/引用） |
-| POST | `/subjects/{subject_id}/outline/validate` | 校验候选大纲（不落盘，返回问题清单，UI 预览用） |
+| PUT | `/subjects/{subject_id}/outline` | 采纳/整份重生成（custom；revision+1；结构校验：唯一/自指/环/引用/**R36 P1 难度不得倒置（roadmap 源豁免）**）；**R36 D3**：服务端按各单元 `materials[].title` 反查 material_id 写入 `source_materials`（引用不存在的材料 → 中文 422） |
+| POST | `/subjects/{subject_id}/outline/validate` | 校验候选大纲（不落盘，返回问题清单，UI 预览用；按 `source` 生效 P1——roadmap 源豁免） |
 | PATCH | `/subjects/{subject_id}/outline/units/{unit_id}` | 单元局部改（custom 任意白名单字段；preset 仅 concept_tags 等附加字段） |
-| POST | `/subjects/{subject_id}/outline/regenerate` | 大纲重生成：math=roadmap 派生 revision+1；custom=重新起草候选（不落盘，采纳 PUT 才 +1） |
-| POST | `/subjects/{subject_id}/outline/draft` | AI/启发式起草大纲候选（body: brief/count/group_hint；LLM_API_KEY 时走 CALL_OUTLINE_DRAFT，否则离线启发式；不落盘，供审阅后 PUT 采纳）（A4） |
+| POST | `/subjects/{subject_id}/outline/regenerate` | 大纲重生成：math=roadmap 派生 revision+1；custom=重新起草候选（不落盘，采纳 PUT 才 +1；**同样注入引用材料**） |
+| POST | `/subjects/{subject_id}/outline/draft` | AI/启发式起草大纲候选（body: brief/count/group_hint；LLM_API_KEY 时走 CALL_OUTLINE_DRAFT，否则离线启发式；不落盘，供审阅后 PUT 采纳）（A4）；**R36 D1–D4**：注入该学科引用材料的分节摘要（`MF_OUTLINE_MATERIAL_MAX_CHARS` 预算、超限截断留痕；**材料可选，无材料退化为现状**），要求逐单元 `materials:[{title,section}]` 溯源并服务端校验（不成立 → 驳回重生成一次 → 仍不成立则剔除并记问题）；响应含 `source_materials` 与 `material_usage{count,used_chars,dropped,truncated}` |
 | POST | `/subjects/{subject_id}/units/{unit_id}/content` | 懒生成单元内容（source:auto 落盘 + 库/DB 同步，幂等；仅 custom 学科；math 走 roadmap 流水线）（A4） |
 | GET | `/subjects/{subject_id}/progress` | 学科进度视图（单元 达成/等效/开放 + 内容节点状态；A2） |
 | POST | `/subjects/{subject_id}/progress/recompute` | 幂等重算概念掌握证据（= 数学历史掌握迁移入口；A2） |

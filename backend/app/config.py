@@ -59,6 +59,13 @@ class Settings:
         default_factory=lambda: int(os.getenv("LLM_MAX_TOKENS_PER_DAY", "0") or "0")
     )
 
+    # --- 大纲起草的材料注入预算（R36 D4）---
+    # 单次起草注入 prompt 的引用材料正文**总字符上限**（超出即分节摘要降级 + 截断留痕；
+    # **禁止整本塞进一次调用**）。调用点：api/subjects._draft_materials → materials.draft_materials()。
+    outline_material_max_chars: int = field(
+        default_factory=lambda: int(os.getenv("MF_OUTLINE_MATERIAL_MAX_CHARS", "6000") or "6000")
+    )
+
     # --- 外部检索后端（docs/14 §8 · Phase C C1；默认未启用）---
     # 默认 "none"（未配置检索后端 → UI 标注 + 明确中文提示）；可配 "searxng"：
     # 自托管 SearXNG 实例（MF_SEARXNG_URL，如 http://127.0.0.1:8888，需开启 JSON 输出），

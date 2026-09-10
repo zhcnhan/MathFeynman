@@ -153,6 +153,164 @@ def materials_summaries(db, subject_id: str, *, limit_chars: int = 220) -> list[
     return out
 
 
+# ---------- R36 D1/D2/D4：大纲起草读材料（可选输入）＋逐单元溯源 ----------
+
+DEFAULT_INJECT_MAX_CHARS = 6000   # 单次起草注入的材料正文总字符预算（config 可覆盖，D4）
+DEFAULT_SECTION_CHARS = 400       # 每节摘要字符上限（分节摘要降级用）
+MAX_SECTIONS_PER_MATERIAL = 12    # 每份材料最多展示的节数（超出的节进"已截取"口径）
+
+_PAGE_MARK = re.compile(r"^【第\s*(\d+)\s*页】\s*$")
+_HEADING_MARK = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+
+
+def _entries_with_body(subject_id: str) -> list[dict]:
+    """材料条目（含正文 body）——服务端校验/注入用；对外 API 不下发正文。"""
+    out = []
+    for p in sorted(materials_dir(subject_id).glob("*.md")):
+        e = _parse_entry(p)
+        if e:
+            out.append(e)
+    return out
+
+
+def material_sections(body: str, *, max_sections: int = MAX_SECTIONS_PER_MATERIAL,
+                      section_chars: int = DEFAULT_SECTION_CHARS) -> list[dict]:
+    """把材料正文切成"可引用的节"：PDF 的 `【第 N 页】` → Markdown 标题 → 段落兜底。
+
+    返回 ``[{label, text}]``：label＝章节名（第 N 页 / 标题 / 第 N 节），供 D2 溯源与 D4 分节摘要。
+    text 已按 ``section_chars`` 截断（超长留 `…` 标记）。
+    """
+    raw = (body or "").strip()
+    if not raw:
+        return []
+    sections: list[dict] = []
+    buf: list[str] = []
+    label = ""
+
+    def _flush() -> None:
+        nonlocal buf, label
+        text = "\n".join(buf).strip()
+        if text:
+            cut = len(text) > section_chars
+            sections.append({
+                "label": label or f"第 {len(sections) + 1} 节",
+                "text": text[:section_chars] + ("…" if cut else ""),
+            })
+        buf = []
+
+    for line in raw.splitlines():
+        s = line.strip()
+        m = _PAGE_MARK.match(s)
+        if m:
+            _flush()
+            label = f"第 {m.group(1)} 页"
+            continue
+        h = _HEADING_MARK.match(s)
+        if h:
+            _flush()
+            label = h.group(1).strip()
+            continue
+        buf.append(line)
+    _flush()
+    return sections[:max_sections]
+
+
+def draft_materials(db, subject_id: str, *, max_chars: int = DEFAULT_INJECT_MAX_CHARS) -> dict:
+    """D1＋D4：大纲起草的**材料注入包**（唯一入口）。
+
+    返回:
+    - ``text``：注入 prompt 的材料块（分节摘要 + 章节名；受 ``max_chars`` 总预算硬约束）；
+    - ``index``：``[{id,title,source,url,body,sections}]``——**服务端 D2 校验用**（含正文，不下发前端）；
+    - ``used_chars`` / ``dropped``（未注入的材料标题）/ ``truncated``（是否因预算截断）。
+
+    预算纪律（D4）：**绝不整本塞进一次调用**——先到先得 + 总字符上限；超出即截断并留痕；
+    每日 token 上限仍由 ``LLM_MAX_TOKENS_PER_DAY``（provider 侧）保护。
+    """
+    index = []
+    for e in _entries_with_body(subject_id):
+        index.append({
+            "id": e["id"], "title": e["title"], "source": e["source"], "url": e["url"],
+            "body": e.get("body", ""), "sections": material_sections(e.get("body", "")),
+        })
+    used = 0
+    blocks: list[str] = []
+    dropped: list[str] = []
+    truncated = False
+    for m in index:
+        head = f"### 材料《{m['title']}》（{m['source'] or '本地'}"
+        head += f"，{m['url']}" if m["url"] else ""
+        head += "）"
+        block_used = len(head)
+        if used + block_used > max_chars:  # 标题都放不下 → 整份材料不注入（留痕）
+            dropped.append(m["title"])
+            truncated = True
+            continue
+        lines: list[str] = []
+        for sec in m["sections"]:
+            line = f"- [{sec['label']}] {sec['text']}"
+            if used + block_used + len(line) > max_chars:
+                truncated = True
+                break
+            lines.append(line)
+            block_used += len(line)
+        if not lines:
+            dropped.append(m["title"])
+            continue
+        used += block_used
+        blocks.append(head + "\n" + "\n".join(lines))
+    text = "\n\n".join(blocks)
+    if dropped:
+        text += ("\n\n（另有 %d 份材料因超出本次注入预算未展示：%s）"
+                 % (len(dropped), "、".join(dropped)))
+    return {"text": text, "index": index, "used_chars": used, "dropped": dropped,
+            "truncated": truncated, "count": len(index)}
+
+
+def check_unit_material(ref: dict, index: list[dict]) -> tuple[dict | None, str]:
+    """D2：校验单个 ``{title, section}`` 溯源引用 → ``(规范化引用 | None, 中文问题)``。
+
+    规则：① ``title`` 必须真实存在于该学科引用库；② ``section`` 必须是该材料的**真实章节名**
+    （第 N 页 / 标题，见 ``material_sections``）**或逐字出自其正文的引文**——
+    后者复用 ``content.citations`` 的同一把尺子（归一化 + ≥6 字 + 子串包含），
+    与 R35 S2 的 basis 引文纪律同源，不另写一份。
+    """
+    from ..content import citations
+
+    title = str((ref or {}).get("title") or "").strip()
+    section = str((ref or {}).get("section") or "").strip()
+    if not title:
+        return None, "材料溯源项缺少材料标题（title）"
+    hit = next((m for m in index if m["title"] == title), None)
+    if hit is None:
+        return None, f"材料溯源不成立：该学科引用库里没有名为「{title}」的材料"
+    if not section:
+        return None, f"材料《{title}》的溯源缺少 section（须给出真实章节名或逐字引文）"
+    if citations.normalize(section) in {citations.normalize(s["label"]) for s in hit["sections"]}:
+        return {"title": hit["title"], "section": section}, ""
+    ok, reason = citations.check(section, hit["body"], where=f"材料《{hit['title']}》正文")
+    if ok:
+        return {"title": hit["title"], "section": section}, ""
+    return None, f"材料《{hit['title']}》溯源不成立：{reason}"
+
+
+def material_ids_for_titles(db, subject_id: str, titles: list[str]) -> tuple[list[str], list[str]]:
+    """D3：材料标题 → material_id（按首次出现序去重）；返回 ``(ids, 未找到的标题)``。"""
+    by_title = {e["title"]: e["id"] for e in _entries_with_body(subject_id)}
+    ids: list[str] = []
+    missing: list[str] = []
+    for t in titles:
+        t = str(t or "").strip()
+        if not t:
+            continue
+        mid = by_title.get(t)
+        if mid is None:
+            missing.append(t)
+            continue
+        if mid not in ids:
+            ids.append(mid)
+    return ids, missing
+
+
 def search_candidates(db, subject_id: str, query: str) -> dict:
     """联网候选（Phase C C1：检索后端 provider 抽象；默认未启用 → 明确中文提示）。
 
@@ -279,6 +437,7 @@ def select_candidates(db, subject_id: str, items: list[dict],
 __all__ = [
     "SOURCE_POLICIES",
     "DEFAULT_POLICY",
+    "DEFAULT_INJECT_MAX_CHARS",
     "materials_dir",
     "get_policy",
     "set_policy",
@@ -286,6 +445,10 @@ __all__ = [
     "list_materials",
     "delete_material",
     "materials_summaries",
+    "material_sections",
+    "draft_materials",
+    "check_unit_material",
+    "material_ids_for_titles",
     "search_candidates",
     "select_candidates",
 ]

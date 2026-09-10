@@ -78,6 +78,23 @@ class OutlineUnit(BaseModel):
     topic: str = ""  # math roadmap topic 保留位（通用学科可空）
     status: Literal["draft", "reviewed"] = "draft"  # 单元转正状态（roadmap 如实标注）
     meta: dict = Field(default_factory=dict)  # 附加元数据（生成器/AI 稿可携带，不改语义）
+    # R36 D2：逐单元材料溯源——本单元骨架来自引用材料的哪一节（无材料/未引用则为空）。
+    # 服务端校验（outline.materials.check_unit_material）：title 必须真实存在于该学科引用库，
+    # section 必须是该材料的真实章节名**或**逐字出自其正文的引文（同一把引文尺子，content.citations）。
+    materials: list[dict] = Field(default_factory=list)
+
+    @field_validator("materials")
+    @classmethod
+    def _materials_ok(cls, v: list[dict]) -> list[dict]:
+        out: list[dict] = []
+        for it in v or []:
+            if not isinstance(it, dict):
+                continue
+            title = str(it.get("title") or "").strip()
+            if not title:
+                continue  # 无 title 的溯源项无意义（服务端在起草收尾处另记问题）
+            out.append({"title": title, "section": str(it.get("section") or "").strip()})
+        return out[:3]  # 一个单元最多标 3 条依据（够用且防刷）
 
     @field_validator("id")
     @classmethod
@@ -132,6 +149,9 @@ class OutlineDoc(BaseModel):
     generated_at: str = ""
     updated_at: str = ""
     note: str = ""
+    # R36 D3：大纲层材料溯源——采纳时由服务端从各单元 materials[].title 反查得到 material_id 列表
+    # （不由客户端提交，避免"自报来源"；见 api/subjects.put_outline）。
+    source_materials: list[str] = Field(default_factory=list)
     units: list[OutlineUnit] = Field(default_factory=list)
 
     @field_validator("schema_version")
@@ -222,6 +242,20 @@ def validate_outline_doc(doc: OutlineDoc, *, known_content_ids: set[str] | None 
             break
     if cyc:
         problems.append(f"大纲前置存在环: {'; '.join(cyc)}")
+    # R36 P1（由易到难）：**先修单元的 difficulty 不得高于后继**（顺序与难度一致）。
+    # - 只查同大纲内的前置（内容节点/跨文件引用的难度不在本文件，跳过——已在 P1 规格注记）；
+    # - **豁免 `source == "roadmap"`**：预设（math）大纲的顺序由课程蓝图总序（R18）与 roadmap audit
+    #   治理，且现存 math 大纲实测有 15 处难度倒置（数据层治理项，见 NOTES §60，本批不动数学数据）；
+    #   本校验面向"起草→采纳"的通用/自定义大纲（R36 的目标场景）。
+    if doc.source != "roadmap":
+        for u in units:
+            for p in u.prereqs:
+                q = index.get(p)
+                if q is not None and q.difficulty > u.difficulty:
+                    problems.append(
+                        f"{u.id}: 前置 {p}（难度 {q.difficulty}）高于本单元（难度 {u.difficulty}）"
+                        "——大纲须由易到难，先修不得难于后继（R36 P1）"
+                    )
     return problems
 
 

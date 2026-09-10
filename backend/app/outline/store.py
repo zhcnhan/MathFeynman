@@ -338,6 +338,7 @@ def add_outline(
     source: str = "manual",
     note: str = "",
     known_content_ids: set[str] | None = None,
+    source_materials: list[str] | None = None,
 ) -> OutlineDoc:
     """创建或整份重生成大纲（revision 递增；源=roadmap 的 preset 大纲不经此路径编辑）。
 
@@ -371,6 +372,9 @@ def add_outline(
     doc.note = note or doc.note
     doc.schema_version = OUTLINE_SCHEMA_VERSION
     doc.unit_id_scope = "subject"
+    # R36 D3：大纲层材料溯源（material_id 列表由调用方按各单元 materials[].title 反查得到）
+    if source_materials is not None:
+        doc.source_materials = list(dict.fromkeys(str(x) for x in source_materials if str(x).strip()))
     doc.updated_at = _now_iso()
     if revision == 1:
         doc.generated_at = _now_iso()

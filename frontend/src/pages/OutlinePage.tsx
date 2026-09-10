@@ -14,7 +14,16 @@ type Unit = {
   anchors: string[];
   topic: string;
   status: string;
+  // R36 D2：逐单元材料溯源（服务端已校验：title 属于本学科引用库，section 为真实章节名或逐字引文）
+  materials?: { title: string; section: string }[];
 };
+
+/** R36 D3：把大纲层的 source_materials（material_id 列表）显示为材料标题。 */
+function materialTitles(ids: string[] | undefined, materials: MaterialItem[]): string[] {
+  if (!ids || ids.length === 0) return [];
+  const byId = new Map(materials.map((m) => [m.id, m.title]));
+  return ids.map((id) => byId.get(id) ?? id);
+}
 
 type UnitView = {
   id: string;
@@ -79,7 +88,7 @@ export default function OutlinePage() {
   const [subject, setSubject] = useState<Record<string, any> | null>(null);
   const [outline, setOutline] = useState<Record<string, any> | null>(null);
   const [progress, setProgress] = useState<{ units: UnitView[]; concepts_mastered: number } | null>(null);
-  const [candidate, setCandidate] = useState<{ units: Unit[]; source: string; problems: string[]; ok: boolean } | null>(null);
+  const [candidate, setCandidate] = useState<{ units: Unit[]; source: string; problems: string[]; ok: boolean; source_materials?: string[]; material_usage?: { count: number; used_chars: number; dropped: string[]; truncated: boolean } } | null>(null);
   const [draftBrief, setDraftBrief] = useState("");
   const [draftCount, setDraftCount] = useState(6);
   const [err, setErr] = useState("");
@@ -542,7 +551,12 @@ export default function OutlinePage() {
                 {outline ? "重新起草（丢弃当前稿）" : "AI 起草大纲"}
               </button>
             </div>
-            <div className="dim">起草仅生成候选（不落盘）；审阅后点“采纳”（大纲版本 revision+1）。无 LLM_KEY 时为离线启发式候选。</div>
+            <div className="dim">
+              起草仅生成候选（不落盘）；审阅后点“采纳”（大纲版本 revision+1）。无 LLM_KEY 时为离线启发式候选。
+              {materials.length > 0
+                ? `起草会读取上方引用材料（当前 ${materials.length} 份，按分节摘要注入、受字符预算约束）：每个单元须标注依据的材料与章节，服务端校验不通过会被驳回重生成。`
+                : "（当前无引用材料：起草只按学科简介进行；上传材料后起草会读它。）"}
+            </div>
           </>
         )}
         {candidate && (
@@ -556,9 +570,19 @@ export default function OutlinePage() {
                 <strong>{i + 1}. {u.title}</strong>{" "}
                 <span className="badge">{u.group}</span>
                 {u.prereqs.length > 0 && <span className="dim"> 前置：{u.prereqs.join("、")}</span>}
+                {u.materials && u.materials.length > 0 && (
+                  <div className="dim" style={{ fontSize: 12 }}>
+                    依据材料：{u.materials.map((r) => `《${r.title}》${r.section ? " · " + r.section : ""}`).join("；")}
+                  </div>
+                )}
                 <div className="chip">{u.concept_tags?.join(" · ")}</div>
               </div>
             ))}
+            {materialTitles(candidate.source_materials, materials).length > 0 && (
+              <div className="dim" style={{ marginTop: 6 }}>
+                本候选依据的材料：{materialTitles(candidate.source_materials, materials).map((t) => `《${t}》`).join("、")}
+              </div>
+            )}
             <div style={{ marginTop: 10 }}>
               <button className="primary" onClick={adopt} disabled={busy}>采纳此大纲</button>{" "}
               <button onClick={() => setCandidate(null)} disabled={busy}>放弃候选</button>
@@ -583,6 +607,12 @@ export default function OutlinePage() {
             )}
           </div>
           {outline.note && <div className="dim">{outline.note}</div>}
+          {materialTitles(outline.source_materials, materials).length > 0 && (
+            <div className="banner ok" style={{ margin: "6px 0" }}>
+              本大纲依据的材料（{materialTitles(outline.source_materials, materials).length}）：
+              {materialTitles(outline.source_materials, materials).map((t) => `《${t}》`).join("、")}
+            </div>
+          )}
           {groups.map((g: string) => (
             <div key={g}>
               <h2>▸ {g}</h2>
@@ -598,6 +628,11 @@ export default function OutlinePage() {
                           <td style={{ padding: "6px 4px" }}>
                             <strong>{u.title}</strong>
                             {u.status === "reviewed" && <span className="badge pass">转正</span>}
+                            {u.materials && u.materials.length > 0 && (
+                              <div className="dim" style={{ fontSize: 12 }}>
+                                依据：{u.materials.map((r) => `《${r.title}》${r.section ? " · " + r.section : ""}`).join("；")}
+                              </div>
+                            )}
                           </td>
                           <td style={{ padding: "6px 4px" }}>
                             {pv && (

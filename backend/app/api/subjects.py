@@ -183,10 +183,22 @@ def put_outline(subject_id: str, body: PutOutlineBody, db: Session = Depends(get
         raise _err(422, "validation_error", f"自定义大纲 source 非法: {body.source!r}")
     try:
         units = _unit_payloads(body.units)
+        # R36 D3：材料溯源由**服务端**从各单元 materials[].title 反查 material_id（不信客户端自报）；
+        # 引用了不存在的材料 → 中文 422（与起草阶段的 D2 校验同一口径）。
+        from ..outline import materials as mat
+
+        titles = [str((r or {}).get("title") or "") for u in units for r in (u.materials or [])]
+        mat_ids, missing = mat.material_ids_for_titles(db, subject_id, titles)
+        if missing:
+            raise _err(422, "validation_error",
+                       "大纲引用的材料不存在于该学科引用库：" + "、".join(sorted(set(missing)))
+                       + "。请先在「学科管理 · 材料」中导入/上传该材料，或移除该单元的溯源引用。")
         doc = outline_store.add_outline(
             db, subject_id, units=units, status=body.status, source=body.source,
-            note=body.note, known_content_ids=_content_ids(),
+            note=body.note, known_content_ids=_content_ids(), source_materials=mat_ids,
         )
+    except HTTPException:
+        raise
     except OutlineError as e:
         raise _outline_err(e) from e
     concept_svc.sync_outline_registry(db, subject_id, doc)
@@ -204,7 +216,10 @@ def validate_candidate(subject_id: str, body: PutOutlineBody,
     subj = outline_store.get_subject(db, subject_id)
     if subj is None:
         raise _err(404, "not_found", f"学科不存在: {subject_id}")
-    doc = OutlineDoc(subject=subject_id, label=subj.label, units=units)
+    # R36 P1：按"将要采纳时的 source"校验（roadmap 派生大纲豁免难度单调硬校验——数据治理项）
+    doc = OutlineDoc(subject=subject_id, label=subj.label,
+                     source=body.source if body.source in OUTLINE_SOURCES else "manual",
+                     units=units)
     problems = outline_store.validate_outline(doc, known_content_ids=_content_ids())
     return {"ok": not problems, "problems": problems, "units": len(units)}
 
@@ -244,7 +259,8 @@ def regenerate_outline(subject_id: str, db: Session = Depends(get_db),
     from ..outline.draft import draft_outline as _draft
 
     b = body or DraftOutlineBody()
-    return _draft(subject_id, brief=b.brief, count=b.count, group_hint=b.group_hint)
+    return _draft(subject_id, brief=b.brief, count=b.count, group_hint=b.group_hint,
+                  materials=_draft_materials(db, subject_id))
 
 
 class DraftOutlineBody(BaseModel):
@@ -253,16 +269,30 @@ class DraftOutlineBody(BaseModel):
     group_hint: str = ""
 
 
+def _draft_materials(db: Session, subject_id: str) -> dict | None:
+    """R36 D1/D4：起草注入包（引用材料分节摘要 + 服务端校验索引）；无材料 → None（退化为现状）。"""
+    from ..config import get_settings
+    from ..outline import materials as mat
+
+    pack = mat.draft_materials(db, subject_id, max_chars=get_settings().outline_material_max_chars)
+    return pack if pack.get("count") else None
+
+
 @router.post("/subjects/{subject_id}/outline/draft")
 def draft_outline(subject_id: str, body: DraftOutlineBody, db: Session = Depends(get_db)) -> dict:
-    """AI/启发式起草大纲候选（不落盘）→ UI 预览 → PUT 采纳（docs/14 §2.1 · A4）。"""
+    """AI/启发式起草大纲候选（不落盘）→ UI 预览 → PUT 采纳（docs/14 §2.1 · A4）。
+
+    R36 D1/D2：注入该学科**引用材料**（分节摘要，受预算约束）；**材料可选**——无材料时退化为
+    仅按 brief 起草，不报错；有材料时要求逐单元 `materials:[{title,section}]` 溯源（服务端校验，不成立则驳回重生成一次）。
+    """
     _require_enabled(db, subject_id)
     row = outline_store.get_subject(db, subject_id)
     if row.kind == "preset":
         raise _err(409, "conflict", "预置学科大纲由课程蓝图（roadmap）治理，请使用派生/再生成接口")
     from ..outline.draft import draft_outline as _draft
 
-    return _draft(subject_id, brief=body.brief, count=body.count, group_hint=body.group_hint)
+    return _draft(subject_id, brief=body.brief, count=body.count, group_hint=body.group_hint,
+                  materials=_draft_materials(db, subject_id))
 
 
 @router.post("/subjects/{subject_id}/units/{unit_id}/content")
