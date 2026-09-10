@@ -2551,6 +2551,17 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
    但**每次后端启动会由 `sync_content` 重建**（引擎既有语义，非走查残留）→ 详见 **§59.2**。
 8. **R35 审计脚本要入库**（`docs/09 R35 §5` / 工单 §5 要求"审计脚本必须入库长期保留"）：
    架构侧现存于 `_backups\r35-audit-20260910-170300\`；入库时机与路径待定（R35b 批一并做）。
+9. **【R36 D/P 新发现】math 预设大纲 15 处难度倒置**（§60.5 清单）：P1（先修难度 ≤ 后继）对
+   `source=="roadmap"` 的预设大纲**豁免**（其顺序由 R18 总序 + roadmap audit 治理，改数学数据超本批授权）。
+   待裁：**治理数据**（按 P1 修 roadmap difficulty/顺序）还是**确认长期豁免**？
+10. **【R36 D/P 新发现】P4（难度只能靠已教事实累积）目前只有 prompt 约束**：机器校验依赖 R35 的
+    `taught_facts/derivable`（S1/S2），**R35b 落地时一并接**（本批按用户要求明确登记，不假装已机器校验）。
+11. **【R36 D/P 新发现】材料注入只做"分节摘要"**（PDF 按页 / Markdown 标题 / 段落兜底，每节 ≤400 字、
+    总量 ≤`MF_OUTLINE_MATERIAL_MAX_CHARS`）：**未做语义级摘要**——大部头书籍注入的是"每节开头若干字"。
+    若实际体验不佳，可加一次轻模型摘要（成本/复杂度上升，未裁定）。
+12. **【R36 D/P 新发现】AI 输出 schema 与 prompt 的字段一致性**是易漏点（§60.4：schema 漏声明
+    `materials` → pydantic 静默丢弃，单测用假 provider 测不出）。已加接线锁定用例；
+    **今后新增 AI 输出字段必须同时改 `ai/calls.py` 的 out schema + prompt + 一条 schema 往返用例**。
 
 ---
 
@@ -2632,4 +2643,99 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     若要求"永久 0"，需把 `recompute_states` 改成**按需建行**（引擎语义变更，超出 R36 授权，未做）。
 - 现场复核：`subjects = [('math','数学','preset',0)]`（math 仍停用）；`content/stages` 25 个 `.md`、
   `content/subjects` 仅 `math/`；服务 8000/5173 均 200；`git status` 干净。
+
+---
+
+## 60. R36 任务 D＋P：大纲起草读材料 + 「由易到难·零基础读一本书」通用化（2026-09-10）
+
+> 规格：`docs/09 R36` §1（D1–D5）/ §2（P1–P5）；工单 `.runtime/EULER_TICKET_R36.md`。
+> 与 R35 **合批执行、分两次汇报**；本批为第二次（第一次＝任务 L，见 §59）。
+> **提交与 R35 无混合**（R35 本批未实现）。
+
+### 60.1 提交链（均本批）
+
+| 提交 | 内容 |
+|---|---|
+| `adc0b89` | `refactor(R36 D2)`：**引文尺子收敛**为 `app/content/citations.py`（`feynman_ledger` 委托，R30 F5 口径逐字不变） |
+| `ae2c8f7` | `chore(R36)`：`backend/app/config.py` 行尾归一 LF（**纯 EOL 独立提交**，便于分离 blame——R28 F2 同口径） |
+| `6b589b7` | `feat(R36 D+P)`：D1–D5 + P1–P5 实现 + 15 用例 + docs/06、docs/14 |
+| `3bf1ca8` | `fix(R36 D2)`：`CALL_OUTLINE_DRAFT` 输出 schema 声明 `materials`（**活体冒烟实测踩到的接线缺口**，见 §60.4） |
+
+### 60.2 D1–D5 落地
+
+| 项 | 实现 | 证据 |
+|---|---|---|
+| **D1 注入** | 唯一入口 `outline.materials.draft_materials(db, sid, max_chars=…)` → `text`（分节摘要注入 prompt）+ `index`（服务端校验用，含正文，不下发）；`_ai_draft_units` 把材料块拼进 user message；`/outline/draft` 与 custom 的 `/outline/regenerate` 都注入 | `test_d1_draft_injects_material_sections_into_prompt`；**材料可选**：`test_d1_draft_without_materials_degrades_but_succeeds`（无材料 → 200、`material_usage.count=0`、不报错） |
+| **D2 逐单元溯源** | `OutlineUnit.materials: [{title, section}]` + `OutlineDraftMaterial`（**AI 输出 schema 必须声明**）+ `check_unit_material`：title 必须属于该学科引用库；section 必须是**真实章节名**（`第 N 页`/标题，来自 `material_sections`）**或逐字出自材料正文的引文**（复用 `content.citations` 的 ≥6 字归一化包含校验）。不成立 → **驳回重生成一次**（中文原因回灌 prompt）→ 仍不成立 → **剔除该引用并记问题**（宁缺勿造，不硬失败） | `test_d2_valid_section_and_verbatim_quote_are_kept` / `test_d2_bogus_citation_rejected_then_regenerated`（断言 `len(calls)==2` + 回灌含"引用库"）/ `test_d2_citation_stripped_when_regeneration_also_fails` |
+| **D3 大纲层溯源** | 采纳时**服务端**按各单元 `materials[].title` 反查 `material_id`（`material_ids_for_titles`）写入 `OutlineDoc.source_materials`（**不信客户端自报**）；引用不存在 → 中文 422；候选响应即带 `source_materials`；大纲页显示「本大纲依据的材料」+ 逐单元"依据"行 | `test_d3_put_outline_records_source_materials_server_side` / `test_d3_put_outline_rejects_unknown_material_zh`；前端 `OutlinePage.tsx`（tsc 通过） |
+| **D4 预算** | `MF_OUTLINE_MATERIAL_MAX_CHARS`（默认 6000，`config.py` + `.env.example`）；**先到先得 + 总字符硬上限**，超限 → 该材料截断（`truncated`）/整体不注入（`dropped`）并**留痕**（prompt 尾部注明"另有 N 份未展示"）；**禁止整本塞入一次调用**；每日 token 上限仍由 `LLM_MAX_TOKENS_PER_DAY`（provider 侧）保护 | `test_d4_injection_respects_char_budget`（800 预算：`used_chars ≤ 800`、`truncated`、prompt 无第 20 页）/ `test_d4_material_over_budget_is_reported_dropped` |
+| **D5 通用** | 与学科无关：custom 一律适用（含 regenerated 候选）；preset（math）大纲由 roadmap 派生、不走起草路径 → 不受影响 | 用例全部用自定义学科（含非理科语义） |
+
+### 60.3 P1–P5 落地
+
+- **P1（新增校验）**：`validate_outline_doc` 增"先修 `difficulty` 不得高于后继"，中文问题串带「由易到难」；
+  `/outline/validate` 按 `source` 生效、`PUT` 采纳时硬拒（**422 中文**）。
+  用例：`test_p1_validate_reports_difficulty_inversion`（造错必报）、`test_p1_put_outline_rejects_difficulty_inversion_zh`、
+  `test_p1_monotonic_ok_and_roadmap_exempt`。
+- ⚠️ **实测数据问题（需架构侧裁）**：math 预设大纲（258 单元，`source=roadmap`）**有 15 处难度倒置**，例如
+  `primary.s05`(难度1) ← 前置 `primary.s04`(难度2)、`high.h08`(1) ← `high.h07`(2)、`ai.a33`(2) ← `ai.a32`(3)…
+  （完整 15 条清单见 §60.5）。**本批处置＝豁免 `source=="roadmap"`**（预设顺序由课程蓝图总序 R18 + roadmap audit
+  治理；改数学数据超出本批授权）→ **数据治理或"长期豁免"需架构侧裁**（挂 §58-9）。
+- **P2（首单元零基础）**：写进起草 system prompt（"第一个单元必须能被完全零基础者学会，不得假定任何前置概念"）；
+  **P3**（group 表达章/阶段层次、组内先易后难）与 **P4**（难度只能靠已教事实累积）同样只落在 prompt 约束；
+  **P4 的机器校验待 R35 的 `taught_facts/derivable`**（本批不做——用户已明确要求汇报里说明）。
+  用例：`test_p2_p3_p4_constraints_are_in_draft_prompt`（断言 prompt 含"零基础"/"由易到难"/"group"/"已讲"）。
+- **P5**：**不新增引擎**（沿用掌握度 + FSRS）；本批未改 domain/service 的进度语义。
+
+### 60.4 活体冒烟（真模型 · 两次，留档 `.runtime/r36_live_smoke{,2}.out.txt`）
+
+脚本 `.runtime/r36_live_smoke.py`：建临时学科 `s-r36smoke` → 上传 2 页材料 → 起草 → 采纳 → **硬删复原**。
+
+| 次序 | 结果 | 结论 |
+|---|---|---|
+| 第 1 次（schema 修复前） | 起草 200/ok，但 **每个单元 `materials=[]`、`source_materials=[]`**（模型给了引用也会被丢） | **发现接线缺口**：`CALL_OUTLINE_DRAFT` 的输出 schema 未声明 `materials`，`provider.chat_json` 用 `model_validate` 校验时**静默丢弃未声明字段** → 假 provider 的单测**测不出**这类缺口。已修（`3bf1ca8`）+ 补接线锁定用例 |
+| 第 2 次（修复后） | 3 个单元**全部带真实页引用**：u01→`第 1 页`、u02→`第 2 页`、u03→`第 1 页＋第 2 页`；候选与采纳后 `GET /outline` 的 `source_materials` 均为 `['mat-16e1affd81']`；`material_usage={count:1, used_chars:193, dropped:[], truncated:false}`；难度 **1→2→2**（单调）、首单元 `prereqs=[]`、`group` 为"第一章 认识星空" | D1/D2/D3 真模型链路**打通** |
+
+现场复原：临时学科 204 硬删，学科列表回到 `[math(禁用)]`；计数
+`nodes 25 / edges 28 / user_nodes 25（引擎物化，架构侧已裁定接受）/ subjects 1 / sessions·attempts 0`，
+`ai_logs 38 → 40`（两次冒烟各 1 次真模型调用，**保留**作为真实调用留档，不再清库——遵 R36 §6 裁定）。
+
+### 60.5 math 预设大纲难度倒置清单（P1 豁免依据，供架构侧治理）
+
+`primary.s05(1)←s04(2)`、`primary.s23(2)←s10(3)`、`primary.s24(2)←s15(3)`、`primary.s21(2)←s20(3)`、
+`middle.m11(1)←m03(2)`、`high.h08(1)←h07(2)`、`college.c06(2)←c05(3)`、`college.c16(2)←high.h47(3)`、
+`college.c31(2)←c30(3)`、`college.c44(2)←high.h06(3)`、`ai.a07(2)←a06(3)`、`ai.a11(2)←college.c20(3)`、
+`ai.a19(2)←a14(3)`、`ai.a33(2)←a32(3)`、`ai.a56(2)←a55(3)`（格式：`单元(难度)←前置(难度)`，共 15 处）。
+
+### 60.6 与 R35 的复用接口（用户点名要求：同一套引文纪律，别写两份）
+
+`backend/app/content/citations.py` = **引文纪律的单一实现**：
+
+```python
+MIN_QUOTE_CHARS = 6
+normalize(text) -> str                     # 去空白/标点/省略号
+is_valid(quote, source, *, min_chars=6)    # 归一化子串包含 + 最短门槛
+invalid_reason(quote, source, *, where="给定原文") -> str   # 中文，区分"过短"/"不在原文"
+check(quote, source, *, where=…) -> (bool, str)
+```
+
+- 既有使用方：费曼 evidence（`service/feynman_ledger` 全部委托，R30 F5 语义/文案不变）；
+- 本批新增使用方：**D2 大纲单元的材料溯源**（`outline.materials.check_unit_material`）；
+- **R35 S2 的 basis 引文校验直接调用本模块**（勿再写第二份包含校验）。
+- 锁定用例：`test_citation_ruler_is_shared_with_feynman_evidence`。
+
+### 60.7 回归自证
+
+| 项 | 实测 | 与基线 |
+|---|---|---|
+| `pytest backend/tests` | **343 collected / 341 passed + 2 skipped / 0 failed / 0 error，exit 0**（116.0s） | 基线 328/326+2 → **+15 = 本批新用例**（留档 `.runtime/r36dp_accept.xml`） |
+| `content validate` | **ok 25 / 48** | 不变 |
+| roadmap audit | **27 / 31 / 81 / 59 / 60**，各错误项 0 | 不变 |
+| `npx tsc --noEmit` | exit 0 | ✅ |
+| 代码范围 | `backend/app/{content/citations,ai/calls,outline/{schemas,materials,draft,store},api/subjects,config}.py`、`frontend/src/pages/OutlinePage.tsx`、`docs/06`、`docs/14`、`tests/test_r36_outline_materials.py` | 未触碰 domain/判定/内容库/`content/stages` |
+| 错误中文化 | 新增错误全部中文（材料引用不成立/引用库不存在/由易到难…） | ✅ |
+
+**疑点（挂 §58）**：① math 15 处难度倒置（P1 豁免来源）是否治理；② P4 机器校验待 R35；
+③ 材料注入目前只做"分节摘要"（PDF 按页 / Markdown 标题 / 段落兜底），**未做语义级摘要**——
+若书很大，注入的是"每节开头 400 字"，必要时再接一次轻模型摘要（成本/复杂度上升，未做）。
 

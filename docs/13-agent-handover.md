@@ -79,6 +79,20 @@
 > `nodes 28→25`（3 行走查残影永久清除）、`ai_logs 42→38`（仅清走查那 4 次调用）、`user_nodes→0`；
 > **登记**：`user_nodes` 会随后端启动被 `sync_content` 重建（引擎语义，非残留）。
 > 详见 NOTES **§59**。
+>
+> **R36 任务 D＋P 已完成（Euler，2026-09-10 · 待架构侧验收）**：
+> ① **D1–D5 大纲起草读材料**：`/outline/draft`（与 custom 的 regenerate）注入该学科引用材料的**分节摘要**
+> （唯一入口 `outline.materials.draft_materials`；`MF_OUTLINE_MATERIAL_MAX_CHARS` 预算 + 截断/丢弃留痕；
+> **材料可选，无材料退化为现状不报错**）；单元带 `materials:[{title,section}]` 溯源（真实章节名或逐字引文，
+> 复用 `content.citations` 同一把尺子），不成立 → **驳回重生成一次** → 仍不成立剔除并记问题；
+> 采纳时**服务端**反查写入 `source_materials`（不信客户端自报）；大纲页显示「本大纲依据的材料」。
+> ② **P1–P5 由易到难·零基础**：`validate_outline_doc` 新增"先修 difficulty 不得高于后继"（中文 422；
+> **`source=="roadmap"` 豁免**——math 预设实测 15 处倒置，属数据治理项，见 NOTES §60.5）；
+> 首单元零基础 / 分组表达章阶段 / 难度只能靠已教事实累积 → 写进 prompt（**P4 机器校验待 R35**，明记）。
+> ③ 提交：`adc0b89`（引文尺子收敛）→ `ae2c8f7`（config.py 纯 EOL）→ `6b589b7`（D+P）→
+> `3bf1ca8`（AI 输出 schema 声明 materials——**活体冒烟实测踩到的接线缺口**）。
+> 回归 **341 passed + 2 skipped / 343 collected**（+15 用例）；validate 25/48、audit 27/31/81/59/60、tsc 0。
+> 记录：NOTES **§60**（含真模型活体冒烟两次对照与 math 倒置清单）。
 > 提交链：443efb0（后端账本/双提交）→ bfd5bea（UI）→ a3dbddc（协议）→ 65282e9/8927a20（R28 裁决）
 > → fe9902d（R29 热修 + 回归用例）→ b1c1b05（R30 规格）
 > → **4f7990b（F6）→ 23fc603（F5）→ 49e5149（F4）→ f66af5f（R29 引申 flow 自愈）→ f8c856d（F2 行尾）**。
