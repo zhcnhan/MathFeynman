@@ -104,6 +104,26 @@ button.ghost { background: transparent; border: 1px solid #c5cdd6; }
 .followup h3 { color: #b26a00; }
 .feynman textarea { width: 100%; }
 
+/* R27：费曼实时得分条（账本维度分 + 缺口 + 综合分/门槛） */
+.score-board { background: #f7fafc; border: 1px solid #e3ebf2; border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+.score-board-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: #455a64; margin-bottom: 8px; }
+.dim-bar { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 6px 0; }
+.dim-bar-label { width: 84px; color: #37474f; flex: none; }
+.dim-bar-track { position: relative; flex: 1; height: 12px; background: #e6edf3; border-radius: 6px; overflow: hidden; }
+.dim-bar-fill { display: block; height: 100%; border-radius: 6px; transition: width .35s ease; }
+.dim-bar-fill.ok { background: #43a047; }
+.dim-bar-fill.low { background: #ef9a9a; }
+.dim-bar-threshold { position: absolute; top: -2px; width: 2px; height: 16px; background: #1565c0; }
+.dim-bar-score { width: 96px; text-align: right; color: #546e7a; flex: none; }
+.dim-bar.overall { border-top: 1px dashed #cfd8dc; padding-top: 8px; margin-top: 8px; font-weight: 600; }
+.gap-list { margin-top: 8px; font-size: 13px; color: #7a5b00; }
+.gap-list .gap { margin: 3px 0; }
+.gap-list.all-clear { color: #1b5e20; }
+.gap-delta { margin-top: 4px; }
+.quote-warn { color: #b26a00; }
+.warn-badge { background: #ffe0b2; color: #b26a00; margin-left: 6px; }
+.warn-text { color: #b26a00; }
+
 /* ---- 复习 ---- */
 .queue-list { list-style: none; padding: 0; }
 .queue-list li { display: flex; justify-content: space-between; align-items: center; border: 1px solid #e1e6ec; border-radius: 8px; padding: 10px 14px; margin: 8px 0; }

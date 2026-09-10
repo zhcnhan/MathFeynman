@@ -2,7 +2,7 @@
 // R9: AI 等待可感知 —— 首次讲解/提问/提示/费曼评分/重新生成期间显示计时横幅。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, ExerciseView, NodeMeta, StepResponse, postStepStream } from "../api";
+import { api, ExerciseView, FeynmanGapUpdate, FeynmanLedger, NodeMeta, StepResponse, postStepStream } from "../api";
 import ExercisePanel, { Feedback } from "../components/ExercisePanel";
 import { dimLabel } from "../components/feynmanLabels";
 import MdMath from "../components/MdMath";
@@ -20,10 +20,15 @@ const EVENT_TEXT: Record<string, string> = {
   practice_cap_reached: "本轮 5 题未达成 3 连对，请重读讲解后再试",
   relearn_notice: "📖 回炉提示：请重读讲解稿",
   feynman_passed: "🎉 费曼口述通过！",
-  feynman_failed: "费曼未达标，回答追问再讲一次",
+  feynman_failed: "费曼未达标，按缺口提示补答或整合重讲",
+  feynman_followup: "💡 已按你的最弱缺口给出定向追问",
+  feynman_gap_filled: "✅ 缺口已补上（账本涨分可见）",
+  feynman_gap_open: "缺口还没补上，可在追问中再补一次",
+  feynman_evidence_flagged: "⚠️ 部分评分引文不在本轮文本中，已降级（防无据评分）",
   feynman_too_short: "口述太短，请完整讲一遍（≥20 字）",
   feynman_deferred: "评分暂不可用，已记录（可稍后人工复核）",
-  feynman_relearn: "费曼 3 轮未通过 → 回炉重学",
+  feynman_relearn: "费曼额度用尽仍未通过 → 回炉重学",
+  feynman_answer_too_short: "补答太短，请具体回答追问里要你补讲的那一点",
   node_mastered: "🏆 节点已掌握，进入复习队列",
   hint_given: "💡 已给出提示",
   notation_error: "输入无法解析——请按提示改法（不计错）",
@@ -348,9 +353,14 @@ export default function SessionPage() {
             </div>
           )}
           {step === "feynman" && (
-            <FeynmanView payload={payload} submitting={submitting} text={feynmanText} setText={setFeynDraft}
+            <FeynmanView
+              payload={payload}
+              submitting={submitting}
+              text={feynmanText}
+              setText={setFeynDraft}
               onSubmit={() => act("feynman_submit", { transcript: feynmanText })}
-              onAnswerFollowup={() => act("feynman_answer", { answer: feynmanText })} />
+              onAnswerFollowup={() => act("feynman_answer", { answer: feynmanText })}
+            />
           )}
           {step === "done" && <DoneView payload={payload} onHome={() => nav("/")} onHistory={() => nav("/feynman-history")} />}
 
@@ -440,9 +450,32 @@ function ExampleView({ payload, onNext }: any) {
   );
 }
 
+/**
+ * 费曼视图（docs/07 + docs/09 R27 v3 混合制）。
+ *
+ * 双提交入口：
+ *  - 有追问时：主按钮「回答追问」= feynman_answer（补答，只涨账本）；副按钮「整合后完整重讲」
+ *    = feynman_submit（完整稿终验，唯一能过关的提交）；
+ *  - 无追问时：「提交讲解」= feynman_submit。
+ * 实时得分条：各维度账本分（历轮最高分）+ 缺口提示（还差什么）+ 综合分/门槛进度条；
+ * 答追问后立即刷新（学生能看见涨分）。
+ */
 function FeynmanView({ payload, submitting, text, setText, onSubmit, onAnswerFollowup }: any) {
-  const card = payload?.dimension_scores;
-  const isFollowup = Boolean(payload?.followup_question && payload?.verdict === "fail");
+  const card = payload?.dimension_scores as Array<Record<string, any>> | undefined;
+  const ledger = payload?.ledger as FeynmanLedger | undefined;
+  const gaps = ledger?.gaps ?? [];
+  const followup = payload?.followup_question as string | undefined;
+  const hasFollowup = Boolean(followup);
+  const evalsDone = Number(payload?.evals_done ?? payload?.rounds_done ?? 0);
+  const evalBudget = Number(payload?.eval_budget ?? 3);
+  const answersDone = Number(payload?.answers_done ?? 0);
+  const answerBudget = Number(payload?.answer_budget ?? 2);
+  const threshold = Number(payload?.threshold ?? payload?.pass_threshold ?? 0.7);
+  const combined = Number(payload?.combined ?? ledger?.combined ?? 0);
+  const gapUpdate = payload?.gap_update as FeynmanGapUpdate | null | undefined;
+  const gapAnswered = payload?.verdict === "gap";
+  const tooShort = text.trim().length < 20;
+
   return (
     <div className="card feynman">
       <h1>费曼口述环节</h1>
@@ -452,51 +485,139 @@ function FeynmanView({ payload, submitting, text, setText, onSubmit, onAnswerFol
         </div>
       )}
       {payload?.verdict === "deferred" && <div className="banner warn">{payload.message ?? "评分暂不可用，已记录待人工复核。"}</div>}
-      {isFollowup && (
-        <div className="banner info">💡 你的补充回答会与最初的讲解合并后一起重新评分——请针对追问修正/补全你最初没讲清的地方，而不是另起炉灶。</div>
+
+      {/* ---- R27：实时得分条（账本维度分 + 缺口提示 + 综合分/门槛进度条） ---- */}
+      {ledger && (
+        <div className="score-board">
+          <div className="score-board-head">
+            实时得分（各维度取历轮最好成绩）
+            <span className="badge">整体稿（首讲+终验）：{evalsDone}/{evalBudget}</span>
+            <span className="badge">补答：{answersDone}/{answerBudget}</span>
+            {payload?.strategy ? <span className="badge tier-badge">本次档位：{tierLabel(payload.strategy as string)}</span> : null}
+          </div>
+          {ledger.dimensions.map((d) => (
+            <div key={d.key} className="dim-bar">
+              <span className="dim-bar-label">{dimLabel(d.key)}</span>
+              <span className="dim-bar-track">
+                <span
+                  className={`dim-bar-fill ${d.score >= threshold ? "ok" : "low"}`}
+                  style={{ width: `${Math.round(Math.min(1, Math.max(0, d.score)) * 100)}%` }}
+                />
+                <span className="dim-bar-threshold" style={{ left: `${Math.round(threshold * 100)}%` }} />
+              </span>
+              <span className="dim-bar-score">{Math.round(d.score * 100)}</span>
+            </div>
+          ))}
+          <div className="dim-bar overall">
+            <span className="dim-bar-label">综合分</span>
+            <span className="dim-bar-track">
+              <span
+                className={`dim-bar-fill ${combined >= threshold ? "ok" : "low"}`}
+                style={{ width: `${Math.round(Math.min(1, Math.max(0, combined)) * 100)}%` }}
+              />
+              <span className="dim-bar-threshold" style={{ left: `${Math.round(threshold * 100)}%` }} />
+            </span>
+            <span className="dim-bar-score">
+              {Math.round(combined * 100)} / 门槛 {Math.round(threshold * 100)}
+            </span>
+          </div>
+          {gaps.length > 0 ? (
+            <div className="gap-list">
+              {gaps.map((g) => (
+                <div key={g.key} className="gap">
+                  还差：<strong>{dimLabel(g.key)}</strong>——<MdMath text={g.description} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="gap-list all-clear">✅ 已无未达标维度：把整段讲解完整讲一遍即可终验。</div>
+          )}
+        </div>
+      )}
+
+      {/* ---- 补答结果（答追问后立刻可见涨分） ---- */}
+      {gapAnswered && (
+        <div className={`banner ${payload?.gap_filled ? "ok" : "warn"}`}>
+          <div>{payload?.message}</div>
+          {gapUpdate && (
+            <div className="gap-delta">
+              <strong>{dimLabel(gapUpdate.key)}</strong>：{Math.round(gapUpdate.score * 100)} 分
+              {gapUpdate.evidence_valid ? (
+                <span className="quote"> “{gapUpdate.evidence_quote}”</span>
+              ) : (
+                <span className="quote-warn"> 引文未通过本轮文本校验（已降级）：{gapUpdate.evidence_reason}</span>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {card ? (
         <div className="score-card">
           <h2>
-            综合分 {payload.combined} / 及格 {payload.threshold} · 第 {payload.rounds_done ?? 1} 轮
+            本轮评分卡（整体稿）· 第 {evalsDone || 1} 轮
             {payload.strategy ? <span className="badge tier-badge">本次档位：{tierLabel(payload.strategy as string)}</span> : null}
           </h2>
+          {payload?.evidence_penalty && (
+            <div className="banner warn">
+              ⚠️ 部分维度的引文不在本轮提交文本中，服务端已降级该维度分数（防"没读新内容还打分"）。
+            </div>
+          )}
           {card.map((d: any, i: number) => (
             <div key={i} className="dim">
               <div className="dim-head">
                 <strong>{dimLabel(d.key)}</strong> {Math.round(d.score * 100)} 分 · 权重 {d.weight}
+                {d.evidence_valid === false && <span className="badge warn-badge">引文未通过校验</span>}
               </div>
               <div className="quote">“{d.evidence_quote}”</div>
               <div className="comment"><MdMath text={d.comment} /></div>
+              {d.evidence_valid === false && d.evidence_reason && (
+                <div className="comment warn-text">{d.evidence_reason}</div>
+              )}
             </div>
           ))}
-          {isFollowup && (
-            <div className="followup">
-              <h3>Socratic 追问（回答后进入下一轮评分）</h3>
-              <TypeMd text={payload.followup_question} />
-            </div>
-          )}
         </div>
       ) : null}
+
+      {hasFollowup && (
+        <div className="followup">
+          <h3>定向追问（就这一个缺口，答完即可看到涨分）</h3>
+          <TypeMd text={followup!} />
+          {payload?.followup_gap?.description && (
+            <div className="gap">缺口：<MdMath text={payload.followup_gap.description} /></div>
+          )}
+        </div>
+      )}
 
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={5}
-        placeholder={isFollowup ? "回答上面的追问，尽量用自己的话讲完整（≥20 字）…" : "现在，请你像老师一样把这个概念讲给我听（打字 ≥20 字）…"}
+        placeholder={
+          hasFollowup
+            ? "回答上面的追问，只讲这一点也行（≥20 字）…"
+            : "现在，请你像老师一样把这个概念**完整**讲给我听（打字 ≥20 字）…"
+        }
       />
       <div className="input-row">
-        {isFollowup ? (
-          <button className="primary" disabled={submitting || text.trim().length < 20} onClick={onAnswerFollowup}>
-            提交追问回答
-          </button>
+        {hasFollowup ? (
+          <>
+            <button className="primary" disabled={submitting || tooShort} onClick={onAnswerFollowup}>
+              {submitting ? "提交中…" : "回答追问（补答）"}
+            </button>
+            <button className="ghost" disabled={submitting || tooShort} onClick={onSubmit}
+              title="把已补上的内容整合进完整讲解，做整体终验（只有完整稿达标才算通过）">
+              {submitting ? "提交中…" : "整合后完整重讲（终验）"}
+            </button>
+          </>
         ) : (
-          <button className="primary" disabled={submitting || text.trim().length < 20} onClick={onSubmit}>
-            提交口述
+          <button className="primary" disabled={submitting || tooShort} onClick={onSubmit}>
+            {submitting ? "提交中…" : "提交讲解"}
           </button>
         )}
-        <span className="hint">口述需 ≥20 字；短于 20 字会被判为敷衍。</span>
+        <span className="hint">
+          口述需 ≥20 字。补答只涨账本可见分；**通过必须交完整稿**（≥{Math.round(threshold * 100)} 分）。
+        </span>
       </div>
     </div>
   );

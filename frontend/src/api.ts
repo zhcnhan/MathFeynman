@@ -261,6 +261,43 @@ export interface ExerciseView {
   options?: string[];
 }
 
+// ---- R27：费曼缺口账本（实时得分条数据源） ----
+export interface FeynmanLedgerDim {
+  key: string;
+  label: string;
+  /** 账本维度分 = 历轮最高分（答对认账、看得见涨分） */
+  score: number;
+  best: number;
+  latest: number;
+  weight: number;
+  evidence_quote: string;
+  comment: string;
+  updated_round: number;
+}
+
+export interface FeynmanGap {
+  key: string;
+  description: string;
+  score: number;
+}
+
+export interface FeynmanLedger {
+  dimensions: FeynmanLedgerDim[];
+  combined: number;
+  threshold: number;
+  gaps: FeynmanGap[];
+}
+
+export interface FeynmanGapUpdate {
+  key: string;
+  score: number;
+  weight: number;
+  evidence_quote: string;
+  comment: string;
+  evidence_valid: boolean;
+  evidence_reason?: string;
+}
+
 export interface ProfileData {
   user_id: string;
   preferred_explanation_depth: number;

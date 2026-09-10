@@ -7,8 +7,10 @@ import { dimLabel } from "../components/feynmanLabels";
 import MdMath from "../components/MdMath";
 
 const VERDICT_TEXT: Record<string, string> = {
-  pass: "通过",
-  fail: "未过",
+  pass: "通过（完整稿）",
+  fail: "完整稿未过",
+  gap_filled: "补答：缺口已补上",
+  gap_open: "补答：缺口未补上",
   deferred: "待复核",
 };
 
