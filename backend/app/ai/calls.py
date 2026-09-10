@@ -77,6 +77,33 @@ class FeynmanFollowupOut(BaseModel):
     question_md: str
 
 
+# ---------- R27：缺口补答评估（轻量，非整体重评） ----------
+class GapCheckIn(BaseModel):
+    """补答评估输入（docs/09 R27 §2）：只针对当前追问与目标缺口，不做整体重评。
+
+    - ``target_gap``：{key, description, evidence_quote, comment} —— 维度 key + 学生视角
+      缺口描述 + 上轮 evidence/comment；
+    - ``student_answer``：本轮**只**是补答文本（不含历史合并稿——R27 治锚定的关键）。
+    """
+
+    session_id: str
+    node_id: str
+    task_prompt: str = ""
+    rubric_dimensions: list[dict] = Field(default_factory=list)  # [{key, weight, description}]
+    core_concepts: list[str] = Field(default_factory=list)
+    followup_question: str
+    student_answer: str
+    target_gap: dict
+
+
+class GapCheckOut(BaseModel):
+    """补答评估输出：gap_filled + 只更新缺口所属维度的 dimension_updates。"""
+
+    gap_filled: bool = False
+    dimension_updates: list[FeynmanDimScore] = Field(default_factory=list)
+    comment: str = ""  # 面向学生的缺口说明/是否补上（展示用）
+
+
 class ClassifyErrorOut(BaseModel):
     error_type: ErrorType = "unknown"
 
@@ -136,6 +163,9 @@ class FeynmanEvaluateIn(BaseModel):
     core_concepts: list[str] = Field(default_factory=list)  # 评分语境（程序注入）
     transcript: str
     previous_round: dict | None = None  # 二轮起：首轮评分摘要
+    # R27：账本已认可内容摘要（维度 key → 学生已被认可的原话/说明）。
+    # 学生没把已认可点重抄一遍不扣分（治"整体稿越写越薄被旧分拖累"）。
+    previously_acknowledged: list[dict] = Field(default_factory=list)
 
 
 class FeynmanFollowupIn(BaseModel):
@@ -144,6 +174,8 @@ class FeynmanFollowupIn(BaseModel):
     student_transcript: str
     previous_scores: list[dict] = Field(default_factory=list)
     socratic_followups: list[str] = Field(default_factory=list)
+    # R27：未达标缺口清单（定向追问；一次一个 —— 不再自由发问）
+    unmet_gaps: list[dict] = Field(default_factory=list)
 
 
 class ClassifyErrorIn(BaseModel):
@@ -190,6 +222,11 @@ CALL_FEYNMAN_EVALUATE = CallSpec(
 )
 CALL_FEYNMAN_FOLLOWUP = CallSpec(
     "feynman_followup", "heavy", FeynmanFollowupIn, FeynmanFollowupOut, temperature=0.6, max_retries=2
+)
+CALL_FEYNMAN_GAP_CHECK = CallSpec(
+    # R27：补答 = 轻量缺口评估（只判"缺口是否补上 + 该维度新分"），不整体重评
+    # → light 档足够且快（学生答完立刻看到涨分）；真模型可用时仍受 tier 决策链约束。
+    "feynman_gap_check", "light", GapCheckIn, GapCheckOut, temperature=0.2, max_retries=2
 )
 CALL_CLASSIFY_ERROR = CallSpec(
     "classify_error", "light", ClassifyErrorIn, ClassifyErrorOut, temperature=0.0, max_retries=2
@@ -286,6 +323,7 @@ CALLS: dict[str, CallSpec] = {
         CALL_EXPLAIN_SOLUTION_STEP,
         CALL_FEYNMAN_EVALUATE,
         CALL_FEYNMAN_FOLLOWUP,
+        CALL_FEYNMAN_GAP_CHECK,
         CALL_CLASSIFY_ERROR,
         CALL_DRAFT_CONTENT,
         CALL_OUTLINE_DRAFT,
@@ -324,6 +362,8 @@ __all__ = [
     "FeynmanFollowupIn",
     "FeynmanFollowupOut",
     "FeynmanMisconception",
+    "GapCheckIn",
+    "GapCheckOut",
     "ClassifyErrorIn",
     "ClassifyErrorOut",
     "ErrorType",

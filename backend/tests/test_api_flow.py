@@ -330,12 +330,10 @@ def test_regen_explain_clears_dirty_lecture(client):
     assert step["payload"]["lecture_md"]
 
 
-def test_feynman_fail_then_followup_pass(client):
-    """R10 回归（测试盲区）：费曼首轮未达标 → 追问构造(previous_scores=最近一轮卡)
-    → 二轮评分(previous_round=摘要 dict) → 通过并 mastered，全程不得 500。
-
-    用离线启发式评分驱动确定性分支：首轮口述不含核心概念 → 未过+追问；
-    二轮回答含核心概念 → 通过。
+def test_feynman_fail_then_followup_answer_raises_ledger(client):
+    """R10/R27 回归：费曼首轮未达标 → 追问构造（previous_scores=最近一轮卡）**不 500**；
+    答追问走 R27 补答语义（只涨账本、报缺口是否补上），**不能单独过关**——
+    通过仍需再交一次完整稿（R27 §5 防"挤牙膏式被动应答"）。
     """
     # 进入 middle.0101 的费曼阶段（练习全对）
     sess, pr = start_practice(client, "middle.0101")
@@ -348,7 +346,7 @@ def test_feynman_fail_then_followup_pass(client):
         pr = submit(client, sid, {"exercise_id": ex["exercise_id"], "params_seed": ex["seed"], "user_answer": ans})
     assert pr["step"] == "feynman", pr["step"]
 
-    # 首轮：足够长但不含任何核心概念 → 判未过 → 进入 Socratic 追问
+    # 首轮：足够长但不含任何核心概念 → 判未过 → 进入定向追问（R10：不得 500）
     bad_transcript = (
         "我先组织一下语言，嗯…… 这个问题其实我还没有完全想明白，"
         "让我再仔细回忆一下刚才看到的例子再回答。"
@@ -362,20 +360,50 @@ def test_feynman_fail_then_followup_pass(client):
     assert j1["payload"]["verdict"] == "fail"
     assert j1["payload"]["rounds_done"] == 1
     assert j1["payload"]["followup_question"]
+    assert j1["payload"]["followup_gap"], "R27：追问必须定向到具体缺口"
     assert any(e["type"] == "feynman_failed" for e in j1["events"])
     assert any(e["type"] == "feynman_followup" for e in j1["events"])
+    ledger0 = j1["payload"]["ledger"]
+    best0 = {d["key"]: d["best"] for d in ledger0["dimensions"]}
+    assert ledger0["combined"] < ledger0["threshold"]
 
-    # 二轮：回答追问（含核心概念）→ 通过 → mastered
+    # 补答（含核心概念）→ R27：只涨账本（维度分真实上升），不产生 mastered
     good_answer = "方程是含有未知数的等式；一元一次方程只有一个未知数且最高次数是一。"
     r2 = client.post(
         "/api/session/step",
         json={"session_id": sid, "action": "feynman_answer", "payload": {"answer": good_answer}},
     )
-    assert r2.status_code == 200, r2.text  # R10：二轮评分(previous_round 摘要)不得 500
+    assert r2.status_code == 200, r2.text  # R10：追问后补答评估（gap_check）不得 500
     j2 = r2.json()
-    assert j2["payload"].get("mastered") is True
-    assert any(e["type"] == "feynman_passed" for e in j2["events"])
-    assert any(e["type"] == "node_mastered" for e in j2["events"])
+    assert j2["payload"]["verdict"] == "gap"
+    assert j2["payload"]["gap_filled"] is True
+    assert not any(e["type"] == "node_mastered" for e in j2["events"]), "补答不能单独过关（R27 §5）"
+    ledger1 = j2["payload"]["ledger"]
+    best1 = {d["key"]: d["best"] for d in ledger1["dimensions"]}
+    assert ledger1["combined"] > ledger0["combined"], "答对缺口必须看得见涨分"
+    gap_key = j2["payload"]["gap_key"]
+    assert best1[gap_key] > best0[gap_key], "缺口所属维度分必须真实上升"
+
+    # 整合后完整重讲（含追问补上的内容）→ 整体评分 ≥ 0.7 → pass/mastered
+    r3 = client.post(
+        "/api/session/step",
+        json={
+            "session_id": sid,
+            "action": "feynman_submit",
+            "payload": {
+                "transcript": (
+                    "用我的话讲，方程是含有未知数的等式，一元一次方程只有一个未知数且最高次数是一；"
+                    "x平方加一等于五因为次数是二所以不是一元一次方程；一加二等于三没有未知数所以不是方程。"
+                    "依据是逐条核对定义，反例可以说明边界。"
+                )
+            },
+        },
+    )
+    assert r3.status_code == 200, r3.text
+    j3 = r3.json()
+    assert j3["payload"].get("mastered") is True
+    assert any(e["type"] == "feynman_passed" for e in j3["events"])
+    assert any(e["type"] == "node_mastered" for e in j3["events"])
 
 
 # --------------------------------------------------------------------------
@@ -506,7 +534,7 @@ def test_feynman_relearn_then_relearn_again_submit_200(client):
         ans = canonical_answer("middle.0102", ex["exercise_id"], ex["seed"])
         pr = submit(client, sid, {"exercise_id": ex["exercise_id"], "params_seed": ex["seed"], "user_answer": ans})
     assert pr["step"] == "feynman", pr["step"]
-    # 3) 再次费曼提交（含核心概念 → 离线桩判过）→ 200 + mastered（R17 锁死回归必现 409）
+    # 3) 再次费曼提交（R27：完整稿含核心概念 → 离线启发式判过）→ 200 + mastered（R17 锁死回归必现 409）
     good = "等式性质是两边同加同减、同乘同除非零数仍相等；移项就是等式性质的应用。"
     r = client.post("/api/session/step", json={"session_id": sid, "action": "feynman_submit",
                                                "payload": {"transcript": good}})

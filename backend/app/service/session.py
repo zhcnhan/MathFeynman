@@ -26,6 +26,8 @@ from ..ai.calls import (
     ExplainIn,
     FeynmanEvaluateIn,
     FeynmanFollowupIn,
+    FeynmanFollowupOut,
+    GapCheckIn,
     HintOnErrorIn,
 )
 from ..ai import tier as ai_tier
@@ -36,6 +38,7 @@ from ..domain import judge as judge_mod
 from ..domain.judge import JudgeError, JudgeResult, NotationError
 from ..domain.mastery import MISS_REASON_FEYNMAN, MISS_REASON_PRACTICE, MasteryStats, evaluate_pass
 from ..domain.profile import Profile
+from . import feynman_ledger as fl
 from . import progress, review as review_svc
 from .library import ensure_user, get_library
 from .progress import mark_learning, mark_mastered
@@ -50,7 +53,11 @@ STAGE_ORDER = [STAGE_EXPLAIN, STAGE_EXAMPLE, STAGE_PRACTICE, STAGE_FEYNMAN, STAG
 
 TARGET_STREAK = 3           # docs/03 §2：连续答对 ≥3
 PRACTICE_CAP = 5            # docs/05 §2：练习上限 5 题（一轮）
-MAX_FEYNMAN_ROUNDS = 3      # docs/05 §5：评分轮次上限（≤2 追问 + 首评）
+# R27 轮次预算（宽，取代旧 MAX_FEYNMAN_ROUNDS 单计数）：
+#   整体稿评分 ≤3（首讲 + ≤2 次终验）；补答 ≤2（须有未答缺口；同一缺口答不对保留、可再追一次）。
+MAX_FEYNMAN_ROUNDS = 3      # 兼容旧常量 = 整体稿评分预算（docs/09 R27 §4）
+MAX_FEYNMAN_EVALS = 3       # 整体评分（feynman_submit）预算
+MAX_FEYNMAN_ANSWERS = 2     # 补答（feynman_answer）预算
 
 ACTIONS = {
     "next",                # 阶段前进（讲解→例题→练习 等）
@@ -59,8 +66,8 @@ ACTIONS = {
     "request_hint",
     "regen_explain",       # R8：清理 lecture_cache 并重新生成讲解（脏讲解/重新讲解入口）
     "reissue_after_regen", # R25：内容纠错替换后，一键把正在做的旧题换成新题（带保护）
-    "feynman_submit",
-    "feynman_answer",      # 别名：对追问的作答（等同 feynman_submit）
+    "feynman_submit",      # R27：完整稿（首讲 / 整合重讲）→ 整体评分 feynman_evaluate
+    "feynman_answer",      # R27：补答（只答当前追问）→ 轻量缺口补答评估（不再等同整体重评）
     "finish",
     "quit",
     "get",                 # 恢复/刷新当前步
@@ -99,12 +106,15 @@ def new_flow() -> dict[str, Any]:
             "excluded": [],
         },
         "feynman": {
-            "rounds_done": 0,
+            "rounds_done": 0,          # 整体稿评分次数（首讲 + 终验）
             "passed": False,
-            "last_combined": None,
+            "last_combined": None,     # 实时综合分（账本 max 合成）——通过判定依据
             "last_scores": [],
-            "last_transcript": "",
-            "followup": None,  # 最近一次追问文本
+            "last_transcript": "",     # 最近一次完整稿（整体评分对象；不拼历史合并稿）
+            "followup": None,          # 最近一次追问文本
+            "followup_gap": None,      # R27：该追问定向的缺口 key（补答只更新该维度）
+            "answers_done": 0,         # R27：补答次数（预算 ≤2）
+            "ledger": fl.empty_ledger(),  # R27：缺口账本（维度历轮最高分 + 缺口清单）
             "edge_think": False,      # R12：上轮 fast 边缘分 → 本轮升 think（消费一次）
             "last_strategy": None,    # R12：最近一轮评分所用档位（评分卡标注）
         },
@@ -112,7 +122,7 @@ def new_flow() -> dict[str, Any]:
 
 
 def _feynman_reset(f: dict[str, Any]) -> None:
-    """R17：费曼阶段完整复位（回炉重学/轮次满防御用）。"""
+    """R17/R27：费曼阶段完整复位（回炉重学/轮次满防御用）——含账本与补答计数。"""
     f.update(
         rounds_done=0,
         passed=False,
@@ -120,6 +130,9 @@ def _feynman_reset(f: dict[str, Any]) -> None:
         last_scores=[],
         last_transcript="",
         followup=None,
+        followup_gap=None,
+        answers_done=0,
+        ledger=fl.empty_ledger(),
     )
 
 
@@ -254,7 +267,10 @@ class SessionService:
         if action == "reissue_after_regen":
             return self._act_reissue_after_regen(db, sess, node)
         if action in ("feynman_submit", "feynman_answer"):
-            return self._act_feynman(db, sess, node, str(payload.get("transcript", payload.get("answer", ""))), payload)
+            text = str(payload.get("transcript", payload.get("answer", "")))
+            if action == "feynman_answer":
+                return self._act_feynman_answer(db, sess, node, text, payload)
+            return self._act_feynman(db, sess, node, text, payload)
         if action == "finish":
             return self._act_finish(db, sess, node)
         if action == "quit":
@@ -493,11 +509,21 @@ class SessionService:
         )
 
     def _act_feynman(self, db: Session, sess: models.Session, node: NodeDoc, transcript: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """R27：``feynman_submit`` = **完整稿**（首讲 / 整合重讲）→ 整体评分。
+
+        - 评分对象 = 本轮完整稿（**不再拼"最初稿 + 追问 + 补充"合并稿**：R25 语义被 R27 取代，
+          治"新增回答被旧文锚定、两轮逐字同分"）；
+        - ``previously_acknowledged`` = 账本已认可内容摘要（没重抄已认可点不扣分）；
+        - evidence 包含校验：引文不在本轮文本 → 该维度降级并标记（防"没读新内容还打分"）；
+        - 账本取历轮最高分 → 实时综合分；**只有完整稿 ≥ threshold 才 pass**（补答不能单独过关）。
+        """
         flow = sess.flow_json
         p = flow["practice"]
         f = flow["feynman"]
         if not p["passed"]:
             raise SessionError("费曼环节需要先完成练习达标（连续答对 3 题）", code="invalid_state")
+        dims = [d.model_dump() for d in node.feynman.rubric.dimensions]
+        ledger = fl.normalize_ledger(f, dims)
         text = transcript.strip()
         events: list[dict] = []
         if len(text) < MIN_FEYNMAN_CHARS:
@@ -508,39 +534,32 @@ class SessionService:
                 events=events,
                 extra_payload={"verdict": "deferred", "message": f"口述太短（{len(text)} 字），请像对老师讲解一样完整说一遍（≥{MIN_FEYNMAN_CHARS} 字）。"},
             )
-        if f["rounds_done"] >= MAX_FEYNMAN_ROUNDS:
-            raise SessionError("费曼轮次已达上限，请重新学习后再来", code="invalid_state")
+        threshold = node.feynman.rubric.pass_threshold
+        eval_rounds = self._feynman_eval_rounds(f)
+        if eval_rounds >= MAX_FEYNMAN_EVALS:
+            raise SessionError("费曼整体稿评分已达上限（首讲 + 2 次终验），请重新学习后再来", code="invalid_state")
 
-        # R25（费曼追问语义）：非首轮提交 = 对"追问"的补充回答 → 评估对象必须是
-        # "最初讲解 + 追问 + 本次补充"的合并稿（否则追问形同摆设、评分永远只盯最初文字）。
-        eval_text = text
-        if f["rounds_done"] > 0 and f.get("last_transcript") and f.get("followup"):
-            eval_text = (
-                f"{f['last_transcript']}\n\n【AI 追问】{f['followup']}\n【我的补充回答】{text}"
-            )
-            f["followup"] = None  # 已并入本轮，避免下轮重复引用
-
-        dims = [d.model_dump() for d in node.feynman.rubric.dimensions]
         ctx = FeynmanEvaluateIn(
             session_id=sess.id,
             node_id=node.id,
             task_prompt=node.feynman.task_prompt,
             rubric_dimensions=dims,
             core_concepts=list(node.core_concepts),
-            transcript=eval_text,
+            transcript=text,                       # R27：本轮完整稿（不拼历史）
             previous_round=(
                 {
-                    "round": f["rounds_done"],
-                    "combined": f["last_combined"],
+                    "round": eval_rounds,
+                    "combined": round(fl.combined(ledger), 3),
                     "dims": f["last_scores"][-1],  # 上一轮分维卡（热修 R10）
                 }
                 if f["last_scores"]
                 else None
             ),
+            previously_acknowledged=fl.candidate_acknowledged(ledger),  # R27：已认可内容摘要
         )
         # R12：费曼档位 = 基础档(学段/content.thinking) + 触发(边缘分上轮 flag / 轮次≥2)
         # + 用户覆盖(model_mode / payload.think_deep)
-        trigger_think = bool(f.get("edge_think")) or ai_tier.feynman_round_should_think(f["rounds_done"] + 1)
+        trigger_think = bool(f.get("edge_think")) or ai_tier.feynman_round_should_think(eval_rounds + 1)
         decision = self._resolve_tier(
             db, node=node, override=payload.get("think_deep"), extra_think=trigger_think
         )
@@ -560,55 +579,55 @@ class SessionService:
             events.append({"type": "feynman_deferred", "reason": "评分服务不可用，记录待人工复核"})
             return self._response(db, sess, events=events, extra_payload={"verdict": "deferred", "strategy": decision.strategy})
 
-        f["rounds_done"] += 1
-        f["last_transcript"] = eval_text
-        combined, card = self._combine_scores(node, out.dimension_scores)
-        f["last_combined"] = combined
+        round_no = eval_rounds + 1
+        f["rounds_done"] = round_no
+        f["last_transcript"] = text
+        card, evidence_penalty = fl.merge_card(
+            ledger, self._card_of(node, out.dimension_scores), round_no=round_no, transcript=text
+        )
         f["last_scores"].append(card)
-        threshold = node.feynman.rubric.pass_threshold
-        passed = combined >= threshold
+        f["last_combined"] = round(fl.combined(ledger), 3)  # 实时综合分 = 账本 max 合成
+        fl.extract_gaps(ledger, card, threshold, round_no=round_no)  # 未达标维度 → 缺口清单
+        passed = f["last_combined"] >= threshold
         self._record_feynman_attempt(
-            db, sess, node, eval_text,
+            db, sess, node, text,
             "pass" if passed else "fail",
-            round(combined, 3),
+            f["last_combined"],
             meta={
                 "dims": card,
                 "recommend_action": out.recommend_action,
                 "strategy": decision.strategy,          # R12：评分所用档位（评分卡标注）
                 "confidence": getattr(out, "confidence", None),
+                "evidence_penalty": evidence_penalty,
+                "ledger_combined": f["last_combined"],
+                "eval_rounds_done": round_no,
             },
         )
         if passed:
             f["passed"] = True
-            events.append({"type": "feynman_passed", "score": round(combined, 3)})
+            events.append({"type": "feynman_passed", "score": f["last_combined"]})
             return self._master_if_ready(db, sess, node, events)
         # 未过：命中边缘区间 → 下轮升 think（R12 触发 a）
         if (
             decision.strategy == ai_tier.FAST
             and self._model_mode(db) == "smart"
-            and ai_tier.feynman_edge(combined, threshold)
+            and ai_tier.feynman_edge(f["last_combined"], threshold)
         ):
             f["edge_think"] = True
-        events.append({"type": "feynman_failed", "score": round(combined, 3), "round": f["rounds_done"]})
-        if f["rounds_done"] >= MAX_FEYNMAN_ROUNDS:
-            self._relearn_explain(db, sess, node, events, reason="费曼 3 轮未通过")
+        events.append({"type": "feynman_failed", "score": f["last_combined"], "round": round_no})
+        if evidence_penalty:
+            events.append({"type": "feynman_evidence_flagged", "reason": "部分评分引文不在本轮提交文本中，已降级"})
+        # R27 §4 预算：两额度尽或整体稿评分满 3 次仍未过 → 回炉（沿用 _feynman_reset）
+        if round_no >= MAX_FEYNMAN_EVALS or (
+            f["answers_done"] >= MAX_FEYNMAN_ANSWERS and fl.weakest(ledger, threshold) is None
+        ):
+            self._relearn_explain(db, sess, node, events, reason="费曼未通过（整体稿/补答额度已尽）")
             events.append({"type": "feynman_relearn"})
             return self._response(db, sess, events=events)
-        # Socratic 追问
-        q_ctx = FeynmanFollowupIn(
-            session_id=sess.id,
-            node_id=node.id,
-            student_transcript=eval_text,
-            previous_scores=(f["last_scores"][-1] if f["last_scores"] else []),  # R10：传最近一轮分维卡，非历史列表
-            socratic_followups=list(node.feynman.socratic_followups),
-        )
-        q_decision = self._resolve_tier(
-            db, node=node, override=payload.get("think_deep"),
-            extra_think=bool(f.get("edge_think")) or ai_tier.feynman_round_should_think(f["rounds_done"] + 1),
-        )
-        q_out, q_degraded = self._call(db, self.gateway.feynman_followup, q_ctx, strategy=q_decision.strategy)
-        f["followup"] = q_out.question_md
-        events.append({"type": "feynman_followup", "round": f["rounds_done"]})
+
+        gap = fl.weakest(ledger, threshold)
+        q_out, q_degraded, q_gap = self._feynman_followup(db, sess, node, f, text, gap, payload)
+        events.append({"type": "feynman_followup", "round": round_no, "target_gap": (q_gap or {}).get("key")})
         db.flush()
         return self._response(
             db,
@@ -616,15 +635,214 @@ class SessionService:
             events=events,
             extra_payload={
                 "verdict": "fail",
-                "combined": round(combined, 3),
+                "combined": f["last_combined"],
                 "threshold": threshold,
                 "dimension_scores": card,
                 "followup_question": q_out.question_md,
+                "followup_gap": q_gap,
+                "evidence_penalty": evidence_penalty,
+                "next_action": "answer",
                 "degraded": q_degraded,
                 "strategy": decision.strategy,  # R12：评分卡标注本次所用档位
                 "strategy_reason": decision.reason,
             },
         )
+
+    def _act_feynman_answer(self, db: Session, sess: models.Session, node: NodeDoc, answer: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """R27：``feynman_answer`` = **补答**（只答当前追问）→ 轻量缺口补答评估。
+
+        - 只更新缺口所属维度（``dimension_updates`` 仅含该维度），账本取历轮最高分 →
+          答对立刻可见涨分（"答对认账"）；
+        - **不能单独过关**：补答只涨账本与展示进度，通过仍需完整稿 ≥ threshold（防挤牙膏式被动应答）；
+        - 预算 ≤2；同一缺口答不对 → 缺口保留、可再追一次；额度尽且无剩余缺口 → review 请求整合终验。
+        """
+        flow = sess.flow_json
+        p = flow["practice"]
+        f = flow["feynman"]
+        if not p["passed"]:
+            raise SessionError("费曼环节需要先完成练习达标（连续答对 3 题）", code="invalid_state")
+        dims = [d.model_dump() for d in node.feynman.rubric.dimensions]
+        ledger = fl.normalize_ledger(f, dims)
+        threshold = node.feynman.rubric.pass_threshold
+        question = str(f.get("followup") or "")
+        gap = next((g for g in (ledger.get("gaps") or []) if g.get("key") == f.get("followup_gap")), None)
+        if not question or not gap or gap.get("filled"):
+            raise SessionError(
+                "当前没有待补答的追问：请直接提交完整讲解（整合重讲）由整体评分判定。",
+                code="invalid_state",
+            )
+        if f["answers_done"] >= MAX_FEYNMAN_ANSWERS:
+            raise SessionError("补答次数已达上限（2 次），请提交整合后的完整讲解。", code="invalid_state")
+        text = answer.strip()
+        events: list[dict] = []
+        if len(text) < 10:
+            events.append({"type": "feynman_answer_too_short", "min_chars": 10})
+            return self._response(
+                db,
+                sess,
+                events=events,
+                extra_payload={"verdict": "gap", "message": "补答太短（少于 10 字），请具体回答追问里要你补讲的那一点。"},
+            )
+        gap_key = str(gap.get("key") or "")
+        entry = ledger["dims"].get(gap_key) or {}
+        prev_evidence = str(entry.get("evidence_quote") or "")
+        ctx = GapCheckIn(
+            session_id=sess.id,
+            node_id=node.id,
+            task_prompt=node.feynman.task_prompt,
+            rubric_dimensions=dims,
+            core_concepts=list(node.core_concepts),
+            followup_question=question,
+            student_answer=text,
+            target_gap={
+                "key": gap_key,
+                "description": gap.get("description") or "",
+                "evidence_quote": prev_evidence or gap.get("evidence_quote") or "",
+                "comment": gap.get("comment") or "",
+                "previous_score": gap.get("score"),
+            },
+        )
+        decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"))
+        try:
+            # R7 精神：LLM 调用前先提交（补答评估虽为 light 档，仍不持写锁）
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        out, degraded = self._call(db, self.gateway.feynman_gap_check, ctx, strategy=decision.strategy)
+        round_no = self._feynman_eval_rounds(f)
+        f["answers_done"] += 1
+        # 只认缺口所属维度（模型多给的键一律忽略，防越权改分）
+        updates = [u for u in (out.dimension_updates or []) if str(getattr(u, "key", "")) == gap_key]
+        filled = False
+        rows: list[dict] = []
+        penalty = False
+        for u in updates:
+            row, pen = fl.update_dimension(
+                ledger,
+                key=gap_key,
+                score=float(u.score),
+                evidence_quote=str(u.evidence_quote),
+                comment=str(u.comment),
+                transcript=text,
+                round_no=round_no,
+            )
+            penalty = penalty or pen
+            rows.append(row)
+            if row["score"] >= threshold:
+                filled = True
+        if not updates:
+            # 无有效更新（模型判 gap_filled=false 或分数为 0）→ 该维度零分入账（best 不变）
+            row, pen = fl.update_dimension(
+                ledger, key=gap_key, score=0.0, evidence_quote="", comment=str(out.comment or ""),
+                transcript=text, round_no=round_no,
+            )
+            penalty = penalty or pen
+            rows.append(row)
+        fl.mark_gap_attempt(ledger, gap_key, filled=filled)
+        f["last_combined"] = round(fl.combined(ledger), 3)
+        f["followup"] = None
+        f["followup_gap"] = None
+        self._record_feynman_attempt(
+            db, sess, node, text, "gap_filled" if filled else "gap_open", None,
+            meta={
+                "gap_key": gap_key,
+                "gap_filled": bool(filled),
+                "dimension_updates": rows,
+                "strategy": decision.strategy,
+                "ledger_combined": f["last_combined"],
+                "answers_done": f["answers_done"],
+            },
+        )
+        events.append({"type": "feynman_gap_filled" if filled else "feynman_gap_open",
+                       "gap": gap_key, "score": rows[0]["score"] if rows else 0.0})
+        if penalty:
+            events.append({"type": "feynman_evidence_flagged", "reason": "补答评分引文不在本轮文本中，已降级"})
+        threshold_msg = f"（该维度认定线 {threshold}）"
+        if filled:
+            note = f"✅ 缺口已补上：{gap.get('description') or gap_key} {threshold_msg}。接着请把整段讲解整合重讲一遍——通过仍需完整稿达标。"
+        else:
+            note = f"❌ 这次还没答到位：{gap.get('description') or gap_key} {threshold_msg}。缺口保留在账本里（稍后可再追一次）。"
+        db.flush()
+        return self._response(
+            db,
+            sess,
+            events=events,
+            extra_payload={
+                "verdict": "gap",
+                "gap_filled": bool(filled),
+                "gap_key": gap_key,
+                "gap_description": gap.get("description") or "",
+                "gap_update": rows[0] if rows else None,
+                "dimension_updates": rows,
+                "combined": f["last_combined"],
+                "threshold": threshold,
+                "message": note,
+                "next_action": "submit",  # 补答只涨账本；通过必须交完整稿（R27 §5）
+                "strategy": decision.strategy,
+                "degraded": degraded,
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # 内部：费曼账本/预算/追问（R27）
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _feynman_eval_rounds(f: dict[str, Any]) -> int:
+        """整体稿评分次数（rounds_done 为准，兼容历史会话）。"""
+        return int(f.get("rounds_done") or 0)
+
+    def _feynman_followup(
+        self,
+        db: Session,
+        sess: models.Session,
+        node: NodeDoc,
+        f: dict[str, Any],
+        transcript: str,
+        gap: dict | None,
+        payload: dict[str, Any],
+    ) -> tuple[FeynmanFollowupOut, bool, dict | None]:
+        """R27：定向追问（输入未达标缺口 unmet_gaps，一次一个；不再自由发问）。
+
+        无缺口时不追问：直接返回"请整合重讲"的提示（挂待补答状态，学生可交完整稿终验）。
+        """
+        if gap is None:
+            return (
+                FeynmanFollowupOut(question_md="把追问里补上的内容整合进完整讲解，再提交一次完整稿（终验）。"),
+                False,
+                None,
+            )
+        q_ctx = FeynmanFollowupIn(
+            session_id=sess.id,
+            node_id=node.id,
+            student_transcript=transcript,   # R27：本轮完整稿（不拼历史）
+            previous_scores=(f["last_scores"][-1] if f["last_scores"] else []),  # R10：最近一轮分维卡
+            socratic_followups=list(node.feynman.socratic_followups),
+            unmet_gaps=[dict(g) for g in (gap,)],  # R27：最弱缺口（一次一个）
+        )
+        q_decision = self._resolve_tier(
+            db, node=node, override=payload.get("think_deep"),
+            extra_think=bool(f.get("edge_think")) or ai_tier.feynman_round_should_think(f["rounds_done"] + 1),
+        )
+        q_out, q_degraded = self._call(db, self.gateway.feynman_followup, q_ctx, strategy=q_decision.strategy)
+        f["followup"] = q_out.question_md
+        f["followup_gap"] = gap.get("key")
+        return q_out, q_degraded, gap
+
+    @staticmethod
+    def _card_of(node: NodeDoc, dim_scores) -> list[dict]:
+        """评分卡（含权重，供账本合成分与 UI 展示）。"""
+        weights = {d.key: d.weight for d in node.feynman.rubric.dimensions}
+        return [
+            {
+                "key": ds.key,
+                "score": ds.score,
+                "weight": weights.get(ds.key, 0.0),
+                "evidence_quote": ds.evidence_quote,
+                "comment": ds.comment,
+            }
+            for ds in dim_scores
+        ]
 
     def _act_finish(self, db: Session, sess: models.Session, node: NodeDoc) -> dict[str, Any]:
         flow = sess.flow_json
@@ -704,20 +922,15 @@ class SessionService:
         flow["stage"] = STAGE_EXPLAIN
         events.append({"type": "relearn_notice", "reason": reason})
 
-    def _enter_feynman(self, db: Session, sess: models.Session, node: NodeDoc, events: list[dict]) -> None:
-        flow = sess.flow_json
-        # R17 防御：进入费曼前若轮次已满（历史回炉未清零的会话/数据迁移遗留），
-        # 视为新费曼阶段自动清零，避免用户"重学后仍 409 锁死"。
-        if flow["feynman"]["rounds_done"] >= MAX_FEYNMAN_ROUNDS:
-            _feynman_reset(flow["feynman"])
-        flow["stage"] = STAGE_FEYNMAN
-        events.append({"type": "stage_feynman"})
-
     # ------------------------------------------------------------------
     # 内部：费曼/达标
     # ------------------------------------------------------------------
     def _enter_feynman(self, db: Session, sess: models.Session, node: NodeDoc, events: list[dict]) -> None:
         flow = sess.flow_json
+        # R17 防御：进入费曼前若整体稿评分已达上限（历史回炉未清零的会话/数据迁移遗留），
+        # 视为新费曼阶段自动清零，避免用户"重学后仍 409 锁死"。
+        if self._feynman_eval_rounds(flow["feynman"]) >= MAX_FEYNMAN_EVALS:
+            _feynman_reset(flow["feynman"])
         flow["stage"] = STAGE_FEYNMAN
         events.append({"type": "stage_feynman"})
 
@@ -913,6 +1126,19 @@ class SessionService:
         payload: dict[str, Any] = {"first_open": first_open}
         node = self._node_of(db, sess)
 
+        # R27：费曼账本/预算永远随响应下发（回炉/达标后仍可展示"当时的进度"）
+        f = flow.get("feynman") or {}
+        ledger_view = fl.gap_view(
+            fl.normalize_ledger(f, node.feynman.rubric.dimensions), node.feynman.rubric.pass_threshold
+        )
+        payload["ledger"] = ledger_view
+        payload["combined"] = ledger_view["combined"]
+        payload["threshold"] = node.feynman.rubric.pass_threshold
+        payload["eval_budget"] = MAX_FEYNMAN_EVALS
+        payload["answer_budget"] = MAX_FEYNMAN_ANSWERS
+        payload["evals_done"] = self._feynman_eval_rounds(f)
+        payload["answers_done"] = int(f.get("answers_done") or 0)
+
         if stage == STAGE_EXPLAIN:
             payload.update(self._payload_explain(db, sess, node))
         elif stage == STAGE_EXAMPLE:
@@ -931,9 +1157,13 @@ class SessionService:
             payload["task_prompt"] = node.feynman.task_prompt
             payload["rubric"] = [d.model_dump() for d in node.feynman.rubric.dimensions]
             payload["pass_threshold"] = node.feynman.rubric.pass_threshold
-            payload["rounds_done"] = f["rounds_done"]
+            payload["rounds_done"] = self._feynman_eval_rounds(f)     # 兼容旧字段：整体稿评分次数
             payload["max_rounds"] = MAX_FEYNMAN_ROUNDS
             payload["followup_question"] = f.get("followup")
+            payload["followup_gap"] = next(
+                (g for g in ledger_view["gaps"] if g.get("key") == f.get("followup_gap")), None
+            )
+            payload["next_action"] = "answer" if (f.get("followup") and f.get("followup_gap")) else "submit"
         elif stage == STAGE_DONE:
             payload["mastered"] = True
 
@@ -1100,6 +1330,8 @@ __all__ = [
     "TARGET_STREAK",
     "PRACTICE_CAP",
     "MAX_FEYNMAN_ROUNDS",
+    "MAX_FEYNMAN_EVALS",
+    "MAX_FEYNMAN_ANSWERS",
     "STAGE_EXPLAIN",
     "STAGE_EXAMPLE",
     "STAGE_PRACTICE",
