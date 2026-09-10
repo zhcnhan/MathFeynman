@@ -2568,8 +2568,9 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
 11. ~~**【R36 D/P 新发现】材料注入只做"分节摘要"**（PDF 按页 / Markdown 标题 / 段落兜底，每节 ≤400 字、
     总量 ≤`MF_OUTLINE_MATERIAL_MAX_CHARS`）：**未做语义级摘要**——大部头书籍注入的是"每节开头若干字"。~~
     → **✅ 已闭（R37 S1，2026-09-10）**：默认改为**不设预算**（`MF_MATERIAL_INJECT_MAX_CHARS=0`）+ 按
-    `bookmap` 章/节结构注入**完整正文** + 按 `MF_MATERIAL_BATCH_CHARS` 在章/页边界分批；旧变量只在**显式设置**
-    时生效（回落截断口径）。样本实测注入量 6,000 → **103,448 字**；见 **§67.1/§67.2**。
+    `bookmap` 章/节结构注入**完整正文** + 按 `MF_MATERIAL_BATCH_CHARS` 在章/页边界分批；**显式设的上限
+    只作单次调用预算**（R38 §3 共存口径：调小不丢章节，`dropped` 恒空）。样本实测注入量 6,000 → **103,448 字**；
+    见 **§67.1/§67.2**。
 12. **【长期纪律】AI 输出 schema 与 prompt 的字段一致性**是易漏点（§60.4：schema 漏声明
     `materials` → pydantic 静默丢弃，单测用假 provider 测不出）。**今后新增 AI 输出字段必须同时改
     `ai/calls.py` 的 out schema + prompt + 一条 schema 往返用例**。（本批挑战题两个调用点已照此办：
@@ -3365,7 +3366,7 @@ lecture_md, missing_dimensions[]}` + 事件 `feynman_reteach`；离线路径同�
 
 | 项 | 落地件（新增/改动） | 关键点 |
 |---|---|---|
-| **S1 不省成本** | `outline/bookmap.py`（新）、`materials.draft_materials/_full_blocks/_make_batches`、`config.material_inject_max_chars/material_batch_chars` | 默认 `MF_MATERIAL_INJECT_MAX_CHARS=0`＝**不限**；按章/节注入**完整正文**；书太大按 `MF_MATERIAL_BATCH_CHARS`（默认 60000）在**章/页边界**分批（每批都带全书地图），**绝不"前 N 字"**；显式设上限才回落 R36 截断口径 |
+| **S1 不省成本** | `outline/bookmap.py`（新）、`materials.draft_materials/_full_blocks/_make_batches`、`config.material_inject_max_chars/material_batch_chars` | 默认 `MF_MATERIAL_INJECT_MAX_CHARS=0`＝**不限**；按章/节注入**完整正文**；书太大按 `MF_MATERIAL_BATCH_CHARS`（默认 60000）在**章/页边界**分批（每批都带全书地图），**绝不"前 N 字"**；显式设的上限只作**单次调用预算**（`min(预算, 分批阈值)`）——**调小预算不丢章节**（R38 §3 共存口径），单节超预算则整节注入；`dropped` 恒空、`truncated` 恒 false（**R39 铁则：禁止静默丢弃**） |
 | **S2 大纲＝书的目录** | `bookmap.parse_book`（目录 + 运行页码 → 章/节）、`materials.coverage_problems/coverage_summary/entry_order/unit_order_key`、`draft.finalize_candidate` 书序重排/重编号/线性先修/难度单调化、`api/subjects.put_outline` 全覆盖 422 | 地图条目 → 单元；**未映射 → 违规**；起草期先**确定性回捞**、再按**教材目录补齐**并记问题（书的结构不是编造）；跨批 `prereqs` 不可靠 → 一律以**书序**线性串联 |
 | **S3 讲解＝讲全教材该段** | `generate._ai_draft(material_text=…)`（教材锚定硬要求 8–11 条）、`unit_material_pack` | 注入该单元对应章/节的**完整正文**；讲解＝该段完整演绎（可换措辞/举例，不得省略要点、不得加教材外事实） |
 | **S4 题目/例题/rubric 由教材派生** | 同 S3 + R35 既有 `basis`/`worked_examples`/rubric | 每题 `basis.quote` 必须逐字出自教材；例题仍走 R35 A3 口径（书里有的直接用，没有则由书中内容构造并在讲解尾部标"据教材 X 节"） |
@@ -3417,8 +3418,9 @@ basis.quote 命中教材：5/5（100%）
 | `test_r37_s5_fact_not_in_material_fails_whole_unit` | 事实句只在讲解里、教材里没有 → 两轮后 `status="uncovered"`、note 含"教材未覆盖此单元"、**磁盘无落盘文件** |
 | `test_r37_s5_exercise_quote_not_in_material_is_dropped` | 某题引文只在讲解里 → **丢弃该题**（落盘文件里没有该题），其余保留，`coverage.status="部分"`、`dropped_exercises=1` |
 | `test_r37_s5_grounded_unit_is_kept_whole` | 事实句/引文都逐字出自教材 → `created` + `coverage.status="完整"`；prompt 里确有**整章正文**与教材锚定硬要求 |
-| `test_r37_s1_injection_defaults_to_unlimited_and_grows_with_book` | 默认 `inject_max_chars=0`、`truncated=False`、`used_chars` 随书规模增长；显式 500 才截断 |
+| `test_r37_s1_injection_defaults_to_unlimited_and_grows_with_book` | 默认 `inject_max_chars=0`、`dropped=[]`、`used_chars` 随书规模增长；显式 500 只改**单次预算**（分批、内容不丢） |
 | `test_r37_s1_large_book_is_batched_by_structure` | 超阈值 → 分批；3 章正文**一句不丢**（不是"前 N 字"） |
+| `test_r37_s1_small_budget_still_covers_every_chapter` | **R38 §3 共存**：预算调到 60 字 → 分批更多但**章节一个不丢**、注入内容与不限时逐字相同 |
 | `test_r37_s2_draft_units_cover_every_chapter` | 候选 `coverage={total:2,covered:2,uncovered:[]}` |
 | `test_r37_s2_unmapped_chapter_is_filled_from_book_toc_and_reported` | 模型漏映射 → 按**教材目录**补齐 + 记问题，`uncovered=[]` |
 | `test_r37_s2_put_outline_rejects_unmapped_chapter_zh` | 手工大纲漏章 → **中文 422"教材覆盖不全"**；补全后 200 |
@@ -3430,6 +3432,12 @@ basis.quote 命中教材：5/5（100%）
 R37 S2 要求"章节不得因溯源不成立而悄悄消失"，故该用例的断言从"`units[0].materials == []`"改为
 "**被剔除引用的那个单元**保持无溯源（宁缺勿造口径不变）+ 该章由教材目录补齐并记问题"——**没有放宽**
 （仍是 `ok=False`、仍报"溯源不成立"），只是把"书不能丢章"的新规格写进断言。
+
+**另按后续裁决重写了 R36 D4 的两条预算用例**（`test_r36_outline_materials.py`）：
+R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R38 §3**（预算＝单次调用预算，
+总覆盖面由分段保证）**取代**，并由 **R39「一切显性」铁则**兜底（禁止静默丢弃材料/章节）。
+重写后断言：调小预算 → **分批更多但一页不丢**；单节超预算 → **整节注入**；`dropped` 恒空、
+`truncated` 恒 false。**没有删弱任何断言**（新断言更强：逐页核对 20 页全在）。
 
 ### 67.4 融合对照表（R37 行：每条新增件 → 复用点 → 断言）
 

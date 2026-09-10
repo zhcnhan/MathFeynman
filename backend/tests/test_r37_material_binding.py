@@ -184,10 +184,17 @@ def test_r37_s1_injection_defaults_to_unlimited_and_grows_with_book(app_client):
         assert pack["used_chars"] > len(big)
         assert pack["used_chars"] >= sum(e.chars for m in pack["index"]
                                          for e in m["structure"]["entries"])
-        # 显式设上限时才走 R36 的截断口径（留痕）
+        # 显式设上限 → **单次调用预算**（分批，不丢章节；R37/R38 §3 ＋ R39 铁则）
         with SessionLocal() as db:
             capped = mat.draft_materials(db, sid, max_chars=500)
-        assert capped["truncated"] is True and capped["used_chars"] <= 500
+        assert capped["per_call_chars"] == 500
+        assert capped["dropped"] == [] and capped["truncated"] is False
+        assert capped["batch_count"] >= 2
+        from app.content import citations
+
+        flat = lambda p: "\n".join(b["text"] for b in p["batches"])  # noqa: E731
+        assert citations.normalize(flat(capped)) == citations.normalize(flat(pack)), \
+            "调小单次预算不得减少总注入内容"
     finally:
         app_client.delete(f"/api/subjects/{sid}?hard=true")
 
@@ -212,6 +219,30 @@ def test_r37_s1_large_book_is_batched_by_structure(app_client, monkeypatch):
         joined = "\n".join(b["text"] for b in pack["batches"])
         for ch in range(1, 4):
             assert f"第{ch}章的正文。" in joined, f"第 {ch} 章正文被截断（分批不得丢正文）"
+    finally:
+        app_client.delete(f"/api/subjects/{sid}?hard=true")
+
+
+def test_r37_s1_small_budget_still_covers_every_chapter(app_client, monkeypatch):
+    """**R38 §3 共存口径**：把单次预算调小 → 只改"每次喂多少"，**章节一个不丢**（覆盖账不变）。"""
+    from app.db import SessionLocal
+    from app.outline import materials as mat
+
+    sid = _mk_subject(app_client)
+    try:
+        _add_material(app_client, sid)                      # 两章伪教材
+        with SessionLocal() as db:
+            unlimited = mat.draft_materials(db, sid, max_chars=0)
+            tight = mat.draft_materials(db, sid, max_chars=60)   # 远小于单章字数
+        assert tight["dropped"] == [] and tight["truncated"] is False
+        assert tight["per_call_chars"] == 60
+        assert tight["batch_count"] >= 2
+        flat = lambda p: "\n".join(b["text"] for b in p["batches"])  # noqa: E731
+        assert CHAPTER_1 in flat(tight) and CHAPTER_2 in flat(tight), "预算调小不得丢章节"
+        from app.content import citations
+
+        assert (citations.normalize(flat(tight)) == citations.normalize(flat(unlimited)),
+                "分批不改变注入正文内容（只改每批装多少）")
     finally:
         app_client.delete(f"/api/subjects/{sid}?hard=true")
 

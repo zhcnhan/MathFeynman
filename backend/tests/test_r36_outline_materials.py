@@ -257,45 +257,53 @@ def test_d3_put_outline_rejects_unknown_material_zh(app_client):
         app_client.delete(f"/api/subjects/{sid}?hard=true")
 
 
-# ---------- D4：注入预算 ----------
+# ---------- D4：注入预算（**R37/R38 §3 取代原口径**） ----------
+#
+# R36 D4 原文＝"预算即全局上限，超出即截断/丢弃"。该口径已被 **R37 S1**（结构化完整正文注入）
+# 与 **R38 §3**（预算＝**单次调用**预算，总覆盖面由分段保证；"滑块控制每次喂多少，不控制总共能学多少"）
+# 取代，并由 **R39「一切显性」铁则**兜底（禁止静默丢弃材料/章节）。下述用例按新口径重写。
 
-def test_d4_injection_respects_char_budget(app_client, ai_provider, monkeypatch):
-    """整本材料不得整份塞入：总注入量受 MF_OUTLINE_MATERIAL_MAX_CHARS 约束并留截断痕迹。"""
+def test_d4_budget_is_per_call_and_never_drops_chapters(app_client, monkeypatch):
+    """调小预算**不得丢章节**：只改变每批装多少，全部正文仍在（分批覆盖）。"""
     monkeypatch.setenv("MF_OUTLINE_MATERIAL_MAX_CHARS", "800")
+    from app.db import SessionLocal
+    from app.outline import materials as mat
+
     long_body = "".join(
-        f"【第 {i} 页】\n这是第 {i} 页的正文内容，用于验证注入预算会截断超量材料。" + "填充" * 60 + "\n\n"
+        f"【第 {i} 页】\n这是第 {i} 页的正文内容，用于验证单次预算只影响分批。" + "填充" * 40 + "\n\n"
         for i in range(1, 21)
     )
-    p = ai_provider([{"units": _units(1)}])
     sid = _mk_subject(app_client)
     try:
         _add_material(app_client, sid, title="大部头", text=long_body)
-        r = app_client.post(f"/api/subjects/{sid}/outline/draft", json={"count": 1})
-        assert r.status_code == 200, r.text
-        usage = r.json()["material_usage"]
-        assert usage["truncated"] is True
-        assert usage["used_chars"] <= 800
-        # prompt 里含开头几页、不含最后一页（未被塞满整本）
-        assert "第 1 页" in p.user_text
-        assert "第 20 页" not in p.user_text
+        with SessionLocal() as db:
+            pack = mat.draft_materials(db, sid)     # 读 MF_OUTLINE_MATERIAL_MAX_CHARS=800
+        assert pack["inject_max_chars"] == 800
+        assert pack["dropped"] == [] and pack["truncated"] is False
+        assert pack["batch_count"] >= 2, "超预算必须分批，而不是截断"
+        joined = "\n".join(b["text"] for b in pack["batches"])
+        for i in range(1, 21):                      # 20 页一页不少（含最后一页）
+            assert f"第 {i} 页" in joined, f"第 {i} 页被丢了（R39 铁则禁止）"
+        assert pack["used_chars"] > 800, "总注入量是全部批次之和，不受单次预算限制"
     finally:
         app_client.delete(f"/api/subjects/{sid}?hard=true")
 
 
-def test_d4_material_over_budget_is_reported_dropped(app_client, ai_provider, monkeypatch):
-    """极小预算时材料整体未注入 → dropped 留痕（不静默）。"""
+def test_d4_over_budget_single_section_is_injected_whole(app_client, monkeypatch):
+    """单节自身超预算 → 整节注入（宁可不截断），**不丢材料**（dropped 恒为空）。"""
     monkeypatch.setenv("MF_OUTLINE_MATERIAL_MAX_CHARS", "80")
-    p = ai_provider([{"units": _units(1)}])
+    from app.db import SessionLocal
+    from app.outline import materials as mat
+
     sid = _mk_subject(app_client)
     try:
-        # 首页正文极长 → 标题+首节都放不进 80 字预算
-        _add_material(app_client, sid, text="【第 1 页】\n" + "很长的一段正文。" * 40)
-        r = app_client.post(f"/api/subjects/{sid}/outline/draft", json={"count": 1})
-        assert r.status_code == 200, r.text
-        usage = r.json()["material_usage"]
-        assert usage["dropped"] == [MAT_TITLE]
-        assert usage["used_chars"] == 0
-        assert "超出本次注入预算" in p.user_text
+        body = "【第 1 页】\n" + "很长的一段正文。" * 40
+        _add_material(app_client, sid, text=body)
+        with SessionLocal() as db:
+            pack = mat.draft_materials(db, sid)
+        assert pack["dropped"] == []
+        assert pack["batch_count"] == 1
+        assert "很长的一段正文" in pack["text"], "整节正文必须在（不截断）"
     finally:
         app_client.delete(f"/api/subjects/{sid}?hard=true")
 

@@ -335,43 +335,6 @@ def _block_header(m: dict) -> str:
     return head + "）"
 
 
-def _legacy_pack(index: list[dict], max_chars: int, dropped: list[str],
-                 blocked: list[dict]) -> dict:
-    """R36 D4 降级口径（**仅在显式设上限时**）：分节摘要 + 总预算截断 + 留痕。"""
-    used = 0
-    blocks: list[str] = []
-    truncated = False
-    for m in index:
-        if not m["text_health"]["healthy"]:
-            continue
-        head = _block_header(m)
-        block_used = len(head)
-        if used + block_used > max_chars:  # 标题都放不下 → 整份材料不注入（留痕）
-            dropped.append(m["title"])
-            truncated = True
-            continue
-        lines: list[str] = []
-        for sec in m["sections"]:
-            line = f"- [{sec['label']}] {sec['text']}"
-            if used + block_used + len(line) > max_chars:
-                truncated = True
-                break
-            lines.append(line)
-            block_used += len(line)
-        if not lines:
-            dropped.append(m["title"])
-            continue
-        used += block_used
-        blocks.append(head + "\n" + "\n".join(lines))
-    text = "\n\n".join(blocks)
-    if dropped:
-        text += ("\n\n（另有 %d 份材料因超出本次注入预算未展示：%s）"
-                 % (len(dropped), "、".join(dropped)))
-    return {"text": text, "used_chars": used, "dropped": dropped,
-            "truncated": truncated, "batches": [{"text": text, "used_chars": used, "labels": []}],
-            "blocked": blocked}
-
-
 def _full_blocks(index: list[dict]) -> list[dict]:
     """R37 S1 默认口径：每份材料按章/节**完整正文**成块（不截断、不摘要）。"""
     blocks: list[dict] = []
@@ -399,11 +362,14 @@ def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
     - ``chapter_map``：整本书的章 → 节地图（跨材料合并；S2 覆盖校验的尺子）；
     - ``batches``：结构化分批（每批 ``text`` 完整可注入；按章/页边界切，**绝不截断句子**）；
     - ``used_chars``：全部批次注入的字符总量（**随书规模增长**；=0 时确实不限）；
-    - ``dropped`` / ``truncated``：仅显式设上限时的降级留痕；
+    - ``per_call_chars``：**单次调用**的注入预算（生效值）；
+    - ``dropped``：**恒为空**（R37/R38 §3 ＋ R39 铁则：**任何情况都不得静默丢材料/章节**——
+      预算只决定"每次喂多少"，总覆盖面由分批保证）；
     - ``blocked``：健康度不合格（扫描/图片版）而被挡下的材料 ``[{title, note}]``（S7）。
 
-    预算纪律（R37）：默认**不省成本**（``MF_MATERIAL_INJECT_MAX_CHARS=0``）——整本书按结构
-    完整注入，仅按 ``MF_MATERIAL_BATCH_CHARS`` 在章/页边界分成多次调用；
+    预算纪律（R37＋R38 §3）：默认**不省成本**（``MF_MATERIAL_INJECT_MAX_CHARS=0``）——整本书按结构
+    完整注入，仅按 ``MF_MATERIAL_BATCH_CHARS`` 在章/页边界分成多次调用；**预算上限＝单次调用预算**
+    （取 ``min(预算, 分批阈值)``），**不因预算小就丢章节**（单节超预算时整节注入，宁可不截断）。
     每日 token 上限仍由 ``LLM_MAX_TOKENS_PER_DAY``（provider 侧）保护。
     """
     if max_chars is None:
@@ -413,15 +379,16 @@ def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
     index = _material_index(db, subject_id)
     blocked = [{"title": m["title"], "note": m["text_health"]["note"]}
                for m in index if not m["text_health"]["healthy"]]
-    dropped: list[str] = []
-    if max_chars and max_chars > 0:  # 显式设上限 → R36 D4 口径
-        pack = _legacy_pack(index, max_chars, dropped, blocked)
+    # R37/R38 §3：预算＝**单次调用**预算；总覆盖面由结构分批保证（绝不丢章节，R39 铁则）
+    if max_chars and max_chars > 0:
+        per_call = max_chars if batch_chars <= 0 else min(max_chars, batch_chars)
     else:
-        blocks = _full_blocks(index)
-        batches = _make_batches(blocks, batch_chars)
-        used = sum(len(b["text"]) for b in batches)
-        pack = {"text": batches[0]["text"] if batches else "", "used_chars": used,
-                "dropped": [], "truncated": False, "batches": batches, "blocked": blocked}
+        per_call = batch_chars
+    batches = _make_batches(_full_blocks(index), per_call)
+    used = sum(len(b["text"]) for b in batches)
+    pack = {"text": batches[0]["text"] if batches else "", "used_chars": used,
+            "dropped": [], "truncated": False, "batches": batches, "blocked": blocked,
+            "per_call_chars": per_call, "batch_count": len(batches)}
     pack.update({
         "index": index,
         "chapter_map": [{"material_id": m["id"], "material": m["title"],
@@ -435,7 +402,11 @@ def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
 
 
 def _make_batches(blocks: list[dict], batch_chars: int) -> list[dict]:
-    """按章/节边界把材料块分批（``batch_chars<=0`` → 单批含全部）。"""
+    """按章/节边界把材料块分批（``batch_chars<=0`` → 单批含全部）。
+
+    **绝不丢正文**：单个章/节块自身超过预算时，它自成一批**整块注入**（不截断、不丢弃）——
+    预算只影响"每批装多少块"，不影响"总共装哪些块"（R37 S1 ＋ R38 §3 ＋ R39 铁则）。
+    """
     if not blocks:
         return []
     if batch_chars <= 0:
