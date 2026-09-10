@@ -218,6 +218,53 @@ def exercises_answerable(doc: NodeDoc) -> bool:
     )
 
 
+def check_progression(doc: NodeDoc, prereq_docs: list[NodeDoc]) -> list[str]:
+    """**P4 机器校验**（R36 欠账）：难度提升只能靠"已教事实的累积"。
+
+    两条判定（都用 `taught_facts`/`derivable`，学科无关）：
+    1. **引用必须已教**：题/追问的 `basis.fact_ids` 必须落在
+       「已教集合 = 本单元 taught_facts ∪ 已掌握前置单元的 taught_facts」内——
+       引用了既非本单元、也非前置单元声明过的事实 → 违规（等于问没教过的）。
+    2. **加难必须加事实**：若本单元的练习难度**高于**所有前置单元（或前置为空而难度≥2），
+       则本单元必须**新增**至少一条已述事实；一条都不新增却更难 → 违规（凭空加难）。
+    """
+    problems: list[str] = []
+    own_lecture = doc.explanation.body or doc.body_md or ""
+    own_facts, _ = clean_facts(doc.taught_facts, own_lecture)
+    own_ids = fact_id_set(own_facts)
+    inherited: set[str] = set()
+    for pd in prereq_docs or []:
+        p_lecture = pd.explanation.body or pd.body_md or ""
+        p_facts, _ = clean_facts(pd.taught_facts, p_lecture)
+        inherited |= fact_id_set(p_facts)
+    allowed = own_ids | inherited
+
+    for ex in doc.exercises:
+        if ex.basis is None:
+            continue
+        _b = ex.basis if isinstance(ex.basis, BasisDoc) else BasisDoc(**(ex.basis or {}))
+        for fid in (_b.fact_ids or []):
+            if str(fid) not in allowed:
+                problems.append(
+                    f"P4：练习 {ex.id} 引用了**未教过**的事实 id {fid!r}"
+                    "（既不在本单元 taught_facts，也不在已学前置单元里）")
+    prereq_levels = []
+    for pd in prereq_docs or []:
+        diffs = [e.difficulty for e in pd.exercises if e.difficulty]
+        if diffs:
+            prereq_levels.append(max(diffs))
+    max_prereq = max(prereq_levels) if prereq_levels else 0
+    my_diff = max([e.difficulty for e in doc.exercises if e.difficulty] or [0])
+    new_facts = own_ids - inherited
+    if my_diff > max_prereq and max_prereq > 0 and not new_facts:
+        problems.append(
+            f"P4：本单元练习难度 {my_diff} 高于全部前置单元（最高 {max_prereq}），"
+            "但**没有新增任何已述事实**——难度提升必须靠已教事实的累积，不得凭空加难")
+    if max_prereq == 0 and my_diff >= 2 and not own_facts:
+        problems.append("P4：前置为空而难度≥2，但未声明任何已述事实（taught_facts 为空）")
+    return problems
+
+
 __all__ = [
     "MIN_PREMISES_FOR_REASONING",
     "NO_PACK_PROBLEM",
@@ -227,5 +274,6 @@ __all__ = [
     "clean_derivable",
     "check_basis",
     "gate_node",
+    "check_progression",
     "exercises_answerable",
 ]

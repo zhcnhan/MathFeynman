@@ -21,10 +21,11 @@
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from .schemas import LEVELS, ExerciseDoc, NodeDoc, TemplateDoc
+from .schemas import LEVELS, BasisDoc, ExerciseDoc, NodeDoc, TemplateDoc
 from .templates import render_exercise
 
 PRIMARY_LEVEL = "primary"
@@ -135,6 +136,10 @@ def _as_number(text: str) -> float | None:
     s = (text or "").strip()
     if not s:
         return None
+    # 方程解展示形如 "x = 2"（判题本身接受裸数字）→ 取等号右侧的数值
+    m = re.fullmatch(r"[A-Za-z]\s*=\s*(.+)", s)
+    if m:
+        s = m.group(1).strip()
     try:
         return exprs.eval_number(s)
     except Exception:
@@ -142,6 +147,49 @@ def _as_number(text: str) -> float | None:
             return float(s)
         except Exception:
             return None
+
+
+def static_prompt_text(tpl: TemplateDoc) -> str:
+    """把题干里的参数占位替换成标记，得到**作者写的静态文本**（含"如 x=5"这类示例）。
+
+    用于题面泄漏判定：答案若出现在**静态文本**里 → 泄漏；参数值出现在题干里属正常（题目本身）。
+    """
+    text = str(tpl.prompt or "")
+    for name in (tpl.params or {}):
+        text = text.replace("{" + str(name) + "}", "\u27e6" + str(name) + "\u27e7")
+    return text
+
+
+_HINT_SEG_RE = re.compile(r"[（(]([^（()）]*)[）)]|(?:如|例如)([^，。；;）)]*)")
+
+
+def hint_segments(tpl: TemplateDoc) -> list[str]:
+    """题干的**提示/示例片段**（括号内、或「如/例如」之后）——泄漏只可能出在这里。"""
+    static = static_prompt_text(tpl)
+    out: list[str] = []
+    for m in _HINT_SEG_RE.finditer(static):
+        seg = (m.group(1) or m.group(2) or "").strip()
+        if seg:
+            out.append(seg)
+    return out
+
+
+def leak_problems(tpl: TemplateDoc, rendered_prompt: str, answer: str, *, seed: int) -> list[str]:
+    """题面泄漏（§14）：**答案原样出现在题干的提示/示例片段里** → 违规。
+
+    只扫提示片段（（…） / 如…）：题干正文里的数字（比例 1:2、被减数…）是题目本身的一部分，
+    不算泄漏；而「如 x=5」「如 3/5」这类示例等于答案，就是**直接漏答案**。
+    """
+    out: list[str] = []
+    ans = str(answer or "").strip()
+    if not ans:
+        return out
+    for seg in hint_segments(tpl):
+        if re.search(rf"(?<![\\d.]){re.escape(ans)}(?![\\d.])", seg):
+            out.append(f"题面泄漏（seed={seed}）：答案 {ans!r} 原样出现在题干示例/提示「{seg}」里"
+                       "（示例不得等于任一 seed 的答案，请改成占位形式，如「如 x=…」）")
+            break
+    return out
 
 
 def check_domain_rule(answer: str, domain: dict) -> list[str]:
@@ -179,6 +227,21 @@ def check_template(node_id: str, doc: NodeDoc, ex: ExerciseDoc, *, seeds: int = 
     verdict.l1_available = verifier is not None
     verdict.verified = bool(verifier is not None and str(semantics.get("expect") or "").strip())
 
+    # §14 步骤 3：**模板级依据**（规则句）——给了就必须逐字出自本节点讲解；数学模板建议声明
+    if isinstance(getattr(tpl, "basis", None), dict):
+        tpl.basis = BasisDoc(**tpl.basis)
+    if getattr(tpl, "basis", None) is not None:
+        from . import citations as _cit
+
+        _q = str(getattr(tpl.basis, "quote", "") or "")
+        _src = doc.explanation.body or doc.body_md or ""
+        if not _q or not _cit.is_valid(_q, _src):
+            verdict.problems.append(
+                f"模板依据（basis.quote）不成立：{'未给出引文' if not _q else '引文不逐字出自本节点讲解'}"
+                f"（须为支撑本模板的那句规则句，≥{_cit.MIN_QUOTE_CHARS} 字）")
+    elif verdict.l1_available:
+        verdict.findings.append("未声明模板级依据（basis.quote）——建议给出支撑本模板的规则句（R35 §14）")
+
     if verifier is None:
         # §13 裁决 4 后半：非数学学科**显式标注**"无独立验算"（如实分界，计入护栏统计）
         verdict.findings.append(NO_L1_MARKER)
@@ -199,6 +262,8 @@ def check_template(node_id: str, doc: NodeDoc, ex: ExerciseDoc, *, seeds: int = 
         probs = check_domain_rule(r.canonical_answer, domain)
         if probs:
             verdict.problems.extend(f"seed={seed}（{r.prompt}）→ {p}" for p in probs)
+        # §14：题面泄漏（答案原样出现在题干静态文本里）——直接漏答案，升为**违规**
+        verdict.problems.extend(leak_problems(tpl, r.prompt, r.canonical_answer, seed=seed))
         if len(verdict.samples) < 3:
             verdict.samples.append({"seed": seed, "prompt": r.prompt, "answer": r.canonical_answer})
         if verifier is not None:

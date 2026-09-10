@@ -104,6 +104,26 @@ def _shuffle_single(options: list[str], seed_key: str) -> tuple[list[str], int]:
     return [options[i] for i in order], order.index(0)
 
 
+def _prereq_docs(subject_id: str, unit) -> list:
+    """本单元前置单元的内容节点（已在库者）——供 P4 的已教集合判定。"""
+    try:
+        outline = outline_store.get_outline(subject_id)
+    except Exception:
+        return []
+    if outline is None:
+        return []
+    idx = outline.by_id()
+    docs = []
+    for pid in (unit.prereqs or []):
+        pu = idx.get(str(pid))
+        if pu is None:
+            continue
+        loaded = load_library().by_id.get(pu.id)
+        if loaded is not None:
+            docs.append(loaded.doc)
+    return docs
+
+
 def heuristic_lecture(unit: OutlineUnit) -> str:
     """离线启发式讲解（确定性；**句句都能被 taught_facts 逐字引用**）。"""
     tags = [str(t).strip() for t in (unit.concept_tags or []) if str(t).strip()] or [str(unit.title).strip()]
@@ -464,8 +484,10 @@ def generate_unit_content(
             # 不合规的题/追问被丢弃；若丢弃后不满足题量/题型/例题要求 → 带原因重生成
             report = answerability.gate_node(
             doc, known_concepts={str(t) for t in (unit.concept_tags or []) if str(t).strip()})
+            # P4（R36 欠账）：难度提升只能靠已教事实的累积（需前置单元内容）
+            progress_problems = answerability.check_progression(doc, _prereq_docs(subject_id, unit))
             a11y_problems = list(report.problems)
-            problems = problems + _answerability_structure_problems(doc, report)
+            problems = problems + _answerability_structure_problems(doc, report) + list(progress_problems)
             if not problems:
                 break
             # 丢弃原因回灌给模型（这是"修生成器"的输入，不是只改某一题文案）

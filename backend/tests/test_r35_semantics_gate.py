@@ -268,3 +268,65 @@ def test_pipeline_gate_entry_rejects_bad_template_md():
     errs = pl.validate_semantics(md)
     assert errs, "坏模板必须被生成端闸门拒绝"
     assert any("独立验算不一致" in e or "未被 constraint 保证" in e for e in errs), errs
+
+
+# ---------- §14 步骤 3：模板级依据；步骤 4：P4 机器校验 ----------
+
+def test_template_basis_quote_must_be_verbatim():
+    """模板级依据：`basis.quote` 必须逐字出自本节点讲解（引文纪律同一把尺子）。"""
+    tpl = _tpl("把 {a} 箱平均分给 {b} 人，每人几箱？", answer_expr="a/b",
+               semantics={"expect": "Rational(a, b)", "domain": {"nonneg": True}})
+    tpl.basis = {"quote": "这句讲解里根本没有出现过"}
+    doc, ex = _doc("s-plain.u09", tpl, level="第一章")
+    v = check_template("s-plain.u09", doc, ex, seeds=2)
+    assert v.ok is False and any("模板依据" in p for p in v.problems), v.problems
+
+
+def test_p4_rejects_fact_not_taught_anywhere():
+    """P4 造错必报：练习引用既非本单元、也非前置单元声明过的事实 id → 违规。"""
+    from app.content.answerability import check_progression
+
+    lecture = "平均分就是把总数分成同样多的几份。"
+    doc = NodeDoc(id="s-p4.u02", title="平均分", level="第一章", topic="第一章",
+                  explanation={"role": "教师讲解稿", "body": lecture},
+                  exercises=[ExerciseDoc(id="ex1", kind="fixed", prompt="p", answer_bool=True,
+                                         check=CheckDoc(mode="boolean_judgment"),
+                                         basis={"fact_ids": ["f9"],
+                                                "quote": "平均分就是把总数分成同样多的几份"})],
+                  feynman={"task_prompt": "t",
+                           "rubric": {"dimensions": [{"key": "k", "weight": 1.0}]}},
+                  taught_facts=[{"id": "f1", "text": lecture}])
+    pre = NodeDoc(id="s-p4.u01", title="分东西", level="第一章", topic="第一章",
+                  explanation={"role": "教师讲解稿", "body": "把东西分成几份要一样多。"},
+                  exercises=[ExerciseDoc(id="e", kind="fixed", prompt="p", answer_bool=True,
+                                         check=CheckDoc(mode="boolean_judgment"))],
+                  feynman={"task_prompt": "t",
+                           "rubric": {"dimensions": [{"key": "k", "weight": 1.0}]}},
+                  taught_facts=[{"id": "p1", "text": "把东西分成几份要一样多。"}])
+    probs = check_progression(doc, [pre])
+    assert any("未教过" in p for p in probs), probs
+    # 正例：改引本单元已述事实 → 通过
+    doc.exercises[0].basis = {"fact_ids": ["f1"], "quote": "平均分就是把总数分成同样多的几份"}
+    assert check_progression(doc, [pre]) == []
+
+
+def test_p4_rejects_harder_without_new_facts():
+    """P4 造错必报：难度高于全部前置单元却**没有新增任何已述事实** → 不得凭空加难。"""
+    from app.content.answerability import check_progression
+
+    pre = NodeDoc(id="s-p4b.u01", title="A", level="第一章", topic="第一章",
+                  explanation={"role": "教师讲解稿", "body": "先把东西分成几份要一样多，这叫平均分。"},
+                  exercises=[ExerciseDoc(id="e", kind="fixed", difficulty=1, prompt="p", answer_bool=True,
+                                         check=CheckDoc(mode="boolean_judgment"))],
+                  feynman={"task_prompt": "t",
+                           "rubric": {"dimensions": [{"key": "k", "weight": 1.0}]}},
+                  taught_facts=[{"id": "p1", "text": "先把东西分成几份要一样多，这叫平均分。"}])
+    doc = NodeDoc(id="s-p4b.u02", title="B", level="第一章", topic="第一章",
+                  explanation={"role": "教师讲解稿", "body": "先把东西分成几份要一样多，这叫平均分。"},
+                  exercises=[ExerciseDoc(id="ex1", kind="fixed", difficulty=3, prompt="p", answer_bool=True,
+                                         check=CheckDoc(mode="boolean_judgment"))],
+                  feynman={"task_prompt": "t",
+                           "rubric": {"dimensions": [{"key": "k", "weight": 1.0}]}},
+                  taught_facts=[])
+    probs = check_progression(doc, [pre])
+    assert any("凭空加难" in p for p in probs), probs

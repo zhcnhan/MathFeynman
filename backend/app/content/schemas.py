@@ -82,6 +82,9 @@ class TemplateDoc(BaseModel):
     #   expect:   标准答案的**独立算式**（L1 验算插件据此独立算一遍并与 answer_expr 比对）
     #   requires: 题面里陈述的条件（*必须*被 constraint 强制保证；否则题面在说没保证的话）
     #   domain:   领域谓词 {nonneg/integer/ratio: bool}（通用层按学科无关的谓词表校验渲染结果）
+    # R35 §14：模板级**依据**（"支撑该模板的那句规则句"）——参数化不产生新知识，故**不解到每道渲染题**；
+    # `basis.quote` 必须逐字出自本节点讲解（`content/citations.py` 同一把尺子校验）。
+    basis: Optional[BasisDoc] = None
     semantics: dict = Field(default_factory=dict)
 
     @model_validator(mode="before")
