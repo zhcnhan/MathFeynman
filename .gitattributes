@@ -1,0 +1,5 @@
+# R30 F2（docs/09 R28 F2 裁决）：行尾治理，防"整文件伪 diff"覆写 blame 复发。
+# 规则：源码一律 LF；docs/ 的 CRLF 维持现状（不在本文件约束范围内）。
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
