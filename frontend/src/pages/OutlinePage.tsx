@@ -145,7 +145,8 @@ type Coverage = {
   uncovered_materials?: { material_id: string; title: string; kind: string; note: string }[];
   order_basis?: string;
   multi_material?: boolean;
-  /** R42 B1：过短条目（按规则跳过/未成为单元；不计入未覆盖缺口） */
+  /** R42 B1 / R44 P2：过短条目中**走「跳过」**的那些（另一种去处是「已并入相邻单元」，
+      两种都不计入未覆盖缺口；界面两处都写明，别让人以为过短一律被跳过） */
   skipped_short?: {
     count: number;
     labels: string[];
@@ -965,17 +966,28 @@ export default function OutlinePage() {
                   </ul>
                 </details>
               )}
-              {/* R42 B1：过短条目（按规则跳过/未成为单元）——不计入未覆盖缺口，但**显式列出** */}
+              {/* R42 B1 + R44 P2：过短条目**两种去处都写明**（别让人以为"过短＝一律被跳过"）——
+                  ① 已并入相邻单元（留在该单元依据材料里）；② 已跳过（过短），未成为单元（下列即此类）。
+                  两种去处都不计入未覆盖缺口，且都在总账留了中文原因。 */}
               {!!coverage.skipped_short?.count && (
                 <details style={{ marginTop: 6 }}>
                   <summary className="dim">
-                    过短条目（{coverage.skipped_short.count}，已跳过/未成为单元，**不计入未覆盖缺口**）
+                    过短条目（{coverage.skipped_short.count} 条走「跳过」；另有若干条已「并入相邻单元」）
+                    —— 两种去处都不计入未覆盖缺口
                   </summary>
+                  <div className="dim" style={{ fontSize: 12, margin: "4px 0 0 12px" }}>
+                    过短条目（&lt; {coverage.skipped_short?.min_chars} 字）有两种去处：
+                    <strong>① 已并入相邻单元</strong>——它留在了那个单元的依据材料里
+                    （在下方"逐单元覆盖状态"里显示"并入过短条目 N"）；
+                    <strong>② 已跳过（过短），未成为单元</strong>——下列即此类的全部。
+                    两种去处都在总账留了中文原因（
+                    <Link to={`/ledger?subject_id=${id}&category=other`}>就地看着</Link>）。
+                  </div>
                   <ul className="plain" style={{ margin: "4px 0 0 12px", fontSize: 12 }}>
                     {(coverage.skipped_short.items ?? []).map((x, i) => (
                       <li key={`${x.material_id ?? x.material}-${x.label}-${i}`}>
                         {x.material} · {x.label}（{x.chars} 字 &lt; {coverage.skipped_short?.min_chars} 字）
-                        —— 已跳过（过短），不成为单元；账本有中文原因
+                        —— 已跳过（过短），未成为单元
                       </li>
                     ))}
                   </ul>

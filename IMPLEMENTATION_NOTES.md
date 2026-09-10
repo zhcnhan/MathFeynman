@@ -2605,7 +2605,7 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     ① 账本是否也给"成功路径"记账 → **R41 §3-① 裁定：不记**（定位＝偏离用户预期；成功路径淹没真信号）。
     **R42 已按此实现**（降档/丢弃/未纳入才记）；
     ② 复习降级回炉 → **R41 裁定保持 `relearn_logs` 单源**（在总账页给一条**指向该表的引用条目**）——
-    **未做**（见 §70.6-1，仍挂账）；
+    **R44 B 已落地**（回炉点 `ledger.note(CAT_OTHER, …, detail.ref="relearn_logs")`，幂等；见 §71.2）；
     ③ "降档"逐次记账 → **R42 C1 已落地**（§70.3）；
     ④ user 模板开放编辑 → **R42 C2 已落地**（§70.3）；
     ⑤ 审计文件自动保留期清理 → **R42 C3 已落地**（启动时清理 + 记账，§70.3）；
@@ -2626,6 +2626,21 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     ⑤ **B4 节级依据的匹配口径**：归一化后"相等或互相包含"（长度 ≥4）＋**行首编号节名**兜底；
     若教材用非编号节名（如"第一节 恒星"）则匹配不到 → 不给（宁缺勿造）。要不要扩到中文序数节名？
     ⑥ **审计清理只在启动时跑一次**（无后台定时器）；长跑进程内不会自动再清（可手动 `POST /ai-traces/cleanup`）。
+
+18. **【R44 待架构侧确认】（2026-09-10）**：
+    ① **审计写入 / 换名记账走独立连接**：`ai_trace.write_trace` 落全文与 `ledger.note` 都用
+    `SessionLocal()` 新连接。若调用方此刻**持有写事务**（SQLite 写锁未释放），两者会一起
+    `database is locked`（R44 B 实测到该锁：回炉点因此丢账，已改走调用方事务修掉）。
+    审计侧**本批未改**（超出 A/B 范围，且属 R39 既有设计：sink 与账本同走独立连接）。
+    影响：极端情况下审计文件仍**绝不覆盖**（三层保证），但"换名账目"可能只落到 stderr 兜底日志；
+    是否要给审计也开一条"调用方事务内落库"的口子（`ledger.write_via`）请裁定；
+    ② **审计重试口径**（本批自行选定并落地）：每次 `write_trace` ＝ 一条独立记录 + **独立文件**，
+    重试次数作为该条元数据（`retries`/结局）；**不覆盖、不合并**已落的失败痕迹。理由：provider
+    对重试循环**合成一条**审计（R39 §3），故多次 `write_trace` 只可能来自不同调用/不同重试轮；
+    ③ **总账索引条目的"object"命名**：回炉条目定为 `节点 <id> · 回炉`（问题单示例为
+    `单元 s-xxxx.u03 · 回炉`，数学节点非"单元"，故用"节点"）；若要求统一成"单元"请裁定；
+    ④ **回炉索引账目与回炉同事务**：走 `ledger.write_via(db, …)`，回炉回滚则索引条目一并回滚
+    （索引指向的那次回炉确实存在）；若希望索引条目"即便回炉回滚也留痕"，需要另一种口径。
 
 
 ---
@@ -3504,6 +3519,32 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
 | **`_CURRENT` → `ContextVar`** | 同模块替换实现（调用点零改动） | `test_r42_d2_*`（2 条） |
 | **`print` 归口** | `api/session.py::_trace_step` 改标准 logging + 文档豁免（不新建日志系统） | `test_r42_d3_*` |
 
+### 67.4d 融合对照表（**R44 行**：新增件 → 复用点 → 断言）
+
+> 写法说明：按 docs/13 §2（用户明令禁用 Markdown 表格）写成**并列列表项**，不建第二张表。
+
+- **新增件**：审计文件名三层防碰撞（进程内同秒序号 `_next_name` + 占用换名 + 原子 `open("x")`）
+  - **复用点**：只改 `service/ai_trace._write_file` 内部（文件名来源唯一处）；**不新建**命名服务/表
+  - **断言/用例**：`test_r44_a1_*`（5 次→5 文件且内容不串）、`test_r44_a2_*`（3 调用点→3 文件，回归）
+- **新增件**：换名/被占用 → **中文账目**（`detail.kind="trace_name_renamed"`）
+  - **复用点**：R39 唯一账本 `ledger.note(CAT_OTHER, …)`（不新建审计日志）
+  - **断言/用例**：`test_r44_a4_*`（预置同名不被覆盖 + 账目原因含"已被占用/换名"）、`test_r44_a5_*`（同秒换名也记账）
+- **新增件**：审计重试口径（每次尝试各留一个文件，不覆盖/不合并）
+  - **复用点**：沿用 `write_trace` 单条记录 + `ai_logs.retries` 既有字段（**不新建**重试表）
+  - **断言/用例**：`test_r44_a3_*`（失败2次+成功1次 → 3 文件、结局分别为失败/失败/采纳）
+- **新增件**：`ai_logs` / `/ai-traces` 契约不变（R44 不改 DB 形状）
+  - **复用点**：`query`/`get_detail`/`make_ai_log_sink` 原样
+  - **断言/用例**：`test_r44_a6_*`（列表 7 键 + 记录 17 键 + 详情可展开全文）
+- **新增件**：回炉总账**引用条目** `progress.note_relearn_in_ledger`（幂等）
+  - **复用点**：R39 唯一账本 + `relearn_logs` **单一权威源**（只存指针 `ref/relearn_id`，不抄明细）
+  - **断言/用例**：`test_r44_b1_*`（+1 条中文索引、`detail.ref` 可追 `relearn_logs`）、`test_r44_b2_*`（同 id 幂等）、`test_r44_b4_*`（会话路径同款）
+- **新增件**：记账落库改**调用方事务** `ledger.write_via(db, entry)`（+ `Accumulator.record(persist=False)`）
+  - **复用点**：仍在本模块唯一入口内（仅多一个落库途径），不新建第二套账
+  - **断言/用例**：`test_r44_b1/b3/b5_*`（回炉后账目确实已提交；B5 走真实 `POST /api/review/submit`）
+- **新增件**：过短条目**两种去处**文案（大纲页覆盖卡）
+  - **复用点**：`OutlinePage` 既有覆盖卡 + 既有"并入过短条目 N"徽标（不新建卡片）
+  - **断言/用例**：`npx tsc --noEmit` exit 0 + `vite build` exit 0 + 文案两处并列
+
 ### 67.4b 融合对照表（**R38 / R39 行**：新增件 → 复用点 → 断言）
 
 | 新增件 | 复用点（禁新建平行机制） | 断言/用例 |
@@ -3835,6 +3876,135 @@ R38 §0.5 把它定为"**总注入上限**（跨全部批次）"，而 **R37 已
 3. **降档记账只覆盖会话路径**（outline 起草/单元出稿固定 `fast`，不走 tier 决策）——§58-17-③；
 4. `MF_MIN_ENTRY_CHARS=200` 为拍定值；B4 节名匹配口径（含中文序数节名是否要支持）——§58-17-④⑤；
 5. 审计清理**只在启动时跑一次**（无后台定时器）——§58-17-⑥。
+
+
+---
+
+## 71. R44 收口批：审计全文文件名防碰撞（P0）＋ 回炉总账引用条目（P0）＋ 过短条目文案（P2）（2026-09-10）
+
+来源：`docs/09` **R43** §3（缺陷复现）与 §4-1（R41 §3-③ 漏做项）；本批工单 `.runtime/EULER_TICKET_R44.md`；
+验收批 **R45**。**本批只改 `backend/`、`frontend/`、`docs/`、`IMPLEMENTATION_NOTES.md`**；真实库与
+`content/`（含人工锚点）**未动**（用户次日真人走查，库只读）。
+
+### 71.1 任务 A · 审计全文文件名防碰撞（P0，真缺陷）
+
+- **缺陷（R43 §3 架构侧独立复现）**：同一秒内对**同一调用点**连调 5 次 → 只落 **1 个** `.txt`，
+  `ai_logs` 有 5 行且 `trace_path` **全指向同一个文件** → 前 4 次全文**永久丢失**（违反 R39 §3「展开即完整」）。
+- **根因**：`service/ai_trace.py::_write_file` 旧文件名用 `abs(hash((call_name, at))) % 1000000` 当唯一后缀
+  ——同一秒同调用点 hash 完全相同 → 同名 → `Path.write_text` **静默覆盖**。
+- **修法（三层，任一层单独触发都不会覆盖；**不使用 `hash()` 做唯一性**）**：
+  - **① 进程内同秒序号**：`_next_name(entry_dir, stamp, call_name)`，`(stamp, call_name) → 序号`
+    记在 `_SEQ_BY_KEY`（`threading.Lock` 保护）；该秒该调用点第 1 次 = `<时间>-<调用点>.txt`，
+    第 n 次 = `<时间>-<调用点>-02.txt`/`-03`…（单调递增）。
+  - **② 占用即换名**：候选名已被占用（另一进程写的 / 人为预置的）→ 继续自增序号**换名**，
+    并在冲突说明里写明原因（"目标文件名已被占用…已换名以免覆盖"）。
+  - **③ 原子独占写入**：`open(path, "x", encoding="utf-8", newline="")` —— 即使 ①② 都没预见，
+    内核层面也**绝不会覆盖**已存在文件；`FileExistsError` → 换下一个序号重试（上限 200 次，
+    用尽则抛 `OSError` 并由 `write_trace` 记"审计写入失败"账目，**不静默**）。
+- **记账**：只要**换了名**（同秒多次 / 目标被占用）就 `ledger.note(CAT_OTHER, "AI 对话审计文件（<调用点>）", …)`，
+  中文原因形如"同一秒内对同一调用点多次记录：已改名为 `…-02.txt`（原拟 `….txt`），以确保每次调用的
+  完整 prompt/response **各自独立留存、不被覆盖**"，`detail = {kind: "trace_name_renamed", base_name, final_name, collision}`。
+- **文件名可读性**：保持 `<UTC 时间戳>-<调用点>[-NN].txt`（用户靠它肉眼找）；**旧名文件无需迁移**。
+- **DB 契约**：`ai_logs` 表与 `/ai-traces`、`/ai-traces/{id}` 响应**形状一字未改**（`trace_path` 仍指向
+  本次调用**自己**的文件；`docs/06-api.md` 只加了一句文件名口径说明）。
+- **重试口径（本批自行选定，请架构侧确认 → §58-18-②）**：**一次 `write_trace` = 一条独立记录 + 一个独立文件**；
+  重试次数作为该条元数据（`retries` + 最终结局），**既不覆盖**已落的失败痕迹、**也不合并**成一条。
+  理由：provider 对一次逻辑调用的重试循环**合成一条**审计（R39 §3），所以多次 `write_trace` 只可能来自
+  **不同调用 / 不同重试轮**——合并会再次丢证据（与本次修的缺陷同源）。
+- **开工前复现 / 修复后验证**（`.runtime/r44_repro_collision.py`，只写临时目录与临时库）：
+  - 修复前：`写入 5 次 → 文件数: 1`；`DB 记录数: 5 → 去重后的 trace_path 数: 1`；`DB#1..#4 期望 USER-n 命中=False`。
+  - 修复后：`写入 5 次 → 文件数: 5`（`…-answer_question.txt`、`-02`、`-03`、`-04`、`-05`）；
+    `DB 记录数: 5 → 去重后的 trace_path 数: 5`；`DB#1..#5 命中=True`；结论 `[OK] 无覆盖（5/5 内容各自对得上）`。
+
+### 71.2 任务 B · 回炉在总账（R39 账本）留引用条目（P0）
+
+- **落点**：新增 `service/progress.py::note_relearn_in_ledger(db, *, user_id, node_id, reason, relearn_id=0, extra_key="")`，
+  由**两条回炉路径**调用：
+  - 复习降级：`demote_to_learning`（`review.submit_review` 在 `should_relearn` 判定后调用）——
+    先落 `RelearnLog` 并 `flush()`，拿到 `id` 作为 `relearn_id`，再记索引条目；
+  - 会话回炉：`session.SessionService._relearn_explain`（练习连错 2 次 / 费曼额度尽），
+    以 `extra_key = f"{sess.id}:{reason}"` 作幂等键（该路径在 `try/except` 内调用，记账失败不阻塞回炉）。
+- **单一权威源不变**：`relearn_logs` 仍是回炉明细的唯一真源；总账条目**只做索引**——
+  `object = "节点 <id> · 回炉"`，`reason` 是一句中文（"节点回炉重学：<原因>——明细见**复习记录**
+  （`relearn_logs`，本条目只做索引，不重复存内容）"），`detail = {ref: "relearn_logs", relearn_id, ref_key,
+  user_id, kind: "relearn_index"}`，**不复制**明细正文。
+- **幂等**：写入前查 `content_ledger` 中 `category="other"` 且 `unit_id=<节点>` 的行，凡
+  `detail.ref == "relearn_logs"` 且 `relearn_id`/`ref_key` 相同 → **跳过**（返回 `False`）；不同次回炉
+  （新 `relearn_id` / 新会话键）→ 正常新记一条。
+- **可见性**：`/ledger?category=other` 可筛出，中文原因 + "其它"类别标签，`detail` 可追到 `relearn_logs` 具体一条。
+- **本批实测修正（重要，务必保留）**：初版在回炉点直接 `ledger.note(...)`，而 `demote_to_learning`
+  此时**已 flush 过 `user_nodes`/`relearn_logs`**（持有 SQLite 写事务）→ `ledger.write` 的**独立连接**
+  与之**自锁**（`database is locked`，stderr 兜底日志实测可见）→ **账目丢失**（B1/B3 用例首跑即暴露）。
+  改为新增 `ledger.write_via(db, entry)`（**在调用方事务内落库**，`flush` 后本会话可见，**仍是同一份
+  `content_ledger` 账本、同一记账模块**，不新建第二套账）后通过；语义＝索引条目与回炉**同生共死**
+  （回炉回滚 → 索引一并回滚，正是"索引指向的那次回炉确实存在"）。同时给 `Accumulator.record(..., persist=False)`
+  加了口子：有活跃收集器时同一条进"就地提示"但**不重复落库**。
+
+### 71.3 附带（P2）· 过短条目文案：两种去处都写明
+
+- 改 `frontend/src/pages/OutlinePage.tsx` 覆盖卡的「过短条目」块（+ 同文件类型注释）：
+  摘要改为"过短条目（N 条走「跳过」；另有若干条已「并入相邻单元」）—— 两种去处都不计入未覆盖缺口"，
+  正文并列说明 **① 已并入相邻单元**（留在该单元依据材料里，逐单元覆盖状态显示"并入过短条目 N"）
+  与 **② 已跳过（过短），未成为单元**（下列即此类的全部），并给总账「其它」就地入口；
+  逐条行的"已跳过（过短），未成为单元"**不再暗示"过短＝一律被跳过"**（后端口径未改：`skipped_short`
+  本来就只含**未映射到任何单元**的那些；被并入的不在此列）。
+
+### 71.4 回归与验收自证（**实测，非推算**）
+
+- **开工基线**（本机复跑，`.runtime/r44_baseline.xml`）：`pytest backend/tests` ＝
+  **467 passed + 2 skipped / 469 collected**，0 failed / 0 error，exit 0。
+- **收尾实测**（`.runtime/r44_final.xml`）：`pytest backend/tests` ＝
+  **478 passed + 2 skipped / 480 collected**，0 failed / 0 error，exit 0 ——**+11 用例全绿**（A 6 + B 5），**回归不降**。
+- `content validate` ＝ **ok=True nodes=26 exercises=55**（与基线逐位一致；本批未动内容）。
+- roadmap audit 五学段 ＝ **27 / 31 / 81 / 59 / 60**，`ok: True`（cycles/prereq_missing/anchors_missing 全 0）。
+- `semantics_stats()` ＝ **{templates: 30, violations: 0, verified: 30, unverified: 0, l1_subjects: ['math']}**（逐位一致）。
+- 只读 `audit_material_binding.py s-f2decfcf` ＝ **9/9、5/5、19%、54%**（逐位一致）。
+- 前端：`npx tsc --noEmit` **exit 0**；`npx vite build` **exit 0**（`✓ built in 1.22s`）。
+- 真实库 / `content/`：**只读**（工作树只剩用户自己的未跟踪 `content/stages|subjects/s-f2decfcf/`）。
+
+**A 的四条必交用例**（`backend/tests/test_r44_a_trace_names.py`，实际用例名 + 实测）：
+
+1. **同秒同调用点 ×5 → 5 文件、内容不串不丢**：`test_r44_a1_same_second_same_call_site_five_calls_five_files`
+   —— 冻结时钟使 5 次写入同秒；断言文件名恰为 `20260304T050607Z-answer_question.txt` 与 `-02`…`-05`，
+   5 条 `trace_path` 互不相同，**逐个文件核对该次的 `SYS-i`/`USER-i`/原始返回**，且 `/api/ai-traces` 5 行
+   各自指向自己的文件（旧形状的 6 位数字 `hash` 后缀绝迹）。
+2. **同秒 3 个不同调用点 → 3 文件（回归）**：`test_r44_a2_same_second_three_call_sites_three_files`
+   —— `answer_question`/`feynman_evaluate`/`challenge_exercise` 三个文件、**不误加序号**、内容各自对得上。
+3. **重试场景（本批口径）**：`test_r44_a3_retry_attempts_are_kept_separately` —— 同一调用点
+   `unit_content_draft` 三次尝试（失败/失败/采纳）→ 3 个文件、结局分别为"失败/失败/采纳"、成功那条含
+   `重试次数：2`、`/api/ai-traces` 3 行中 `outcome=failed` 恰 2 行。
+4. **预置同名文件不被静默覆盖**：`test_r44_a4_preexisting_same_name_not_silently_overwritten`
+   —— 预置 `20260304T050607Z-answer_question.txt` 后写入，**预置内容原封不动**、新内容落 `…-02.txt`，
+   账本新增一条 `kind="trace_name_renamed"` 的**中文**条目（含"已被占用"＋"换名"＋`final_name`/`base_name`），
+   且 `/api/ledger?category=other` 里看得见。
+   （另：`test_r44_a5_same_second_rename_is_also_accounted`＝同秒换名也记账；`test_r44_a6_db_contract_unchanged`
+   ＝列表 7 键、记录 17 键、详情 `full.system/user` 与 `file_exists` 全部照旧。）
+
+**B 的三条必交用例**（`backend/tests/test_r44_b_relearn_ledger.py`，实际用例名 + 实测）：
+
+1. **触发一次回炉 → 账本 +1 条中文索引**：`test_r44_b1_relearn_writes_one_chinese_index_entry`
+   —— 造"已掌握 + 已排程"，两次 `RATING_AGAIN` 触发 `action="relearn"`；断言账本 `+1` 条、`object` 为
+   `节点 middle.0102 · 回炉`、`reason` 全中文且含"回炉/复习记录/`relearn_logs`"、`impact`/`remedy` 非空、
+   `detail.relearn_id` **等于**该次 `relearn_logs.id`、`detail` 键集合 ⊆ `{ref, relearn_id, ref_key, user_id, kind}`
+   （即**没有**抄明细正文），`/api/ledger?category=other` 可见且 `category_label == "其它"`。
+2. **重复触发不重复记账（幂等）**：`test_r44_b2_same_relearn_is_idempotent` —— 同一 `relearn_id` 调两次
+   → 第一次 `True`、第二次 `False`，账本恰 **1** 条；换新 `relearn_id` → 允许再记一条（不是永久去重）。
+3. **回归：`relearn_logs` 照常写**：`test_r44_b3_relearn_logs_is_still_the_single_source` —— 回炉后
+   `RelearnLog` 恰 1 条且原因非空、`UserNode.state == "learning"`，账本索引恰 1 条。
+   （另：`test_r44_b4_*`＝会话路径回炉同样入索引且幂等（含"有收集器时进就地提示但不重复落库"）；
+   `test_r44_b5_*`＝走**真实 `POST /api/review/submit`** 断言索引条目在请求返回后**确实已提交**。）
+
+**提交链（每子步单独提交，均标 R44，不与 R42/R43 混提）**：A 后端（`ai_trace.py` + A 用例）→
+B 后端（`progress.py`/`session.py`/`ledger.py` + B 用例）→ 附带 UI + 文档同步。
+
+### 71.5 疑点 / 需架构侧确认（已登记 §58-18）
+
+1. 审计写入与"换名账目"仍走**独立连接**（R39 既有设计）：若调用方此刻持有写事务会
+   `database is locked` —— 文件**绝不会被覆盖**（三层保证仍在），但换名账目可能只落到 stderr 兜底；
+   是否也给它开 `ledger.write_via` 口径 → §58-18-①；
+2. 审计**重试口径**为本批自选（每次尝试各留一个文件）→ §58-18-②；
+3. 回炉条目 `object` 用"节点"（问题单示例为"单元"，数学节点非单元）→ §58-18-③；
+4. 回炉索引与回炉**同事务**（回滚则索引一并回滚）→ §58-18-④。
 
 
 
