@@ -30,9 +30,14 @@
 - 基线（**R32 架构侧独立复跑**）：pytest **325 passed + 2 skipped**（327 collected，exit 0）；audit
   五学段全绿（27/31/81/59/60）；content validate 26/54；`npx tsc --noEmit` 通过；git 工作树待随本批提交。
 - **进行中/待办（最重要）**：
-  a) **R33 小批**（交 Euler）：文档/配置一致性收尾——docs/02 目录树路径、docs/15 §7B 标记完成、
-     库路径口径统一（`.env` 的 `MF_DB_PATH` 仍指旧名 `mathfeynman.db`，迁移未触发）；工单见
-     `.runtime/EULER_TICKET_R32.md`；
+  a) **R33 小批（Euler 已执行完毕，2026-09-10 · 待架构侧验收）**：文档/配置一致性收尾——
+     docs/02 目录树首行改为 `YanHui/` 并按实测补齐目录、docs/15 §7B 标记完成、旧名残留全仓复核；
+     **库路径已归一**：库文件改名 `mathfeynman.db` → `yanhui.db`、`.env` 的 `MF_DB_PATH` 同步为
+     `backend/data/yanhui.db`，迁移前后六项计数逐位一致（26/3/31/2/113/0）。
+     ⚠️ 本批新发现**第二层根因**：`load_dotenv()` 默认不覆盖已有环境变量，而当前 DSH 进程环境里
+     残留**进程级** `MF_DB_PATH=backend/data/mathfeynman.db` → 只改 `.env` 不生效（详见 NOTES §54；
+     重启 DSH/新终端后自动消除）。执行记录见 IMPLEMENTATION_NOTES §52–§55；工单
+     `.runtime/EULER_TICKET_INIT_R33.md`；
   b) **真人浏览器验收（用户动作）**：遗留会话 `s-f2decfcf.u01:a7689b7ebf` 走"首讲 → 补答 → 整合重讲"；
      真实 SearXNG 端到端、PDF 上传 UI、math 停用/重启用演示、材料可追溯重生成；
   c) 数学内容（roadmap 到段精核/内容懒生成）持续治理项照旧。
@@ -108,6 +113,9 @@
 - ⑤ git 远端与镜像不受影响（`.git` 随目录搬移；确认 git-mirror 配置无绝对路径）；
 - ⑥ 前端 `node_modules` 通常可随目录搬移，但需清 `vite` 缓存。**DB 是相对路径，但 `.env` 的
   `MF_DB_PATH` 会覆盖代码默认名**——改名时务必同步该值，否则旧库名残留、迁移静默不触发（见 R32 §3）。
+  **✅ R33 任务 B 已执行完毕（2026-09-10）**：库文件已改名 `yanhui.db`、`.env` 已同步、六项计数无变化。
+  **补充教训（勘察清单遗漏项）**：**进程环境变量也会覆盖 `.env`**（`load_dotenv()` 默认不 override）
+  ——改名时若旧值还留在进程环境里，改 `.env` 仍不生效；排查见 NOTES §54。
 - 验证：改名后跑 `pytest backend/tests`、`npm run build`、`scripts\dev.ps1` 冒烟 + 打开页面。
 
 **C. 产出**：立心 + 清理与改名执行记录已正式化为 **docs/09 R32**（原拟编 R31，因 R31 已被 R30

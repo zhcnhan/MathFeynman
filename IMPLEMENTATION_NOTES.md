@@ -2136,3 +2136,151 @@ sessions 3 / attempts 31 / subjects 2 / concepts 113）。根因＝`.env` 的 `M
   而 `.runtime/pids.txt` 记录的是 9084 / 2944（**与当前进程不符**）→ `scripts\stop.ps1` 停不掉它，
   任务 B 需按端口定位进程停止（已记录，见 §54）。
 
+## 53. R33 任务 A：文档小尾巴（docs/02 目录树 + 旧名残留复核 · 2026-09-10）
+
+### A1 · docs/02 §3 目录树（只写实，未新建任何目录）
+
+- 首行 `颜回（YanHui）/` → **`YanHui/`**（旧显示名残留，含全角括号），并注明 2026-09-10 由 MathFeynman 改名。
+- 逐项对照实测目录后补齐/纠正（依据 = `Get-ChildItem` 全量列目录，非文档转述）：
+  1. 补 `backend/app/config.py`（环境变量与默认配置，含 `MF_DB_PATH` 默认 `backend/data/yanhui.db`）；
+  2. 补 `backend/migrations/`（实存，仅 `.gitkeep`；注明当前用 `create_all` + 保留升级路径）；
+  3. `backend/app/content/` 注释补"含 roadmap 蓝图加载与 audit"；
+  4. 补 `content/roadmap/`（五学段 `<level>.yaml` + `REVIEW-blueprint.md`/`REVIEW2-master.md`）与
+     `content/manifest.yaml`（均实存且入库）；
+  5. `frontend/src/pages/` 由 4 个示例名改为实有 8 个页面（Dashboard/Session/Review/Settings/
+     Subjects/Outline/Feedback/FeynmanHistory）；
+  6. `frontend/src/components/` **删去三个不存在的假名**（`WorkedExercise`/`FeynmanChat`/`GraphTool`），
+     改为实有组件（MathInput / ExercisePanel / SubjectSwitcher / MdMath / ErrorBoundary…）；
+  7. 补 `scripts/stop.ps1`（实存，读 `.runtime/pids.txt` 停服）；
+  8. 树后加一条说明：`.gitignore` 覆盖的本地目录不入库（`backend/data/`、`content/_drafts/`、
+     `.runtime/`、`_dsh-local/`、`resume/`、`.env`）。
+- 未改动的部分：`api/service/domain/ai/outline` 等既有行（与实测一致，保持原样）。
+
+### A2 · 旧名 `MathFeynman` / `mathfeynman` 残留复核（改动清单 / 保留清单）
+
+扫描范围：全仓（含 git 忽略区），排除 `.venv`/`node_modules`/`.git`/`resume/`；命中 **40 处**。
+
+**① 改（"把旧路径当当前路径用"）**
+| 位置 | 处理 | 理由 |
+|---|---|---|
+| `.env:14`（本地、git 忽略） | `MF_DB_PATH=backend/data/mathfeynman.db` → `backend/data/yanhui.db` | 唯一把旧库名当**当前库**用的活配置，是迁移不触发的根因（任务 B） |
+| `docs/15 §3a` | 现状描述"`.env` 的 `MF_DB_PATH` 仍指旧名…迁移未触发" → 改为 R33 已完成 | 属**当前状态**描述，任务 B 落地后即失真 |
+| `docs/15 §7B`⑥ | 标注该勘察项已由 R33 任务 B 执行完毕 | 同上（§7B 其余清单保留为改名手册） |
+
+**② 有意保留（历史证据，逐处理由）**
+| 位置 | 内容 | 不改理由 |
+|---|---|---|
+| `README.md:56` | "源自…旧名 MathFeynman" | 沿革说明（工单点名保留） |
+| `README.md:66` | "改名 MathFeynman → YanHui … R32" | 改名记录引用 |
+| `docs/09:548` | 真模型留档的**历史临时库**路径 `backend/data/mathfeynman.db` | 工单点名保留：R28 F1 证据链，当时的真实路径 |
+| `docs/09:722/732/761/766/802` | R32 改名过程叙述与旧版痕迹清理记录 | 决策链证据口径（docs/15 §7A-3：历史裁决不改写） |
+| `docs/13:89` | "工作目录已改名 …（旧名 MathFeynman）" | 交接说明，写明"旧名"不算当前路径 |
+| `docs/15:29/63/99/102` | 立心批状态、改名手册、勘察清单① | 同上（手册性质） |
+| `IMPLEMENTATION_NOTES.md:2089`（§51） | "库路径遗留（R33 任务 B）：真实库 …mathfeynman.db 仍在用" | **架构侧于 2026-09-10 写的时点记录**，属历史；本批在 §54 记录迁移结果，不回改他人留档（改写会伪造历史）。若架构侧要求改为"已迁移"，一句话即可 |
+
+**③ 不能改（功能字面量）**
+- `backend/app/db.py:20/24/29/33`：`_migrate_legacy_db_path()` 的 legacy 字面量 `"mathfeynman.db"`
+  与其中文提示——**迁移逻辑必须知道旧名**，改成新名会让迁移失效（属逻辑，本批也不许动）。
+
+**④ 本地留档 / 忽略区（不改，仅登记）**
+- `.runtime/EULER_TICKET_INIT_R33.md`（本批工单）、`.runtime/EULER_TICKET_R32.md`（历史工单）：
+  文中旧名是"当时口径"说明；`R32.md:30` 的"若仍有 MathFeynman 绝对路径→改为 YanHui"即本批 A2 依据。
+- `.runtime/EULER_TICKET_R27.md:3`、`R30.md:3`：**旧绝对路径当仓库路径用**（误导源）→ 按工单只加一行
+  "本文件为历史留档 / 当前路径为 YanHui"注记（见 A3）。
+- `_dsh-local/r30_*.xml`（8 个 junit 证据，含旧绝对路径 `D:\DeepseekHarness\MathFeynman\...`）、
+  `.runtime/r27_live_out.txt`、`.runtime/u01_dump.txt`、`_dsh-local/diag_fb.py`（新名优先、旧名兜底的
+  只读诊断脚本）：均为**既往批次的证据/工具**，属被忽略的本地目录，不入库、不动。
+  （本批新产出的留档：`.runtime/r33_*.txt|xml`。）
+
+### A3 · 历史工单注记
+
+- `.runtime/EULER_TICKET_R27.md` / `.runtime/EULER_TICKET_R30.md`：标题下各加一行
+  「⚠️ 本文件为历史留档…文中 `D:\DeepseekHarness\MathFeynman` 是当时的路径，现为 `YanHui`…正文不改写」。
+- 二文件均被 `.gitignore` 忽略（`.runtime/`）→ 不入库、不产生提交，仅本机防误导。
+
+### A4 · 回归
+
+- 本批 A 段**零代码改动**（只动 `docs/02`、本 NOTES、两个被忽略的 `.runtime` 文件）。
+- 改后复跑：`pytest backend/tests` = **327 collected / 325 passed + 2 skipped / 0 failed，exit 0**
+  （留档 `.runtime/r33_pytest_afterA.xml`）→ 与 §52 基线**逐位一致**。
+
+## 54. R33 任务 B：数据库库名归一（`mathfeynman.db` → `yanhui.db` · 2026-09-10）
+
+**总原则**：全程**只改名**，不复制数据、不覆盖、不删除；任何一步异常即回滚并记"待架构裁决"。
+
+### B1 · 停服（第 1 步）
+
+- 停服前实况：8000 由 `python -m uvicorn app.main:app`（PID **19852**）监听；`.runtime/pids.txt`
+  记录的 9084 / 2944 与实况**不符**（`scripts\stop.ps1` 只能杀掉记录值）→ 已补"按端口定位 PID"停服。
+- 停服后复核：8000 / 5173 **均无监听**，无残留 uvicorn 进程；停服后删/改名才可能成功
+  （SQLite 打开时不带 FILE_SHARE_DELETE，占用时 `Rename-Item` 会失败）。
+
+### B2 · 备份（第 2 步，改名之前）
+
+- 路径：**`D:\DeepseekHarness\_backups\yanhui-db-20260910-160212\`**（政策要求落在 `_backups\`，不落桌面）。
+- 内容与核对（**先复制 → 逐文件核对大小 + SHA256 → 通过才继续**）：
+
+  | 文件 | 字节 | SHA256（前 16 位） | 源/副本一致 |
+  |---|---|---|---|
+  | `mathfeynman.db` | 327680 | `820EFC7218A15784` | ✅ |
+  | `mathfeynman.db-wal` | 70072 | `A27D54D5C3A62D53` | ✅ |
+  | `mathfeynman.db-shm` | 32768 | `12172D4B437F114C` | ✅ |
+
+  副本只读校验：`pragma integrity_check = ok`，六项计数与源一致（26/3/31/2/113/0）→ **备份可用**。
+
+### B3 · 改名（第 3 步）
+
+- `backend/data/` 内：`mathfeynman.db` → `yanhui.db`、`mathfeynman.db-wal` → `yanhui.db-wal`、
+  `mathfeynman.db-shm` → `yanhui.db-shm`（纯 `Rename-Item`；改名后旧三件套在原名下 `Test-Path = False`）。
+- 历史文件 `mathfeynman.db.bak-20260908-220309`（2026-09-08 的备份）**不在改名范围**、原样保留。
+
+### B4 · 配置（第 4 步）＋ **第二层根因（本批新发现，重要）**
+
+- `.env`（git 忽略）：`MF_DB_PATH=backend/data/mathfeynman.db` → **`backend/data/yanhui.db`**（已改）。
+- `.env.example`（入库）：本来就是 `backend/data/yanhui.db`，**无需改动**（R32 §4#2 口径成立）。
+- **重启后实测：应用仍打开了旧名库**——16:03:40 在 `backend/data/` **新建了一整套空库**
+  （`mathfeynman.db` 4096B + `-wal` 412032B + `-shm` 32768B；`subjects=1`/`sessions=0`/`attempts=0`）。
+- 定位（逐层排查，非猜测）：
+  1. `config.py:15` 用 `load_dotenv()`（无参）→ 从 `config.py` 所在目录向上找到仓库根 `.env`，**路径解析正常**
+     （`REPO_ROOT` 锚定，`.env` 新值确实被读到）；
+  2. 但 **python-dotenv 的 `load_dotenv()` 默认不覆盖已存在的环境变量**；
+  3. 当前进程环境里**存在 `MF_DB_PATH=backend/data/mathfeynman.db`**（`Process` 级）——
+     由**当前 DSH 服务进程（node.exe）继承而来**（`User`/`Machine` 级均为空，不是 `setx` 持久化的）。
+  4. → 结论：**双层根因**。R32 §3③ 只记到 `.env`（第一层）；第二层是
+     **进程环境变量优先于 `.env`**，只改 `.env` 永远不生效。这也解释了为何改名前"迁移静默不触发"。
+- 处置：
+  1. 误建空库三件套 **move（不是删除）** 到备份目录
+     `…\_backups\yanhui-db-20260910-160212\stray-from-misconfigured-restart\`（留作证据，可回滚）；
+  2. 以 `$env:MF_DB_PATH='backend/data/yanhui.db'` 重启后端（进程级覆盖 .env/继承值，立即生效）；
+  3. **真实数据零损失**：`yanhui.db` 六项计数与迁移前逐位一致（见 B5）。
+
+### B5 · 校验与冒烟（第 6/7 步）
+
+- 只读连 `backend/data/yanhui.db`：`pragma integrity_check = ok`；
+  **user_nodes 26 / sessions 3 / attempts 31 / subjects 2 / concepts 113 / reviews 0** —— 与迁移前**逐位一致**。
+- `backend/data/` 现仅：`yanhui.db`(+`-wal`/`-shm`) 与历史 `mathfeynman.db.bak-20260908-220309`；
+  **`mathfeynman.db` 三件套不在原名下**（校验项达成）。
+- 启动日志：无 `[db] 已迁移旧库 …` 行 —— **正常**（已人工改名，迁移代码路径不必触发；工单 §5.5 已注明）。
+- 应用层（服务重启后）：`/api/health` 200、`/api/dashboard` 200、`/api/subjects` 200、
+  `/api/selfextend/status` 200、`/api/campaign` 200；前端 `http://127.0.0.1:5173/` 200（index 669B）
+  —— **无 500、无白屏**（HTML 正常返回）。
+- **数据真实性交叉验证**（区分"真库"与"误建空库"）：`/api/subjects` = `math`(数学, preset) +
+  `s-f2decfcf`(行星科学, custom) **两个**学科（空库只有 1 个）；`/api/dashboard.stats` =
+  `learning 1 / locked 24 / consecutive_days 1`（空库为 `0/23/0`）；遗留会话
+  `s-f2decfcf.u01:a7689b7ebf`（state=learning）在库 → 确认应用正读**真实库**。
+- 服务现状：后端 8000（PID 21656）、前端 5173（PID 2948）均在跑；`.runtime/pids.txt` 已由 `dev.ps1`
+  刷新为**正确 PID**（顺带修掉了任务 B 开工时发现的陈旧记录问题）。
+
+### B6 · 回滚方案（未使用）
+
+- 若需回滚：停服 → 把备份目录三件套改回 `mathfeynman.db`/`-wal`/`-shm`（或把 `yanhui.db*` 改回旧名）
+  → `.env` / 进程环境 `MF_DB_PATH` 指回旧名 → 重启。本次**未触发任何异常，无需回滚**。
+
+### B7 · 遗留（交架构侧/用户，非仓库改动）
+
+1. **当前 DSH 服务进程的环境仍带旧值**：由它派生的新终端/新进程会继续继承
+   `MF_DB_PATH=backend/data/mathfeynman.db`。`.env` 已是新名 → **只要重启 DSH（或换一个新终端启动
+   `scripts\dev.ps1`）即自动正确**，无需任何显式设置。建议用户方便时重启 DSH 以彻底清掉该残留。
+2. 若要**永久**免除进程环境干扰，可考虑（需架构裁决，本批未做）：启动脚本里显式覆盖
+   `MF_DB_PATH`，或让 `config.py` 改用 `load_dotenv(override=True)`——**两者都属逻辑/行为改动，超出本批授权**。
+
