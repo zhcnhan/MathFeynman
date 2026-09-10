@@ -2100,3 +2100,39 @@ sessions 3 / attempts 31 / subjects 2 / concepts 113）。根因＝`.env` 的 `M
 （目录名 + `bin.js`→`bin.js.disabled-bak`，阻断启动器"探 `bin.js` 存在性"的发现路径），
 并以启动器自身算法验证唯一解析到 0.1.5。纪律见 docs/09 R32 §5。
 
+---
+
+## 52. 会话续接（2026-09-10 16:00）—— 基线复核通过（Euler · R33 开机）
+
+> 本节为**新任 Euler 开机自证**（工单 `.runtime/EULER_TICKET_INIT_R33.md` §2）；
+> 上任上下文已耗尽，记忆来源＝仓库文件（README / docs/13 / docs/09 R30–R32 / docs/15 / 本文件 §48–§51）。
+
+**开机状态**
+- HEAD = `4604fcf`（docs(R32): 旧版痕迹全清…）；工作树**干净**（`git status --short` 为空）。
+- 目录名 = `D:\DeepseekHarness\YanHui`（旧名 MathFeynman，R32 已改名验收）。
+- venv 已含 dev 依赖（pytest 9.1.1，无需补装）；后端服务当时在 8000 活跃（PID 19852）。
+
+**基线复核（本会话独立复跑，不采信文档口述）**
+
+| 项 | 命令 | 实测 | 工单 §2 期望 | 结论 |
+|---|---|---|---|---|
+| 测试 | `.\.venv\Scripts\python -m pytest backend/tests -q --junitxml=.runtime/r33_pytest_baseline.xml` | **327 collected / 325 passed + 2 skipped / 0 failed / 0 error，exit 0**（111.50s，离线） | 325 passed + 2 skipped（327 collected，exit 0） | ✅ 逐位一致 |
+| 内容库 | `.\.venv\Scripts\content.exe validate` | `ok=True nodes=26 exercises=54`，exit 0 | ok，26 节点 / 54 练习 | ✅ |
+| 蓝图 | `app.content.roadmap.audit(<level>)` 五学段 | primary **27** / middle **31** / high **81** / college **59** / ai **60**；各 `ok=True`，cycles / prereq_missing / anchors_missing / content_prereq_violations / boss_unmatched / cross_reverse **全 0** | 27/31/81/59/60，各错误项 0 | ✅ |
+| 前端 | `npx tsc --noEmit`（frontend/） | exit 0 | exit 0 | ✅ |
+| 仓库 | `git status --short` | 空（干净） | 干净 | ✅ |
+
+- 留档：`.runtime/r33_baseline.txt`（stdout）+ `.runtime/r33_pytest_baseline.xml`（junit 权威计数：
+  `tests=327 errors=0 failures=0 skipped=2`）。2 skipped = 真模型冒烟 `test_live_ai` +
+  Phase C 验收 `test_phase_c_live`（需 `MF_ALLOW_LIVE_AI=1` + `LLM_API_KEY`），与 docs/13 §4 一致。
+- **onboarding 结论：通过**，可开工 R33（本批＝纯文档/配置，零逻辑改动）。
+
+**开工前勘察（为任务 A/B 取证）**
+- 旧名残留全仓扫描（排除 `.venv`/`node_modules`/`.git`/`resume/`，含 git 忽略区）共 40 处命中，
+  分类见 §53；`.env:14` 的 `MF_DB_PATH=backend/data/mathfeynman.db` 是唯一"把旧路径当当前路径用"的
+  本地配置（任务 B 处理）。
+- 服务实况：`backend/data/` 现有 `mathfeynman.db`(327680B) + `-wal`(70072B) + `-shm`(32768B)
+  （＋历史 `mathfeynman.db.bak-20260908-220309`）；**8000 端口被 PID 19852 占用**，
+  而 `.runtime/pids.txt` 记录的是 9084 / 2944（**与当前进程不符**）→ `scripts\stop.ps1` 停不掉它，
+  任务 B 需按端口定位进程停止（已记录，见 §54）。
+

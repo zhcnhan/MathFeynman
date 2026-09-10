@@ -46,7 +46,7 @@ UI 只能经 API 通信，绝不直连 LLM 或数据库。
 ## 3. 建议目录结构（实现者可按此布局，允许微调但保持分层）
 
 ```
-颜回（YanHui）/
+YanHui/                      # 2026-09-10 由 MathFeynman 改名（docs/09 R32 §3）
 ├── README.md
 ├── docs/                    # 设计文档（本仓库的规范源头）
 ├── backend/
@@ -56,27 +56,35 @@ UI 只能经 API 通信，绝不直连 LLM 或数据库。
 │   │   ├── service/         # 用例层：教学会话/费曼/复习/诊断
 │   │   ├── domain/          # 图谱/掌握度/fsrs/画像（纯 Python，零外部依赖可测）
 │   │   ├── ai/              # provider.py / calls.py(schema) / validate.py / rubric.py
-│   │   ├── content/         # loader / templates / generator
+│   │   ├── content/         # loader / templates / generator（含 roadmap 蓝图加载与 audit）
 │   │   ├── outline/         # Phase A（docs/14）：subject 注册 + 大纲 schema/持久化（通用学科层）
-│   │   ├── db.py            # SQLAlchemy engine/session
+│   │   ├── config.py        # 环境变量与默认配置（含 MF_DB_PATH 默认 backend/data/yanhui.db）
+│   │   ├── db.py            # SQLAlchemy engine/session（含旧库名 mathfeynman.db 的自动迁移）
 │   │   └── models.py        # ORM
+│   ├── migrations/          # 迁移占位（当前用 create_all；保留升级路径）
 │   ├── tests/
 │   └── pyproject.toml
 ├── content/
 │   ├── stages/              # 见 04 文档：primary/middle/high/college/ai/...（数学内容库）
-│   └── subjects/            # Phase A（docs/14）：学科大纲文件 <sid>/outline.yaml（含 math 派生大纲）
+│   ├── subjects/            # Phase A（docs/14）：学科大纲文件 <sid>/outline.yaml（含 math 派生大纲）
+│   ├── roadmap/             # docs/12 蓝图总纲：<学段>.yaml + REVIEW-*.md（五学段 + 总序）
+│   └── manifest.yaml        # 内容库清单
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/           # Dashboard / Session / Review / Settings
-│   │   ├── components/      # MathInput, WorkedExercise, FeynmanChat, GraphTool…
+│   │   ├── pages/           # Dashboard / Session / Review / Settings / Subjects / Outline / Feedback / FeynmanHistory
+│   │   ├── components/      # MathInput, ExercisePanel, SubjectSwitcher, MdMath, ErrorBoundary…
 │   │   ├── api.ts           # 后端客户端
 │   │   └── stores/          # 前端状态（Zustand 或等价）
 │   └── package.json
 ├── scripts/
 │   ├── dev.ps1 / dev.sh     # 一键启动前后端
+│   ├── stop.ps1             # 停止（读 .runtime/pids.txt）
 │   └── gen_content.py       # 内容流水线入口（AI 初稿→校验→审核）
 └── .env.example             # LLM_API_KEY, LLM_BASE_URL, 模型分级配置
 ```
+
+> 本地运行/个人文件不入库（`.gitignore`）：`backend/data/`（SQLite 库）、`content/_drafts/`（未审稿）、
+> `.runtime/`（服务日志与工单）、`_dsh-local/`（DSH 本机脚本）、`resume/`（个人简历）、`.env`。
 
 ## 4. 运行形态与成本设计
 
