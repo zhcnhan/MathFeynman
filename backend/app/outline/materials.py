@@ -32,6 +32,20 @@ POLICY_MIXED = "mixed"
 SOURCE_POLICIES = (POLICY_AI, POLICY_IMPORT, POLICY_WEB, POLICY_MIXED)
 DEFAULT_POLICY = POLICY_AI
 
+# ---------- R38 B2：材料角色（主教材 / 补充材料 / 未标注） ----------
+# 说明：**未标注 ≠ 主教材**——未标注按导入顺序，覆盖账里注明"顺序依据：导入顺序"。
+ROLE_MAIN = "main"
+ROLE_SUPPLEMENT = "supplement"
+ROLE_UNSET = ""
+ROLES = (ROLE_MAIN, ROLE_SUPPLEMENT)
+ROLE_LABELS_ZH = {ROLE_MAIN: "主教材", ROLE_SUPPLEMENT: "补充材料", ROLE_UNSET: "未标注"}
+
+# ---------- R38 A1/A5：两个滑块（单次调用预算 / 总注入上限）的档位与内置默认 ----------
+BATCH_TIERS = (("省着用", 20000), ("常规（默认）", 60000), ("充裕", 150000), ("不限", 0))
+INJECT_TIERS = (("省着用", 20000), ("常规（默认）", 60000), ("充裕", 150000), ("不限", 0))
+BUILTIN_BATCH_CHARS = 60000       # A5 内置默认：单次调用预算
+BUILTIN_INJECT_MAX_CHARS = 0      # A2 内置默认：总注入上限＝不限（0）
+
 _SLUG = re.compile(r"[^A-Za-z0-9_.-]+")
 _PAGE_MARK = re.compile(r"^【第\s*(\d+)\s*页】\s*$", re.M)
 
@@ -165,6 +179,7 @@ def _parse_entry(p: Path) -> dict | None:
                     fm[k.strip()] = v.strip()
             body = raw[end + 4 :].strip()
             healthy_raw = str(fm.get("text_healthy", "")).strip().lower()
+            role_raw = str(fm.get("role", "")).strip().lower()
             return {
                 "id": fm.get("id", p.stem),
                 "title": fm.get("title", p.stem),
@@ -176,6 +191,9 @@ def _parse_entry(p: Path) -> dict | None:
                 "body": body,
                 # R37 S7：入库时算的健康度（老材料没有该字段 → 现算一次，不让历史材料失去判定）
                 "text_healthy": (healthy_raw != "no") if healthy_raw else None,
+                # R38 B2：材料角色（main=主教材 / supplement=补充材料）；老材料无该字段
+                # → 视为"未标注"（按导入顺序，覆盖账里注明）
+                "role": role_raw if role_raw in ("main", "supplement") else "",
             }
     return None
 
@@ -192,6 +210,10 @@ def list_materials(db, subject_id: str) -> list[dict]:
             out.append({"id": e["id"], "title": e["title"], "source": e["source"],
                         "url": e["url"], "kind": e["kind"], "file": e["file"],
                         "filename": e.get("filename", ""),
+                        # R38 B2：材料角色（未标注 → main 并标注 explicit=False，按导入顺序）
+                        "role": e.get("role") or ROLE_UNSET,
+                        "role_explicit": bool(e.get("role")),
+                        "role_zh": ROLE_LABELS_ZH.get(e.get("role") or ROLE_UNSET),
                         "text_health": health})
     return out
 
@@ -316,7 +338,7 @@ def material_structure(body: str) -> dict:
 
 
 def _material_index(db, subject_id: str) -> list[dict]:
-    """材料索引（服务端用）：正文 + 章/节结构 + 健康度。"""
+    """材料索引（服务端用）：正文 + 章/节结构 + 健康度 + 角色（R38 B2）。"""
     out = []
     for e in _entries_with_body(subject_id):
         body = e.get("body", "")
@@ -324,11 +346,13 @@ def _material_index(db, subject_id: str) -> list[dict]:
         health = text_health(body)
         if e.get("text_healthy") is False:
             health["healthy"] = False
+        role = str(e.get("role") or "")
         out.append({
             "id": e["id"], "title": e["title"], "source": e["source"], "url": e["url"],
             "kind": e.get("kind", "local"), "filename": e.get("filename", ""),
             "body": body, "sections": material_sections(body),
             "structure": structure, "text_health": health,
+            "role": role or ROLE_UNSET, "role_explicit": bool(role),
         })
     return out
 
@@ -350,46 +374,102 @@ def _full_blocks(index: list[dict]) -> list[dict]:
 
 
 def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
-                    batch_chars: int | None = None) -> dict:
-    """D1（R36）＋ S1/S2/S8（R37）：大纲起草的**材料注入包**（唯一入口）。
+                    batch_chars: int | None = None,
+                    inject_max_chars: int | None = None) -> dict:
+    """D1（R36）＋ S1/S2/S8（R37）＋ **R38 S1/S2/S3/S4**：大纲起草的**材料注入包**（唯一入口）。
 
     返回:
     - ``text``：**首批**注入 prompt 的材料块（多批时见 ``batches``）；
-    - ``index``：``[{id,title,source,url,body,sections,structure,text_health}]``
+    - ``index``：``[{id,title,source,url,body,sections,structure,text_health,role}]``
       ——**服务端校验用**（含正文与章/节地图，不下发前端）；
-    - ``chapter_map``：整本书的章 → 节地图（跨材料合并；S2 覆盖校验的尺子）；
+    - ``chapter_map``：整本书的章 → 节地图（**跨全部材料合并**；每条注明来自哪份材料）；
     - ``batches``：结构化分批（每批 ``text`` 完整可注入；按章/页边界切，**绝不截断句子**）；
     - ``used_chars``：全部批次注入的字符总量（**随书规模增长**；=0 时确实不限）；
     - ``per_call_chars``：**单次调用**的注入预算（生效值）；
-    - ``dropped``：**恒为空**（R37/R38 §3 ＋ R39 铁则：**任何情况都不得静默丢材料/章节**——
-      预算只决定"每次喂多少"，总覆盖面由分批保证）；
-    - ``blocked``：健康度不合格（扫描/图片版）而被挡下的材料 ``[{title, note}]``（S7）。
+    - ``budget``：``{batch_chars, inject_max_chars, batch_source, inject_source}``
+      ——两个滑块的**生效值与来源**（"你设定的"/"默认"，R38 A1 必显）；
+    - ``usage``：``{used_chars, batches, per_material:[…], blocked, truncated, dropped, order_basis}``
+      ——**上一轮实际注入总量与批次数** + 逐材料吸纳明细（R38 A1/B1）；
+    - ``dropped``：**恒为空**（R37/R38 §3 ＋ R39 铁则：**任何情况都不得静默丢材料/章节**）；
+    - ``blocked``：健康度不合格（扫描/图片版）而被挡下的材料 ``[{title, note}]``（S7）；
+    - ``ledger``：本次就地账目（**就地提示**通道；同时已落总账）。
 
     预算纪律（R37＋R38 §3）：默认**不省成本**（``MF_MATERIAL_INJECT_MAX_CHARS=0``）——整本书按结构
     完整注入，仅按 ``MF_MATERIAL_BATCH_CHARS`` 在章/页边界分成多次调用；**预算上限＝单次调用预算**
     （取 ``min(预算, 分批阈值)``），**不因预算小就丢章节**（单节超预算时整节注入，宁可不截断）。
-    每日 token 上限仍由 ``LLM_MAX_TOKENS_PER_DAY``（provider 侧）保护。
+    R38 A4 安全阀：按"字符 ≈ token"粗估，若**将超过模型上下文窗口** → 不硬发，改为**自动分批**
+    并中文说明"本书较大，已分 N 批处理"（**任何情况不得静默失败**）。
     """
-    if max_chars is None:
-        max_chars = inject_budget()
-    if batch_chars is None:
-        batch_chars = batch_budget()
-    index = _material_index(db, subject_id)
+    from ..service import ledger
+
+    budget = resolve_budget(db, subject_id, batch_chars=batch_chars,
+                            inject_max_chars=(inject_max_chars if inject_max_chars is not None
+                                              else max_chars))
+    max_chars = int(budget["inject_max_chars"])
+    per_call = int(budget["per_call_chars"])
+    batch_chars = int(budget["batch_chars"])
+    index = _ordered(_material_index(db, subject_id))
     blocked = [{"title": m["title"], "note": m["text_health"]["note"]}
                for m in index if not m["text_health"]["healthy"]]
-    # R37/R38 §3：预算＝**单次调用**预算；总覆盖面由结构分批保证（绝不丢章节，R39 铁则）
-    if max_chars and max_chars > 0:
-        per_call = max_chars if batch_chars <= 0 else min(max_chars, batch_chars)
-    else:
-        per_call = batch_chars
-    batches = _make_batches(_full_blocks(index), per_call)
+    for b in blocked:  # R39 §1：被挡下的材料**必须显性**（不是只在 prompt 里提一句）
+        ledger.note(
+            ledger.CAT_MATERIAL, f"材料《{b['title']}》",
+            "该材料**未被注入**（文本层健康度不合格，疑似扫描/图片版）：" + str(b["note"] or ""),
+            impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
+            detail={"kind": "material_blocked", "title": b["title"]},
+        )
+    blocks = _full_blocks(index)
+    # R38 A4 安全阀：单次调用预算再受"模型上下文硬上限"约束（超了自动分批，不硬发）
+    valve = context_valve(db, batch_chars=per_call, blocks=blocks)
+    if valve["applied"]:
+        ledger.note(
+            ledger.CAT_MATERIAL, "材料注入（安全阀）",
+            f"本书较大，已分 {valve['batch_count']} 批处理：按「字符≈token」粗估，"
+            f"单次调用最多 ~{valve['limit_chars']} 字（模型上下文硬上限 {valve['context_tokens']} token），"
+            "不截断正文、不漏章节",
+            impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
+            detail={"kind": "context_valve", **{k: valve[k] for k in
+                                                ("limit_chars", "context_tokens", "batch_count")}},
+        )
+    batches = valve["batches"]
+    # R38 A1/滑块 B：**总注入上限**是"花费天花板"的事实报告（**绝不为了上限丢章节**）
+    cap_info = _inject_cap_note(batches, max_chars, subject_id)
     used = sum(len(b["text"]) for b in batches)
+    # R38 B1：任何因预算/取文策略未纳入的材料或章节都**显式列出**（覆盖账里看得见）
+    unmapped = _unmapped_entries(index, blocks)
+    for u in unmapped:
+        ledger.note(
+            ledger.CAT_MATERIAL, f"材料《{u['material']}》· {u['label']}",
+            "该章/节**未被注入任何批次**（不在任何材料块里）：" + str(u.get("note") or "未知原因"),
+            impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
+            detail={"kind": "entry_not_injected", **u},
+        )
+    if not index:
+        ledger.note(ledger.CAT_MATERIAL, "材料注入", "本学科没有引用材料：本次按 brief 起草（无教材依据）",
+                    impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
+                    detail={"kind": "no_material"})
+    per_material = _per_material_usage(index, batches)
+    usage = {
+        "used_chars": used, "batches": len(batches),
+        "injected_chars_per_batch": [len(b["text"]) for b in batches],
+        "per_material": per_material,
+        "blocked": blocked, "not_injected": unmapped,
+        "truncated": False, "dropped": [],
+        "order_basis": order_basis(index),
+        "inject_cap": cap_info,
+        "context_valve": {"applied": bool(valve["applied"]), "limit_chars": valve["limit_chars"],
+                          "context_tokens": valve["context_tokens"]},
+    }
     pack = {"text": batches[0]["text"] if batches else "", "used_chars": used,
             "dropped": [], "truncated": False, "batches": batches, "blocked": blocked,
-            "per_call_chars": per_call, "batch_count": len(batches)}
+            "per_call_chars": int(budget["per_call_chars"]), "batch_count": len(batches),
+            "budget": budget, "usage": usage,
+            "ledger": ledger.current().to_list() if ledger.current() else []}
     pack.update({
         "index": index,
         "chapter_map": [{"material_id": m["id"], "material": m["title"],
+                         "role": m.get("role") or (ROLE_MAIN if m.get("role_explicit") else ROLE_UNSET),
+                         "role_explicit": bool(m.get("role_explicit")),
                          "kind": m["structure"]["kind"], "note": m["structure"]["note"],
                          "entries": m["structure"]["chapter_map"]} for m in index],
         "count": len(index),
@@ -397,6 +477,401 @@ def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
         "batch_chars": batch_chars,
     })
     return pack
+
+
+ROLE_MAIN = "main"                # 主教材（定顺序与范围）
+ROLE_SUPPLEMENT = "supplement"    # 补充材料（只补细节与例题）
+ROLE_UNSET = ""                   # 未标注（**不等于主教材**：按导入顺序，覆盖账注明）
+ROLES = (ROLE_MAIN, ROLE_SUPPLEMENT)
+ROLE_LABELS_ZH = {ROLE_MAIN: "主教材", ROLE_SUPPLEMENT: "补充材料", ROLE_UNSET: "未标注"}
+
+BATCH_TIERS = (("省着用", 20000), ("常规（默认）", 60000), ("充裕", 150000), ("不限", 0))
+INJECT_TIERS = (("省着用", 20000), ("常规（默认）", 60000), ("充裕", 150000), ("不限", 0))
+BUILTIN_BATCH_CHARS = 60000       # A5 内置默认：单次调用预算
+BUILTIN_INJECT_MAX_CHARS = 0      # A2 内置默认：总注入上限＝不限（0）
+
+
+def _env_int(name: str) -> int | None:
+    """环境变量里的非负整数（未设/非法 → None，**不静默当 0**）。"""
+    import os
+
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return None
+    try:
+        v = int(str(raw).strip())
+    except ValueError:
+        return None
+    return max(0, v)
+
+
+def subject_budget(db, subject_id: str) -> dict:
+    """学科（滑块）里显式设过的值；``source`` ∈ subject / env / builtin。"""
+    row = outline_store.get_subject(db, subject_id)
+    meta = dict((row.meta_json if row is not None else None) or {})
+    out: dict = {"batch_chars": None, "inject_max_chars": None, "source": "builtin"}
+    b = meta.get("material_batch_chars")
+    i = meta.get("material_inject_max_chars")
+    if b is not None and str(b) != "":
+        try:
+            out["batch_chars"] = max(0, int(b))
+        except (TypeError, ValueError):
+            out["batch_chars"] = None
+    if i is not None and str(i) != "":
+        try:
+            out["inject_max_chars"] = max(0, int(i))
+        except (TypeError, ValueError):
+            out["inject_max_chars"] = None
+    if out["batch_chars"] is not None or out["inject_max_chars"] is not None:
+        out["source"] = "subject"
+    return out
+
+
+def resolve_budget(db, subject_id: str, *, batch_chars: int | None = None,
+                   inject_max_chars: int | None = None) -> dict:
+    """A5 优先级：**单次请求参数 > 学科滑块 > .env > 内置默认**（逐项解析，来源可查）。
+
+    返回 ``{batch_chars, inject_max_chars, per_call_chars, batch_source, inject_source}``。
+    非法值（负数以外的怪值）由 API 层转**中文 422**；这里只做兜底解析（负 → 0）。
+    """
+    subj = subject_budget(db, subject_id)
+    env_b = _env_int("MF_MATERIAL_BATCH_CHARS")
+    env_i = _env_int("MF_MATERIAL_INJECT_MAX_CHARS")
+    if env_i is None:
+        env_i = _env_int("MF_OUTLINE_MATERIAL_MAX_CHARS")
+    if batch_chars is not None:
+        eff_b, src_b = max(0, int(batch_chars)), "request"
+    elif subj["batch_chars"] is not None:
+        eff_b, src_b = int(subj["batch_chars"]), "subject"
+    elif env_b is not None:
+        eff_b, src_b = env_b, "env"
+    else:
+        eff_b, src_b = BUILTIN_BATCH_CHARS, "builtin"
+    if inject_max_chars is not None:
+        eff_i, src_i = max(0, int(inject_max_chars)), "request"
+    elif subj["inject_max_chars"] is not None:
+        eff_i, src_i = int(subj["inject_max_chars"]), "subject"
+    elif env_i is not None:
+        eff_i, src_i = env_i, "env"
+    else:
+        eff_i, src_i = BUILTIN_INJECT_MAX_CHARS, "builtin"
+    # R38 §3 共存口径：**单次调用预算**与**总注入上限**是两个概念——
+    # - 单次调用预算 = 滑块 A（批量阈值）；A=0（不限）时再退回总上限；
+    # - 总注入上限（滑块 B / 显式 env，>0）= **跨批次的累计上限**（见 ``draft_materials`` 的
+    #   ``remaining`` 递减），R38 A1 说它是"想设花费天花板的用户"用的；
+    # - ⚠️ 滑块 A **不得为了让总上限生效而被放大**：A=0 是"不限"，不是"每次装 60000"。
+    if eff_b > 0:
+        per_call = eff_b if eff_i <= 0 else min(eff_i, eff_b)
+    else:
+        per_call = eff_i  # A=不限 → 由 A4 安全阀兜底
+    return {
+        "batch_chars": eff_b, "inject_max_chars": eff_i, "per_call_chars": per_call,
+        "batch_source": src_b, "inject_source": src_i,
+        "batch_source_zh": SOURCE_LABELS_ZH.get(src_b, src_b),
+        "inject_source_zh": SOURCE_LABELS_ZH.get(src_i, src_i),
+    }
+
+
+SOURCE_LABELS_ZH = {
+    "request": "本次请求参数",
+    "subject": "你设定的（本学科）",
+    "env": ".env 配置",
+    "builtin": "默认",
+}
+
+
+def set_budget(db, subject_id: str, *, batch_chars: int | None = None,
+               inject_max_chars: int | None = None) -> dict:
+    """写入学科滑块（复用 ``subjects.meta_json``，**不新建表**）；非法值 → ``OutlineError``（中文 422）。"""
+    row = outline_store.get_subject(db, subject_id)
+    if row is None:
+        raise OutlineError(f"学科不存在: {subject_id}")
+    meta = dict(row.meta_json or {})
+    if batch_chars is not None:
+        meta["material_batch_chars"] = _validate_budget("单次调用预算", batch_chars)
+    if inject_max_chars is not None:
+        meta["material_inject_max_chars"] = _validate_budget("总注入上限", inject_max_chars)
+    row.meta_json = meta
+    db.commit()
+    from ..service import ledger
+
+    ledger.note(
+        ledger.CAT_MATERIAL, f"材料注入预算（学科 {subject_id}）",
+        "用户调整了材料注入预算滑块：单次调用预算="
+        + _budget_zh(meta.get("material_batch_chars")) + "，总注入上限="
+        + _budget_zh(meta.get("material_inject_max_chars"))
+        + "。调小单次预算**只是分成更多批，不会少学章节**（覆盖账不变）",
+        impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
+        detail={"batch_chars": meta.get("material_batch_chars"),
+                "inject_max_chars": meta.get("material_inject_max_chars")},
+    )
+    return budget_view(db, subject_id)
+
+
+def _validate_budget(label: str, value) -> int:
+    try:
+        v = int(value)
+    except (TypeError, ValueError) as e:
+        raise OutlineError(f"{label}非法：{value!r}（必须是整数，单位＝字符；0 = 不限）") from e
+    if v < 0:
+        raise OutlineError(f"{label}非法：{v}（不能为负数；0 = 不限）")
+    if v > 5_000_000:
+        raise OutlineError(f"{label}非法：{v}（上限 5,000,000 字符；0 = 不限）")
+    return v
+
+
+def _budget_zh(v) -> str:
+    if v is None or str(v) == "":
+        return "（未设，用默认）"
+    return "不限" if int(v) == 0 else f"{int(v):,} 字符"
+
+
+def budget_view(db, subject_id: str) -> dict:
+    """R38 A1 必显数据：两档当前值 + 来源 + 上一轮实际注入总量与批次数 + 逐材料明细。"""
+    eff = resolve_budget(db, subject_id)
+    index = _material_index(db, subject_id)
+    blocks = _full_blocks(index)
+    valve = context_valve(db, batch_chars=int(eff["per_call_chars"]), blocks=blocks)
+    used = sum(len(b["text"]) for b in valve["batches"])
+    row = outline_store.get_subject(db, subject_id)
+    meta = dict((row.meta_json if row is not None else None) or {})
+    return {
+        "subject_id": subject_id,
+        "batch_chars": {"value": int(eff["batch_chars"]), "source": eff["batch_source"],
+                        "source_zh": eff["batch_source_zh"],
+                        "set": meta.get("material_batch_chars")},
+        "inject_max_chars": {"value": int(eff["inject_max_chars"]), "source": eff["inject_source"],
+                             "source_zh": eff["inject_source_zh"],
+                             "set": meta.get("material_inject_max_chars")},
+        "per_call_chars": int(eff["per_call_chars"]),
+        "tiers": {
+            "batch": [{"label": lb, "value": v} for lb, v in BATCH_TIERS],
+            "inject": [{"label": lb, "value": v} for lb, v in INJECT_TIERS],
+        },
+        "last_usage": {
+            "used_chars": used,
+            "batch_count": len(valve["batches"]),
+            "per_material": _per_material_usage(index, valve["batches"]),
+            "truncated": False,
+            "dropped": [],
+            "order_basis": order_basis(index),
+            "summary_zh": (f"共注入 {used:,} 字，分 {len(valve['batches'])} 批"
+                           if valve["batches"] else "尚无材料可注入"),
+            "note_zh": "调小「单次调用预算」只会分成更多批，**不会少学章节**（覆盖账不变）",
+        },
+        "context_valve": {"applied": bool(valve["applied"]), "context_tokens": valve["context_tokens"],
+                          "limit_chars": valve["limit_chars"]},
+        "materials": [{"id": m["id"], "title": m["title"], "role": m.get("role") or ROLE_UNSET,
+                       "role_explicit": bool(m.get("role_explicit")),
+                       "role_zh": ROLE_LABELS_ZH.get(m.get("role") or ROLE_UNSET),
+                       "healthy": m["text_health"]["healthy"], "chars": len(m.get("body") or ""),
+                       "entries": len((m["structure"] or {}).get("entries") or []),
+                       "note": m["text_health"]["note"]} for m in index],
+        "not_injected": _unmapped_entries(index, blocks),
+    }
+
+
+def set_material_role(db, subject_id: str, material_id: str, role: str) -> dict:
+    """R38 B2：标主教材 / 补充材料（写入材料 frontmatter；主教材定顺序与范围）。"""
+    if role not in ROLES:
+        raise OutlineError(f"材料角色非法：{role!r}（∈ {ROLES}）")
+    d = materials_dir(subject_id)
+    hit = None
+    for p in sorted(d.glob("*.md")):
+        e = _parse_entry(p)
+        if e and e["id"] == material_id:
+            hit = (p, e)
+            break
+    if hit is None:
+        raise OutlineError(f"材料不存在: {material_id}")
+    p, _ = hit
+    raw = p.read_text(encoding="utf-8")
+    if raw.startswith("---\n"):
+        end = raw.find("\n---", 4)
+        head = raw[4:end]
+        body = raw[end + 4:]
+        lines = [ln for ln in head.splitlines() if not ln.strip().startswith("role:")]
+        lines.append(f"role: {role}")
+        p.write_text("---\n" + "\n".join(lines) + "\n---" + body, encoding="utf-8")
+    from ..service import ledger
+
+    ledger.note(ledger.CAT_MATERIAL, f"材料《{hit[1]['title']}》",
+                f"用户把该材料标为「{ROLE_LABELS_ZH[role]}」"
+                + ("（主教材定顺序与范围）" if role == ROLE_MAIN else "（只补细节与例题）"),
+                impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
+                detail={"material_id": material_id, "role": role})
+    return {"material_id": material_id, "role": role, "role_zh": ROLE_LABELS_ZH[role]}
+
+
+def order_basis(index: list[dict]) -> str:
+    """R38 B2：顺序依据——有显式角色按角色（主教材在前），否则按**导入顺序**并注明。"""
+    if any(m.get("role_explicit") for m in index):
+        return "角色（主教材定顺序与范围，补充材料只补细节与例题）"
+    return "导入顺序"
+
+
+def _ordered(index: list[dict]) -> list[dict]:
+    """按"主教材在前 + 导入顺序"排序（无显式角色 → 纯导入顺序，不改行为）。"""
+    if not any(m.get("role_explicit") for m in index):
+        return list(index)
+    return sorted(index, key=lambda m: 0 if (m.get("role_explicit") and m.get("role") == ROLE_MAIN) else 1)
+
+
+def _per_material_usage(index: list[dict], batches: list[dict]) -> list[dict]:
+    """逐材料吸纳明细（注入了多少字 / 几批 / 哪些章进了批次）。"""
+    label_to_material: dict[str, str] = {}
+    for m in index:
+        for e in (m["structure"] or {}).get("entries") or []:
+            label_to_material[str(e.label)] = m["title"]
+    injected: dict[str, int] = {m["title"]: 0 for m in index}
+    batch_of: dict[str, set[int]] = {m["title"]: set() for m in index}
+    for i, b in enumerate(batches):
+        for lab in b.get("labels") or []:
+            title = label_to_material.get(str(lab))
+            if title:
+                injected[title] = injected.get(title, 0) + len(str(lab))
+                batch_of.setdefault(title, set()).add(i + 1)
+    out = []
+    for m in index:
+        ent = (m["structure"] or {}).get("entries") or []
+        chars_total = len(m.get("body") or "")
+        out.append({
+            "material_id": m["id"], "title": m["title"],
+            "role": m.get("role") or ROLE_UNSET,
+            "role_explicit": bool(m.get("role_explicit")),
+            "role_zh": ROLE_LABELS_ZH.get(m.get("role") or ROLE_UNSET),
+            "chars_total": chars_total,
+            "entries_total": len(ent),
+            "entries_chars_total": sum(int(e.chars) for e in ent),
+            "batches": sorted(batch_of.get(m["title"]) or []),
+            "injected": m["text_health"]["healthy"],
+            "blocked_reason": "" if m["text_health"]["healthy"] else m["text_health"]["note"],
+        })
+    return out
+
+
+def _unmapped_entries(index: list[dict], blocks: list[dict]) -> list[dict]:
+    """**未被注入任何批次**的章/节（R38 B1：必须显式列出，不许只在 prompt 尾部提一句）。"""
+    in_blocks = {(str(b.get("material_id") or ""), str(b.get("label") or "")) for b in blocks}
+    out: list[dict] = []
+    for m in index:
+        if not m["text_health"]["healthy"]:
+            out.append({"material": m["title"], "material_id": m["id"],
+                        "label": "（整份材料）", "chars": len(m.get("body") or ""),
+                        "note": "该材料未通过文本层健康度检查，整份未注入"})
+            continue
+        for e in (m["structure"] or {}).get("entries") or []:
+            if (str(m["id"]), str(e.label)) not in in_blocks:
+                out.append({"material": m["title"], "material_id": m["id"], "label": e.label,
+                            "chars": int(e.chars), "note": "该章/节未进入任何注入批次"})
+    return out
+
+
+def estimate_tokens(chars: int) -> int:
+    """R38 A4：按「字符 ≈ token」粗估（保守口径——宁可不发也不发不可能成功的请求）。"""
+    return max(0, int(chars or 0))
+
+
+def context_valve(db, *, batch_chars: int, blocks: list[dict]) -> dict:
+    """R38 A4 **安全阀**：单次调用不得越过模型上下文硬上限；超了自动分批 + 中文说明。
+
+    返回 ``{"applied", "limit_chars", "context_tokens", "batches", "batch_count"}``。
+    - 有效预算 = ``min(用户单次预算, 上下文可容纳字符)``（0/不限 → 取上下文可容纳量）；
+    - 单块自身仍超上限时：先在**页边界**切（``bookmap.split_entries``，不切断句子）；
+      仍超 → 自成一批并**记账**（"单章超上下文"），绝不静默截断。
+    """
+    s = get_settings()
+    ctx = max(0, int(getattr(s, "context_token_limit", 0) or 0))
+    # 预留：prompt 模板 + 地图 + 输出（按上下文 45% 或固定 8k 中取小，避免把窗口吃满）
+    reserve = min(max(2048, ctx // 5), 40000) if ctx else 0
+    limit = max(0, ctx - reserve) if ctx else 0
+    applied = False
+    eff_batch = int(batch_chars or 0)
+    if ctx and limit and (eff_batch <= 0 or eff_batch > limit):
+        eff_batch = limit
+        applied = True
+    blocks2 = list(blocks)
+    oversized: list[dict] = []
+    if ctx and limit:
+        from . import bookmap
+
+        split: list[dict] = []
+        for b in blocks2:
+            if len(str(b.get("text") or "")) <= limit:
+                split.append(b)
+                continue
+            parts = _split_block_at_pages(b, limit)
+            if parts:
+                split.extend(parts)
+                applied = True
+            else:
+                oversized.append(b)
+                split.append(b)
+        blocks2 = split
+    batches = _make_batches(blocks2, eff_batch)
+    if oversized:
+        from ..service import ledger
+
+        for b in oversized[:5]:
+            ledger.note(
+                ledger.CAT_MATERIAL, f"材料《{b.get('material', '')}》· {b.get('label', '')}",
+                f"该章/节自身约 {len(str(b.get('text') or '')):,} 字，超过单次调用上下文硬上限"
+                f"（~{limit:,} 字）：已**独立成批**（不截断、不丢弃），建议调大模型上下文或拆分该章",
+                impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM,
+                detail={"kind": "block_over_context", "chars": len(str(b.get("text") or "")),
+                        "limit": limit},
+            )
+    return {"applied": applied, "limit_chars": limit, "context_tokens": ctx,
+            "batches": batches, "batch_count": len(batches),
+            "oversized_blocks": len(oversized)}
+
+
+def _split_block_at_pages(block: dict, limit: int) -> list[dict]:
+    """把超上限的块在**页边界**切成多块（不截断句子）；页结构对不上 → 返回空（调用方另行记账）。"""
+    from . import bookmap
+
+    pages = bookmap.PAGE_MARK.findall(str(block.get("text") or ""))
+    if len(pages) <= 1:
+        return []
+    entry = bookmap.MapEntry(label=str(block.get("label") or ""),
+                             text=str(block.get("text") or ""),
+                             pages=[f"第 {n} 页" for n in pages])
+    parts = bookmap.split_entries([entry], max_chars=limit)
+    if len(parts) <= 1:
+        return []
+    return [{"material": block.get("material", ""), "material_id": block.get("material_id", ""),
+             "label": p.label, "text": f"#### [{p.label}]（材料《{block.get('material', '')}》）\n{p.text}",
+             "chars": p.chars} for p in parts]
+
+
+def _inject_cap_note(batches: list[dict], inject_max_chars: int, subject_id: str) -> dict:
+    """R38 滑块 B（**总注入上限**）的如实报告。
+
+    ⚠️ **不为满足上限而丢章节**（R38 A3 ＋ R39 铁则）：用户明示"不省成本、要教材真源"，
+    所以这里是**花费事实 + 可选裁剪入口**，不是静默削减——
+    - 用户想要更省的生成 → 调**滑块 A（单次调用预算）**，那只会分更多批、不会少学章节；
+    - 上限被越过 → 逐条写账本（总账/就地可见），把"实际花了多少"摆到台面上。
+    """
+    cap = int(inject_max_chars or 0)
+    total = sum(len(str(b.get("text") or "")) for b in batches)
+    if cap <= 0:
+        return {"configured": False, "cap": 0, "would_inject_chars": total, "exceeded": False}
+    exceeded = total > cap
+    if exceeded:
+        from ..service import ledger
+
+        ledger.note(
+            ledger.CAT_MATERIAL, "材料注入（总注入上限）",
+            f"本次**实际注入 {total:,} 字**，超过你设定的总注入上限 {cap:,} 字"
+            f"（超出 {total - cap:,} 字）：为不丢任何章节，系统仍按批次完整注入；"
+            "想要更省，请调小「单次调用预算」（只分更多批，**不会少学章节**），"
+            "或把「总注入上限」设为 0（不限）以免误解",
+            impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
+            detail={"kind": "inject_cap_exceeded", "cap": cap, "used_chars": total,
+                    "exceeded_chars": total - cap},
+        )
+    return {"configured": True, "cap": cap, "would_inject_chars": total, "exceeded": exceeded,
+            "exceeded_chars": max(0, total - cap)}
 
 
 def _make_batches(blocks: list[dict], batch_chars: int) -> list[dict]:
@@ -706,38 +1181,81 @@ def material_ids_for_titles(db, subject_id: str, titles: list[str]) -> tuple[lis
     return ids, missing
 
 
-# ---------- R37 S6：覆盖账本 ----------
+# ---------- R37 S6 ＋ R38 B1：覆盖账本（跨全部材料） ----------
 def coverage_ledger(db, subject_id: str) -> dict:
     """**覆盖账本**：章节地图 ↔ 单元映射 ↔ 单元覆盖状态（大纲页与 API 的唯一数据源）。
+
+    R38 B1 增补（**多材料合并口径**）：
+    - ``by_material``：**按材料分组**的 `已覆盖节 / 总节` + 未覆盖清单（材料页/大纲页直接渲染）；
+    - ``uncovered_by_material``：未覆盖清单**按材料分组**（不许只在 prompt 尾部提一句）；
+    - ``uncovered_materials``：**整份未纳入**的材料（健康度不合格/未注入）；
+    - ``order_basis``：顺序依据（"角色：主教材在前" 或 "导入顺序"）；
+    - ``entries[].pages`` + ``page_total/page_covered``：**章级统计、页级可下钻**（S1b）。
 
     返回::
 
         {
-          "total": 章/节条目总数,
-          "covered": 已覆盖条目数,
-          "uncovered": [未覆盖条目标签…],
-          "materials": [{id,title,kind,healthy,note,kind_of_structure,structure_note}],
-          "entries": [{material, label, chapter, chars, sections, units:[unit_id…]}],
-          "units": [{unit_id, title, sources:[{title,section}], status, note, grounded_facts,
-                     material_bound, dropped_exercises}]
+          "total": 章/节条目总数, "covered": …, "uncovered": […],
+          "page_total": 全书页数, "page_covered": 有单元映射的页数,
+          "by_material": [{material_id,title,role,role_zh,total,covered,uncovered:[…],chars}],
+          "uncovered_materials": [{title,note}],
+          "order_basis": "导入顺序" | "角色（…）",
+          "materials": [{id,title,kind,healthy,note,kind_of_structure,structure_note,role}],
+          "entries": [{material,material_id,label,chapter,chars,pages,sections,units,covered}],
+          "units": [{unit_id,title,sources,status,note,grounded_facts,material_bound,dropped_exercises}]
         }
     """
     from ..content import citations
 
-    index = _material_index(db, subject_id)
+    index = _ordered(_material_index(db, subject_id))
     doc = outline_store.get_outline(subject_id)
     units = list(doc.units) if doc is not None else []
     mapping = _covered_entries(units, index)
     entries: list[dict] = []
     uncovered: list[str] = []
+    page_total = 0
+    page_covered = 0
     for m in index:
         for e in (m.get("structure") or {}).get("entries") or []:
             hit = sorted(set(mapping.get((m["id"], e.label)) or []))
             if not hit:
                 uncovered.append(f"{m['title']} · {e.label}")
-            entries.append({"material": m["title"], "label": e.label, "chapter": e.chapter,
-                            "chars": e.chars, "sections": list(e.sections), "units": hit,
-                            "covered": bool(hit)})
+            pages = list(e.pages)
+            page_total += len(pages)
+            if hit:
+                page_covered += len(pages)
+            entries.append({"material": m["title"], "material_id": m["id"], "label": e.label,
+                            "chapter": e.chapter, "chars": e.chars, "sections": list(e.sections),
+                            "pages": pages, "units": hit, "covered": bool(hit)})
+    # R38 B1：按材料分组统计（覆盖账跨全部材料）
+    by_material: list[dict] = []
+    uncovered_by_material: list[dict] = []
+    uncovered_materials: list[dict] = []
+    for m in index:
+        mine = [e for e in entries if e["material_id"] == m["id"]]
+        miss = [e for e in mine if not e["covered"]]
+        by_material.append({
+            "material_id": m["id"], "title": m["title"],
+            "role": m.get("role") or ROLE_UNSET, "role_explicit": bool(m.get("role_explicit")),
+            "role_zh": ROLE_LABELS_ZH.get(m.get("role") or ROLE_UNSET),
+            "total": len(mine), "covered": len(mine) - len(miss),
+            "uncovered": [e["label"] for e in miss],
+            "chars": len(m.get("body") or ""),
+            "pages": sum(len(e["pages"]) for e in mine),
+            "healthy": m["text_health"]["healthy"],
+            "note": m["text_health"]["note"],
+        })
+        if miss:
+            uncovered_by_material.append({
+                "material_id": m["id"], "title": m["title"],
+                "role_zh": ROLE_LABELS_ZH.get(m.get("role") or ROLE_UNSET),
+                "items": [{"label": e["label"], "chapter": e["chapter"], "chars": e["chars"],
+                           "pages": e["pages"]} for e in miss],
+            })
+        if not m["text_health"]["healthy"]:
+            uncovered_materials.append({"material_id": m["id"], "title": m["title"],
+                                        "kind": "健康度不合格（未纳入任何注入）",
+                                        "note": m["text_health"]["note"]})
     unit_ledger = []
     for u in units:
         meta = dict(u.meta or {})
@@ -758,9 +1276,19 @@ def coverage_ledger(db, subject_id: str) -> dict:
         "total": len(entries),
         "covered": len(entries) - len(uncovered),
         "uncovered": uncovered,
+        "page_total": page_total,
+        "page_covered": page_covered,
+        "by_material": by_material,
+        "uncovered_by_material": uncovered_by_material,
+        "uncovered_materials": uncovered_materials,
+        "order_basis": order_basis(index),
+        "multi_material": len(index) > 1,
         "materials": [{"id": m["id"], "title": m["title"], "kind": m.get("kind", ""),
                        "healthy": m["text_health"]["healthy"],
                        "note": m["text_health"]["note"],
+                       "role": m.get("role") or ROLE_UNSET,
+                       "role_explicit": bool(m.get("role_explicit")),
+                       "role_zh": ROLE_LABELS_ZH.get(m.get("role") or ROLE_UNSET),
                        "structure_kind": m["structure"]["kind"],
                        "structure_note": m["structure"]["note"]} for m in index],
         "entries": entries,
@@ -922,4 +1450,19 @@ __all__ = [
     "material_ids_for_titles",
     "search_candidates",
     "select_candidates",
+    # R38：预算滑块 + 多材料角色/合并口径
+    "BATCH_TIERS",
+    "INJECT_TIERS",
+    "ROLE_MAIN",
+    "ROLE_SUPPLEMENT",
+    "ROLE_UNSET",
+    "ROLE_LABELS_ZH",
+    "resolve_budget",
+    "subject_budget",
+    "set_budget",
+    "budget_view",
+    "set_material_role",
+    "order_basis",
+    "context_valve",
+    "estimate_tokens",
 ]

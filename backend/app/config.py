@@ -81,6 +81,16 @@ class Settings:
     material_min_text_page_ratio: float = field(
         default_factory=lambda: float(os.getenv("MF_MATERIAL_MIN_TEXT_PAGE_RATIO", "0.5") or "0.5")
     )
+    # R38 S1b：**节粒度适配整本书**——PDF 无标题时把页合并成"章级"单元的目标大小（字符）。
+    # 0 = 关闭合并（退回固定 4 页窗口，仅供测试/回退）。
+    page_unit_chars: int = field(
+        default_factory=lambda: int(os.getenv("MF_PAGE_UNIT_CHARS", "8000") or "0")
+    )
+    # R38 S4：无上限时的**安全阀**——单次请求"字符数 ≈ token"粗估的上下文硬上限。
+    # 超过就**不发请求**，改为自动分批 + 中文说明（"本书较大，已分 N 批处理"）。
+    context_token_limit: int = field(
+        default_factory=lambda: int(os.getenv("MF_CONTEXT_TOKEN_LIMIT", "120000") or "0")
+    )
 
     # --- 外部检索后端（docs/14 §8 · Phase C C1；默认未启用）---
     # 默认 "none"（未配置检索后端 → UI 标注 + 明确中文提示）；可配 "searxng"：

@@ -269,11 +269,36 @@ def _chapters_from_md(body: str) -> list[MapEntry]:
     return entries
 
 
-def _chapters_from_blocks(pages: list[dict], window: int = 4) -> list[MapEntry]:
-    """最后降级：按页窗口切分（**完整正文**，只是没有章名）。"""
+def _chapters_from_blocks(pages: list[dict], window: int = 4,
+                          unit_chars: int = 8000) -> list[MapEntry]:
+    """最后降级：把页**合并成"章级"单元**（完整正文，页号保留用于溯源）。
+
+    R38 S1b：PDF 没有标题/目录时，**不许**一页一个条目（那会把覆盖账变成几百行噪音、
+    也让"按章生成"无从谈起）——按 ``unit_chars``（目标节大小，默认 8000 字）把相邻页
+    累积成一个单元；单元正文里保留 ``【第 N 页】`` 页标记，**页级明细仍可下钻**。
+    单个单元永不截断正文（只影响"每单元装几页"）。
+    """
+    if not pages:
+        return []
+    target = max(0, int(unit_chars or 0))
+    if target <= 0:  # 目标大小关闭 → 退回固定页窗口
+        window = max(1, int(window or 1))
+        groups = [pages[i:i + window] for i in range(0, len(pages), window)]
+    else:
+        groups: list[list[dict]] = []
+        cur: list[dict] = []
+        size = 0
+        for p in pages:
+            plen = len(p.get("text") or "")
+            if cur and size + plen > target:
+                groups.append(cur)
+                cur, size = [], 0
+            cur.append(p)
+            size += plen
+        if cur:
+            groups.append(cur)
     out: list[MapEntry] = []
-    for i in range(0, len(pages), window):
-        part = pages[i:i + window]
+    for part in groups:
         label = (f"{part[0]['label']}–{part[-1]['label']}" if len(part) > 1 else part[0]["label"])
         out.append(MapEntry(label=label, chapter="",
                             text="\n\n".join(f"【{p['label']}】\n{p['text']}" for p in part).strip(),
@@ -281,13 +306,22 @@ def _chapters_from_blocks(pages: list[dict], window: int = 4) -> list[MapEntry]:
     return out
 
 
-def parse_book(body: str) -> dict:
+def parse_book(body: str, *, page_unit_chars: int | None = None) -> dict:
     """教材正文 → 章节地图（唯一入口）。
 
     返回 ``{"kind": toc|heading|md|page|text, "entries": [MapEntry], "note": 中文说明}``。
     ``kind`` 如实标注识别路径（前端/日志据此判断"这本书的结构读到了什么程度"）。
+    ``page_unit_chars``（R38 S1b）：无标题/目录的 PDF 按页**合并成章级单元**的目标大小
+    （默认取 ``MF_PAGE_UNIT_CHARS``＝8000；0 = 关闭合并，退回固定 4 页窗口）。
     """
     body = body or ""
+    if page_unit_chars is None:
+        try:
+            from ..config import get_settings
+
+            page_unit_chars = int(get_settings().page_unit_chars or 0)
+        except Exception:
+            page_unit_chars = 8000
     pages = _split_pages(body)
     entries: list[MapEntry] = []
     kind = "text"
@@ -310,9 +344,14 @@ def parse_book(body: str) -> dict:
                 kind = "heading"
                 note = f"未读到目录，按页首章标题识别出 {len(entries)} 章"
         if not entries:
-            entries = _chapters_from_blocks(pages)
+            entries = _chapters_from_blocks(pages, unit_chars=int(page_unit_chars or 0))
             kind = "page"
-            note = "未识别到章结构：按页块切分（正文完整，未截断）"
+            pages_n = len(pages)
+            note = (f"未识别到章结构：按页合并成 {len(entries)} 个章级单元"
+                    f"（共 {pages_n} 页，目标每单元约 {max(1, int(page_unit_chars or 0))} 字；"
+                    "正文完整、未截断，页号保留可下钻）"
+                    if int(page_unit_chars or 0) > 0 else
+                    "未识别到章结构：按页块切分（正文完整，未截断）")
     else:
         entries = _chapters_from_md(body)
         if entries:

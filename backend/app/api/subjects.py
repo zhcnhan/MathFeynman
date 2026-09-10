@@ -297,9 +297,11 @@ class DraftOutlineBody(BaseModel):
 
 
 def _draft_materials(db: Session, subject_id: str) -> dict | None:
-    """D1/D4（R36）→ S1/S2/S8（R37）：起草注入包（章→节地图 + 完整正文分批 + 服务端校验索引）。
+    """D1/D4（R36）→ S1/S2/S8（R37）→ **R38**：起草注入包（章→节地图 + 完整正文分批 + 服务端校验索引）。
 
-    预算默认**不限**（``MF_MATERIAL_INJECT_MAX_CHARS=0``）；显式设上限时才走 R36 的截断降级。
+    预算走 **R38 两个滑块**（``subjects.meta_json`` 复用既有列，不新建表）：
+    滑块 A＝单次调用预算（``MF_MATERIAL_BATCH_CHARS``）、滑块 B＝总注入上限（``MF_MATERIAL_INJECT_MAX_CHARS``）；
+    优先级：单次请求参数 > 学科滑块 > ``.env`` > 内置默认。
     无材料 → None（退化为现状：仅按 brief 起草，并显式标注本内容无教材依据）。
     """
     from ..outline import materials as mat
@@ -308,24 +310,86 @@ def _draft_materials(db: Session, subject_id: str) -> dict | None:
     return pack if pack.get("count") else None
 
 
+class BudgetBody(BaseModel):
+    """R38 滑块（字符；**0 = 不限**）。"""
+
+    batch_chars: int | None = Field(default=None, ge=0, le=5_000_000)
+    inject_max_chars: int | None = Field(default=None, ge=0, le=5_000_000)
+
+
+@router.get("/subjects/{subject_id}/budget")
+def budget_get(subject_id: str, db: Session = Depends(get_db)) -> dict:
+    """R38 A1 必显数据：两档当前值 + 来源（"你设定的"/"默认"）+ 上一轮实际注入总量与批次数。"""
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    return mat.budget_view(db, subject_id)
+
+
+@router.put("/subjects/{subject_id}/budget")
+def budget_put(subject_id: str, body: BudgetBody, db: Session = Depends(get_db)) -> dict:
+    """改滑块（**立即生效**：下一次起草/生成用新值；API 回读一致）。非法值 → 中文 422。"""
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    try:
+        return mat.set_budget(db, subject_id, batch_chars=body.batch_chars,
+                              inject_max_chars=body.inject_max_chars)
+    except OutlineError as e:
+        raise _outline_err(e) from e
+
+
+class MaterialRoleBody(BaseModel):
+    role: str = "main"   # main=主教材 / supplement=补充材料
+
+
+@router.put("/subjects/{subject_id}/materials/{material_id}/role")
+def material_role(subject_id: str, material_id: str, body: MaterialRoleBody,
+                  db: Session = Depends(get_db)) -> dict:
+    """R38 B2：标主教材 / 补充材料（主教材定顺序与范围；未标注按导入顺序并在覆盖账注明）。"""
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    try:
+        return mat.set_material_role(db, subject_id, material_id, body.role)
+    except OutlineError as e:
+        raise _outline_err(e) from e
+
+
+@router.get("/subjects/{subject_id}/ledger")
+def subject_ledger(subject_id: str, limit: int = 100, db: Session = Depends(get_db)) -> dict:
+    """该学科的**就地账目**（材料页/大纲页/单元页的"看全部"入口）。"""
+    _require_enabled(db, subject_id)
+    from ..service import ledger
+
+    out = ledger.list_entries(db, subject_id=subject_id, limit=limit)
+    out["counts"] = ledger.counts_by_category(db, subject_id=subject_id)
+    return out
+
+
 @router.post("/subjects/{subject_id}/outline/draft")
 def draft_outline(subject_id: str, body: DraftOutlineBody, db: Session = Depends(get_db)) -> dict:
     """AI/启发式起草大纲候选（不落盘）→ UI 预览 → PUT 采纳（docs/14 §2.1 · A4）。
 
-    R36 D1/D2 → R37 S1/S2/S8：注入该学科**教材的章 → 节地图 + 完整正文**（默认不设预算，
+    R36 D1/D2 → R37 S1/S2/S8：注入该学科**教材的章 → 节地图 + 完整正文**（滑块 A 决定单次预算，
     书太大时按章/页分批）；**材料可选**——无材料时退化为仅按 brief 起草，不报错（如实标注无教材依据）；
     有材料时要求逐单元 `materials:[{title,section}]` 溯源（服务端校验，不成立则驳回重生成一次），
     并做**全覆盖校验**（未映射的章/节按教材目录补齐并记问题）；教材是扫描版 → 中文 422。
+    R39 §1：本次的材料吸纳/驳回重生成/降级全部经账本，响应带 `ledger`（就地可见）。
     """
     _require_enabled(db, subject_id)
     row = outline_store.get_subject(db, subject_id)
     if row.kind == "preset":
         raise _err(409, "conflict", "预置学科大纲由课程蓝图（roadmap）治理，请使用派生/再生成接口")
     from ..outline.draft import draft_outline as _draft
+    from ..service import ledger
 
     try:
-        return _draft(subject_id, brief=body.brief, count=body.count, group_hint=body.group_hint,
-                      materials=_draft_materials(db, subject_id))
+        with ledger.collector(subject_id) as acc:
+            out = _draft(subject_id, brief=body.brief, count=body.count,
+                         group_hint=body.group_hint, materials=_draft_materials(db, subject_id))
+            out["ledger"] = acc.to_list()
+        return out
     except OutlineError as e:
         raise _outline_err(e) from e
 
@@ -336,9 +400,11 @@ def generate_unit_content(subject_id: str, unit_id: str, db: Session = Depends(g
     预置学科内容由课程蓝图（roadmap）流水线治理 → 本端点仅 custom 学科。
     R37：注入该单元对应的**教材章/节完整正文**并做**教材锚定**（S5）——
     拿不到「逐字出自教材」的事实句 → ``status=uncovered``（中文告知"教材未覆盖此单元"，不落盘）。
+    R39 §1：题/事实句被丢弃、降级启发式、整单元失败**全部记账**（响应带 `ledger`）。
     """
     _require_enabled(db, subject_id)
     from ..outline.generate import generate_unit_content as _gen
+    from ..service import ledger
 
     try:
         from ..outline import materials as mat
@@ -348,7 +414,10 @@ def generate_unit_content(subject_id: str, unit_id: str, db: Session = Depends(g
         if doc is not None:
             unit = doc.by_id().get(unit_id)
         pack = mat.unit_material_pack(db, subject_id, unit) if unit is not None else None
-        return _gen(db, subject_id, unit_id, material_pack=pack)
+        with ledger.collector(subject_id, unit_id) as acc:
+            out = _gen(db, subject_id, unit_id, material_pack=pack)
+            out["ledger"] = acc.to_list()
+        return out
     except OutlineError as e:
         raise _outline_err(e) from e
 

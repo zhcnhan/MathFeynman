@@ -28,14 +28,18 @@
 | POST | `/subjects/{subject_id}/outline/regenerate` | 大纲重生成：math=roadmap 派生 revision+1；custom=重新起草候选（不落盘，采纳 PUT 才 +1；**同样注入引用材料**） |
 | POST | `/subjects/{subject_id}/outline/draft` | AI/启发式起草大纲候选（body: brief/count/group_hint；LLM_API_KEY 时走 CALL_OUTLINE_DRAFT，否则离线启发式；不落盘，供审阅后 PUT 采纳）（A4）；**R36 D1–D4**：注入该学科引用材料，要求逐单元 `materials:[{title,section}]` 溯源并服务端校验（不成立 → 驳回重生成一次 → 仍不成立则剔除并记问题）；**R37 S1/S2/S8**：默认**不设注入预算**（`MF_MATERIAL_INJECT_MAX_CHARS=0`；>0 时它是**单次调用预算**，只改"每批装多少"、**不丢章节**——R38 §3 共存口径），按 `outline.bookmap` 的**章→节地图**注入**完整正文**，书太大按 `MF_MATERIAL_BATCH_CHARS` 在章/页边界**分批**（绝不"前 N 字"）；单元由书序派生并按书序重排/重编号（`notes` 记录规范化决定）；每个章/节条目必须映射到 ≥1 个单元（未映射者先确定性回捞、再按教材目录补齐并记 `problems`）；**扫描/图片版（文本层不合格）→ 中文 422**；响应含 `source_materials`、`material_usage{count,used_chars,per_call_chars,batch_count,dropped(=恒空),truncated(=恒 false),batches,blocked}`、`coverage{total,covered,uncovered}`、`notes` |
 | POST | `/subjects/{subject_id}/units/{unit_id}/content` | 懒生成单元内容（source:auto 落盘 + 库/DB 同步，幂等；仅 custom 学科；math 走 roadmap 流水线）（A4）；**R37 S3/S4/S5**：注入该单元对应教材章/节的**完整正文**；事实句与题目引文必须**逐字出自教材**，否则丢弃该题 / 整单元失败（`status="uncovered"`，中文 note，**不落盘**）；响应含 `coverage{status:完整\|部分\|未覆盖, grounded_facts, dropped_facts, dropped_exercises, sources, note}` |
-| GET | `/subjects/{subject_id}/coverage` | **R37 S6 覆盖账本**：`total/covered/uncovered`（章/节条目 ↔ 单元映射）+ `materials[{healthy,structure_kind,structure_note}]` + `entries[]` + `units[{sources,status,note,grounded_facts,dropped_exercises}]`（大纲页同源展示） |
+| GET | `/subjects/{subject_id}/coverage` | **R37 S6 覆盖账本**：`total/covered/uncovered`（章/节条目 ↔ 单元映射）+ `materials[{healthy,structure_kind,structure_note}]` + `entries[]` + `units[{sources,status,note,grounded_facts,dropped_exercises}]`（大纲页同源展示）；**R38 B1**：增 `by_material[]`（**按材料分组**的已覆盖节/总节 + 未覆盖清单）、`uncovered_by_material[]`、`uncovered_materials[]`（整份未纳入）、`order_basis`（顺序依据：角色/导入顺序）、`page_total/page_covered`（**章级统计、页级可下钻**）、`entries[].pages[]` |
+| GET | `/subjects/{subject_id}/budget` | **R38 材料注入预算视图**（学科管理卡材料区）：`batch_chars{value,source,source_zh,set}`（单次调用预算＝滑块 A）、`inject_max_chars{…}`（总注入上限＝滑块 B；0=不限）、`per_call_chars`、`tiers{batch,inject}`（档位）、`last_usage{used_chars,batch_count,per_material[],not_injected[],order_basis,summary_zh,note_zh}`（"共注入 X 字，分 N 批"）、`context_valve{applied,context_tokens,limit_chars}`、`materials[]` |
+| PUT | `/subjects/{subject_id}/budget` | **R38 两个滑块改值**（body `{batch_chars?, inject_max_chars?}`；单位＝字符，**0=不限**；落 `subjects.meta_json`，**不新建表**）；**立即生效**且回读一致；非法值 → **中文 422**；优先级：单次请求参数 > 学科滑块 > `.env` > 内置默认 |
+| PUT | `/subjects/{subject_id}/materials/{material_id}/role` | **R38 B2 材料角色**（body `{role: main\|supplement}`）：主教材定顺序与范围、补充材料只补细节与例题；未标注 → 按**导入顺序**并在覆盖账注明 `order_basis=导入顺序`；非法角色 → 中文 422 |
+| GET | `/subjects/{subject_id}/ledger` | **R39 §1 学科就地账目**（材料页/大纲页/单元页"看全部"入口）：该学科的账目（时间倒序）+ `counts`（按类别计数） |
 | GET | `/subjects/{subject_id}/progress` | 学科进度视图（单元 达成/等效/开放 + 内容节点状态；A2） |
 | POST | `/subjects/{subject_id}/progress/recompute` | 幂等重算概念掌握证据（= 数学历史掌握迁移入口；A2） |
 | POST | `/subjects/{subject_id}/progress/reset` | 显式重置学科进度（清概念层 + 学科内容掌握；body `{mode: all}`；A2） |
 | GET / PUT | `/subjects/{subject_id}/policy` | 内容来源策略（ai/import/web/mixed，默认 ai；B3） |
 | POST | `/subjects/{subject_id}/materials/upload` | 本地导入文本 → 本地引用库（B3；粘贴文本入口保留） |
 | POST | `/subjects/{subject_id}/materials/upload-pdf` | **PDF/文档上传**（multipart：title? + file）→ pypdf 分页/分节文本 → 引用库（kind=pdf；≤20MB 等限制、失败中文 422；C2）；**R37 S7**：响应含 `text_health{pages,chars,healthy,checked,note}`——无文本层/极稀疏 → `healthy=false` + 中文告知"请先 OCR 或改用文本版"（**不再静默**；该材料会被起草/采纳拒绝） |
-| GET | `/subjects/{subject_id}/materials` | 引用材料列表（含 kind：local/web/pdf、源文件名、**R37 `text_health`**；B3+C2） |
+| GET | `/subjects/{subject_id}/materials` | 引用材料列表（含 kind：local/web/pdf、源文件名、**R37 `text_health`**、**R38 `role/role_explicit/role_zh`**；B3+C2） |
 | DELETE | `/subjects/{subject_id}/materials/{material_id}` | 删除单条材料（B3） |
 | POST | `/subjects/{subject_id}/materials/search` | 联网候选清单（C1 provider 抽象：默认未启用 → `{items:[], note:中文提示, backend:{configured:false}}`（UI 标注"未配置检索后端"）；配 SearXNG → 检索 →（配 LLM_API_KEY）LLM 整理候选） |
 | POST | `/subjects/{subject_id}/materials/select` | 勾选候选 → 本地化引用；`items[].fetch=true` 时抓取该公开网页正文入库（text/html、大小上限；失败回落摘要；不整本下载书籍）（B3+C1） |
@@ -81,6 +85,24 @@
 |---|---|---|
 | POST | `/content/validate` | 运行全库校验并返回报告 |
 | GET | `/content/drafts` / POST `/content/drafts/{id}/promote` | 审核 drafts（见 04 §6） |
+
+### 一切显性 / 提示词 / 审计（**R39**）
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/ledger` | **总账（「一切显性」铁则的"一处看全部"）**：query `subject_id?/category?/limit?/offset?`；类别 ∈ `material\|generation\|model_call\|coverage\|other`（中文标签随响应给出）；时间倒序 + `counts`（类别计数）；类别非法 → `note` 中文提示（不 500） |
+| GET | `/ledger/cats` | 类别计数（筛选项徽标） |
+| GET | `/ledger/snapshot/{subject_id}` | 某学科账目快照（就地提示的"看全部"入口） |
+| POST | `/ledger` | 手动补记一条（前端动作也可入账；类别非法 → 中文 422） |
+| GET | `/prompts` | **全部提示词调用点**：中文名 + 用途 + `is_default` + `updated_at` + 当前值 + 与默认的差异 `system_diff` + 必填占位符/硬约束清单；`changed` 列出已改的调用点 |
+| GET | `/prompts/{call_name}` | 单条（含 `raw_template` = **可编辑模板原文**（带 `{占位符}`）；`default_system` = 渲染后的可读默认值） |
+| PUT | `/prompts/{call_name}` | 保存（body `{system?, user?}`）；**改动立即生效**；缺必填占位符/硬约束、或模板花括号不合法 → **中文 422 拒绝保存**；成功 → 记入账本 |
+| POST | `/prompts/{call_name}/reset` | 单条恢复默认（body `{field: ""\|system\|user}`） |
+| POST | `/prompts/reset-all` | 全部恢复默认（前端恢复前确认） |
+| GET | `/settings` | 应用设置：`developer_mode`（**调试模式开关**）+ `ai_trace{dir,keep_days}` |
+| PUT | `/settings` | 改开关（body `{developer_mode}`）；**审计本身默认记录**，开关只决定界面入口是否出现 |
+| GET | `/ai-traces` | **AI 对话审计列表**（query `subject_id?/call_name?/outcome?/only_failed?/limit?/offset?`）：时间倒序、**失败与丢弃置顶**；每条含 时间/调用点/档位/模型/token/耗时/重试/结局/`trace_path`+`trace_chars`+三段预览+`prompt_versions` |
+| GET | `/ai-traces/{id}` | 单条完整对话：`full{system,user,response,parse_result,meta}`（**上=发给 AI 的完整内容，下=AI 返回的完整内容**，读全文文件；文件缺失 → `note` 如实说明 + 预览兜底）；**非流式** |
+| POST | `/ai-traces/cleanup` | 按保留期清理审计全文文件（body `{keep_days?}`）；**先记账（清理了哪几条）再删除**（不静默消失） |
 
 ## 2. `/session/step` 的响应协议（前后端契约要点）
 
@@ -233,8 +255,24 @@ attempts     (id INTEGER PK, session_id, node_id, kind TEXT,   -- exercise|feynm
 reviews      (user_id, node_id, state_json,            -- FSRS 状态
               due_at, last_rating, lapse_count, PK(user_id,node_id))
 ai_logs      (id INTEGER PK, call_name, model, tier, prompt_tokens, completion_tokens,
-              ok INTEGER, error TEXT, latency_ms, created_at)
+              ok INTEGER, error TEXT, latency_ms, created_at,
+              -- R39 §3：审计扩字段（旧库由 db._migrate_columns 幂等补列）
+              subject_id, unit_id, retries INTEGER, outcome TEXT,   -- adopted|degraded|dropped|failed
+              prompt_versions TEXT,                                 -- "哪次生成用的哪版提示词"
+              trace_path TEXT, trace_chars INTEGER,                  -- 全文落 .runtime/ai_trace/
+              system_preview TEXT, user_preview TEXT,
+              response_preview TEXT, parse_result TEXT)
 relearn_logs (user_id, node_id, reason TEXT, created_at)   -- mastered→learning 降级留痕
+-- R39（新数据建表正当）：
+content_ledger(id INTEGER PK, subject_id, unit_id, category TEXT,   -- material|generation|model_call|coverage|other
+              object TEXT, reason TEXT,      -- 对象 / **中文原因**
+              impact TEXT, remedy TEXT,      -- 影响面 / 可否补救
+              detail_json TEXT, created_at)  -- 「一切显性」铁则的唯一落库点（service/ledger.py）
+prompt_overrides(call_name TEXT PK, system_text TEXT, user_text TEXT, updated_at)
+              -- R39 §2「所有提示词可在程序内修改」；空串 = 该字段用默认（删行 = 恢复默认）
+              -- 不塞 subjects.meta_json（那是学科元数据）
+app_settings (key TEXT PK, value TEXT, updated_at)
+              -- R39 §3 运行时设置（developer_mode 调试开关；审计本身**默认记录**，与开关无关）
 -- Phase A 概念层（A2 已落地，docs/14 §1/§2.2）：
 concepts     (subject_id, concept_id, label, aliases_json, created_at,
               PK(subject_id, concept_id))          -- 概念标签注册表（归一化 concept_id）

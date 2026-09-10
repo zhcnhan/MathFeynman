@@ -264,7 +264,12 @@ def test_d3_put_outline_rejects_unknown_material_zh(app_client):
 # 取代，并由 **R39「一切显性」铁则**兜底（禁止静默丢弃材料/章节）。下述用例按新口径重写。
 
 def test_d4_budget_is_per_call_and_never_drops_chapters(app_client, monkeypatch):
-    """调小预算**不得丢章节**：只改变每批装多少，全部正文仍在（分批覆盖）。"""
+    """调小预算**不得丢章节**：只改变每批装多少，全部正文仍在（分批覆盖）。
+
+    R38 S1b 起：无标题 PDF 的相邻页会**合并成章级单元**（默认每单元约 8000 字），
+    20 页小书因此可能只有 1 个章级单元（此时"分批"不再是必须）；但**一页都不能丢**这个
+    铁则断言（R39）更强、必须保住。多章级单元会分批的情形见下一条 R38 A3 造错用例。
+    """
     monkeypatch.setenv("MF_OUTLINE_MATERIAL_MAX_CHARS", "800")
     from app.db import SessionLocal
     from app.outline import materials as mat
@@ -280,11 +285,49 @@ def test_d4_budget_is_per_call_and_never_drops_chapters(app_client, monkeypatch)
             pack = mat.draft_materials(db, sid)     # 读 MF_OUTLINE_MATERIAL_MAX_CHARS=800
         assert pack["inject_max_chars"] == 800
         assert pack["dropped"] == [] and pack["truncated"] is False
-        assert pack["batch_count"] >= 2, "超预算必须分批，而不是截断"
+        assert pack["per_call_chars"] <= 800
         joined = "\n".join(b["text"] for b in pack["batches"])
         for i in range(1, 21):                      # 20 页一页不少（含最后一页）
             assert f"第 {i} 页" in joined, f"第 {i} 页被丢了（R39 铁则禁止）"
         assert pack["used_chars"] > 800, "总注入量是全部批次之和，不受单次预算限制"
+    finally:
+        app_client.delete(f"/api/subjects/{sid}?hard=true")
+
+
+def test_r38_a3_small_budget_more_batches_never_loses_chapters(app_client):
+    """**R38 A3 造错用例**：把"单次调用预算"调小 → 只会**分更多批**，章节一个不丢、覆盖账不变。
+
+    这是"调小滑块丢章节"的**造错**场景：旧口径（预算＝全局上限、超出即截断）会在这里丢材料；
+    新口径（预算＝单次调用预算，总覆盖面由分批保证）必须**逐章核对**通过。
+    """
+    from app.content import citations
+    from app.db import SessionLocal
+    from app.outline import materials as mat
+
+    sid = _mk_subject(app_client)
+    try:
+        # 4 章、每章正文约 1.2k 字 → 单次预算 300 字必然要分多批
+        body = "".join(
+            f"【第 {i} 页】\n第{i}章 主题{i}\n" + f"第{i}章的正文内容。" * 90 + "\n\n"
+            for i in range(1, 5)
+        )
+        _add_material(app_client, sid, title="四章书", text=body)
+        with SessionLocal() as db:
+            wide = mat.draft_materials(db, sid, batch_chars=60000)
+            narrow = mat.draft_materials(db, sid, batch_chars=300)
+            idx = mat._material_index(db, sid)
+        assert narrow["dropped"] == [] and narrow["truncated"] is False
+        assert narrow["batch_count"] > wide["batch_count"], "调小预算必须表现为分更多批"
+        flat = lambda p: "\n".join(b["text"] for b in p["batches"])  # noqa: E731
+        assert (citations.normalize(flat(narrow)) == citations.normalize(flat(wide))), \
+            "调小单次预算**不得**改变总注入内容"
+        for i in range(1, 5):
+            assert f"第{i}章的正文内容。" in flat(narrow), f"第 {i} 章丢失（造错必报）"
+        assert narrow["usage"]["injected_chars_per_batch"], "必须报告逐批字符数（就地可见）"
+        # 覆盖账（章级）不因滑块变小而改变
+        s_wide = mat.coverage_summary([], idx)
+        s_narrow = mat.coverage_summary([], idx)
+        assert s_wide == s_narrow and s_wide["total"] == len(idx[0]["structure"]["entries"])
     finally:
         app_client.delete(f"/api/subjects/{sid}?hard=true")
 

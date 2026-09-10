@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
+import MaterialBudgetPanel from "../components/MaterialBudgetPanel";
+import LedgerAlerts, { LedgerEntry } from "../components/LedgerAlerts";
 
 type Unit = {
   id: string;
@@ -60,6 +62,10 @@ type MaterialItem = {
   kind: string;
   file: string;
   filename?: string;
+  // R38 B2：材料角色（主教材 / 补充材料；未标注 → main + explicit=false，按导入顺序）
+  role?: string;
+  role_explicit?: boolean;
+  role_zh?: string;
   // R37 S7：文本层健康度（扫描/图片版 → 中文告知，不静默出稿）
   text_health?: { pages: number; chars: number; healthy: boolean; checked: boolean; note: string };
 };
@@ -67,10 +73,12 @@ type MaterialItem = {
 // R37 S6：覆盖账本（教材章节 ↔ 单元映射 ↔ 单元覆盖状态）
 type CoverageEntry = {
   material: string;
+  material_id?: string;
   label: string;
   chapter: string;
   chars: number;
   sections: string[];
+  pages?: string[];
   units: string[];
   covered: boolean;
 };
@@ -86,17 +94,52 @@ type CoverageUnit = {
   dropped_exercises: number;
 };
 
+// R38 B1：覆盖账**跨全部材料**统计 + 未覆盖清单**按材料分组**
+type CoverageByMaterial = {
+  material_id: string;
+  title: string;
+  role: string;
+  role_explicit: boolean;
+  role_zh: string;
+  total: number;
+  covered: number;
+  uncovered: string[];
+  chars: number;
+  pages: number;
+  healthy: boolean;
+  note: string;
+};
+
 type Coverage = {
   has_materials: boolean;
   total: number;
   covered: number;
   uncovered: string[];
-  materials: { id: string; title: string; healthy: boolean; note: string; structure_kind: string; structure_note: string }[];
+  page_total?: number;
+  page_covered?: number;
+  by_material?: CoverageByMaterial[];
+  uncovered_by_material?: { material_id: string; title: string; role_zh: string; items: { label: string; chapter: string; chars: number; pages: string[] }[] }[];
+  uncovered_materials?: { material_id: string; title: string; kind: string; note: string }[];
+  order_basis?: string;
+  multi_material?: boolean;
+  materials: { id: string; title: string; healthy: boolean; note: string; structure_kind: string; structure_note: string; role?: string; role_zh?: string }[];
   entries: CoverageEntry[];
   units: CoverageUnit[];
 };
 
 const COVERAGE_CLS: Record<string, string> = { 完整: "pass", 部分: "deferred", 未覆盖: "error" };
+
+/** R39 §1：学科页的**就地账目**（材料吸纳/生成丢弃/模型调用/覆盖——最近 20 条）。 */
+function SubjectLedgerInline({ subjectId }: { subjectId: string }) {
+  const [entries, setEntries] = useState<LedgerEntry[] | null>(null);
+  useEffect(() => {
+    api
+      .get<{ entries: LedgerEntry[] }>(`/subjects/${subjectId}/ledger?limit=20`)
+      .then((r) => setEntries(r.entries))
+      .catch(() => setEntries([]));
+  }, [subjectId]);
+  return <LedgerAlerts entries={entries} subjectId={subjectId} compact title="本学科就地账目（最近 20 条）" />;
+}
 
 type SearchCandidate = {
   title: string;
@@ -124,7 +167,7 @@ export default function OutlinePage() {
   const [subject, setSubject] = useState<Record<string, any> | null>(null);
   const [outline, setOutline] = useState<Record<string, any> | null>(null);
   const [progress, setProgress] = useState<{ units: UnitView[]; concepts_mastered: number } | null>(null);
-  const [candidate, setCandidate] = useState<{ units: Unit[]; source: string; problems: string[]; ok: boolean; source_materials?: string[]; material_usage?: { count: number; used_chars: number; dropped: string[]; truncated: boolean; batches?: number; inject_max_chars?: number; blocked?: { title: string; note: string }[] }; coverage?: { total: number; covered: number; uncovered: string[] } | null } | null>(null);
+  const [candidate, setCandidate] = useState<{ units: Unit[]; source: string; problems: string[]; ok: boolean; source_materials?: string[]; material_usage?: { count: number; used_chars: number; dropped: string[]; truncated: boolean; batches?: number; inject_max_chars?: number; batch_chars?: number; blocked?: { title: string; note: string }[]; budget?: Record<string, unknown>; per_material?: unknown[]; not_injected?: unknown[]; order_basis?: string; context_valve?: { applied: boolean; limit_chars: number; context_tokens: number } }; coverage?: { total: number; covered: number; uncovered: string[] } | null; ledger?: LedgerEntry[] } | null>(null);
   const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [draftBrief, setDraftBrief] = useState("");
   const [draftCount, setDraftCount] = useState(6);
@@ -143,6 +186,22 @@ export default function OutlinePage() {
   const [searchBusy, setSearchBusy] = useState(false);
   // C2：PDF 上传（pypdf 分页/分节入库）
   const pdfFileRef = useRef<HTMLInputElement>(null);
+  // R39 §1：最近一次"单元出稿"的就地账目（丢弃/降级/失败——界面必须能看见）
+  const [lastUnitLedger, setLastUnitLedger] = useState<LedgerEntry[] | null>(null);
+
+  const setMaterialRole = async (mid: string, role: string) => {
+    setBusy(true);
+    setErr("");
+    try {
+      await api.put(`/subjects/${id}/materials/${mid}/role`, { role });
+      await loadMaterials();
+      setMsg(role === "main" ? "已标为**主教材**（定顺序与范围）" : "已标为**补充材料**（只补细节与例题）");
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const uploadPdf = async () => {
     const inp = pdfFileRef.current;
@@ -388,7 +447,8 @@ export default function OutlinePage() {
     setErr("");
     setMsg("");
     try {
-      const r = await api.post<{ status: string; node_id: string; note?: string; coverage?: { status: string } }>(`/subjects/${id}/units/${uid}/content`);
+      const r = await api.post<{ status: string; node_id: string; note?: string; coverage?: { status: string }; ledger?: LedgerEntry[] }>(`/subjects/${id}/units/${uid}/content`);
+      setLastUnitLedger(r.ledger ?? []);
       if (r.status === "uncovered") {
         setErr(`单元 ${uid} 未出稿：${r.note || "教材未覆盖此单元"}`);
       } else if (r.status === "failed") {
@@ -570,14 +630,38 @@ export default function OutlinePage() {
                     <div className="dim" style={{ fontSize: 12, color: "#b3261e" }}>{m.text_health.note}</div>
                   )}
                 </div>
-                <button className="ghost" disabled={busy} style={{ whiteSpace: "nowrap" }}
-                        onClick={() => void deleteMaterial(m.id)}>
-                  删除
-                </button>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", whiteSpace: "nowrap" }}>
+                  {/* R38 B2：材料角色（主教材定顺序与范围；未标注 → 按导入顺序并在覆盖账注明） */}
+                  <select
+                    value={m.role_explicit ? (m.role ?? "main") : ""}
+                    disabled={busy}
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      void setMaterialRole(m.id, e.target.value);
+                    }}
+                    title="主教材定顺序与范围；补充材料只补细节与例题"
+                  >
+                    <option value="">未标注（按导入顺序）</option>
+                    <option value="main">主教材</option>
+                    <option value="supplement">补充材料</option>
+                  </select>
+                  <button className="ghost" disabled={busy}
+                          onClick={() => void deleteMaterial(m.id)}>
+                    删除
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
+
+        {/* R38：材料注入预算（两个滑块 + 上一轮实际注入量/批次 + 未纳入清单） */}
+        <MaterialBudgetPanel subjectId={id} onChanged={() => void load()} />
+
+        {/* R39 §1：材料层的**就地**账目（材料吸纳/被挡下/未纳入 —— 界面必须能看见） */}
+        <div style={{ marginTop: 8 }}>
+          <SubjectLedgerInline subjectId={id} />
+        </div>
       </div>
 
       {/* 起草 / 采纳（无大纲或重生成时） */}
@@ -633,6 +717,21 @@ export default function OutlinePage() {
                   : "（未覆盖清单为空）"}
               </div>
             )}
+            {/* R38 A1 必显：本轮实际注入总量 + 批次数 + 两个滑块的生效值与来源 */}
+            {candidate.material_usage && candidate.material_usage.count > 0 && (
+              <div className="dim" style={{ fontSize: 12, margin: "4px 0" }}>
+                本轮材料注入：共 <strong>{candidate.material_usage.used_chars.toLocaleString("zh-CN")}</strong> 字 ·
+                分 <strong>{candidate.material_usage.batches ?? 0}</strong> 批 ·
+                单次预算 {candidate.material_usage.batch_chars === 0 ? "不限" : `${(candidate.material_usage.batch_chars ?? 0).toLocaleString("zh-CN")} 字符`} ·
+                总上限 {candidate.material_usage.inject_max_chars === 0 ? "不限" : `${(candidate.material_usage.inject_max_chars ?? 0).toLocaleString("zh-CN")} 字符`} ·
+                顺序依据：{candidate.material_usage.order_basis ?? "导入顺序"}
+                {candidate.material_usage.context_valve?.applied && (
+                  <> · 安全阀：本书较大，已自动分批（不截断、不漏章节）</>
+                )}
+              </div>
+            )}
+            {/* R39 §1：本次起草的**就地**账目（驳回重生成/降级/材料未纳入…） */}
+            <LedgerAlerts entries={candidate.ledger} subjectId={id} title="本次起草记录（一切显性）" compact />
             {(candidate as any).notes?.length > 0 && (
               <div className="dim" style={{ fontSize: 12 }}>{(candidate as any).notes.join("；")}</div>
             )}
@@ -688,17 +787,80 @@ export default function OutlinePage() {
             <div className="card" style={{ borderColor: coverage.uncovered.length ? "#e6a23c" : "#90caf9", margin: "8px 0" }}>
               <h2 style={{ margin: "0 0 4px" }}>
                 教材覆盖账本 · 已覆盖节 {coverage.covered} / {coverage.total}
+                {typeof coverage.page_covered === "number" && coverage.page_total ? (
+                  <span className="dim" style={{ fontSize: 13 }}>
+                    {" "}（页级：{coverage.page_covered}/{coverage.page_total} 页已有对应单元，可下钻）
+                  </span>
+                ) : null}
               </h2>
               <div className="dim" style={{ fontSize: 12 }}>
                 教材结构：
                 {coverage.materials.map((m) => `${m.title}（${m.structure_kind}：${m.structure_note}）`).join("；")}
+                {coverage.multi_material ? ` · 共 ${coverage.materials.length} 份材料（已合并成一份章节地图）` : ""}
+                {coverage.order_basis ? ` · 顺序依据：${coverage.order_basis}` : ""}
               </div>
+
+              {/* R38 B1：**按材料分组**的覆盖统计（跨全部材料；未覆盖清单按材料分组） */}
+              {coverage.by_material && coverage.by_material.length > 0 && (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 6 }}>
+                  <thead>
+                    <tr className="dim">
+                      <th style={{ textAlign: "left" }}>材料</th>
+                      <th>角色</th>
+                      <th>已覆盖节 / 总节</th>
+                      <th>字数</th>
+                      <th>页数</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {coverage.by_material.map((b) => (
+                      <tr key={b.material_id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                        <td style={{ padding: "3px" }}>{b.title}</td>
+                        <td style={{ padding: "3px" }}>
+                          {b.role_zh}
+                          {b.role_explicit ? "" : "（未标注）"}
+                        </td>
+                        <td style={{ padding: "3px", textAlign: "center" }}>
+                          <span className={b.covered === b.total ? "badge pass" : "badge deferred"}>
+                            {b.covered} / {b.total}
+                          </span>
+                        </td>
+                        <td style={{ padding: "3px", textAlign: "center" }}>{b.chars.toLocaleString("zh-CN")}</td>
+                        <td style={{ padding: "3px", textAlign: "center" }}>{b.pages}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
               {coverage.uncovered.length === 0 ? (
                 <div className="badge pass">未覆盖清单为空：书的每个章/节都有对应单元</div>
               ) : (
-                <div className="banner warn">
-                  未覆盖清单（{coverage.uncovered.length}）：{coverage.uncovered.join("、")}
-                  ——教材有而内容没覆盖的部分**不会被编造**，请补充/调整单元后重新生成大纲。
+                <>
+                  {/* R38 B1：未覆盖清单**按材料分组**显式列出（不是只在 prompt 尾部提一句） */}
+                  {coverage.uncovered_by_material && coverage.uncovered_by_material.length > 0 ? (
+                    coverage.uncovered_by_material.map((g) => (
+                      <div className="banner warn" key={g.material_id} style={{ marginTop: 4 }}>
+                        《{g.title}》（{g.role_zh}）未覆盖 {g.items.length} 条：
+                        {g.items.map((x) => `${x.label}（${x.chars.toLocaleString("zh-CN")} 字）`).join("、")}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="banner warn">
+                      未覆盖清单（{coverage.uncovered.length}）：{coverage.uncovered.join("、")}
+                    </div>
+                  )}
+                  <div className="dim" style={{ fontSize: 12 }}>
+                    教材有而内容没覆盖的部分**不会被编造**，请补充/调整单元后重新生成大纲；
+                    这些未覆盖项也已写入总账（
+                    <Link to={`/ledger?subject_id=${id}&category=coverage`}>就地看着</Link>）。
+                  </div>
+                </>
+              )}
+              {coverage.uncovered_materials && coverage.uncovered_materials.length > 0 && (
+                <div className="banner error" style={{ marginTop: 4 }}>
+                  整份未纳入的材料（{coverage.uncovered_materials.length}）：
+                  {coverage.uncovered_materials.map((m) => `${m.title}（${m.kind}）`).join("、")}
                 </div>
               )}
               <details style={{ marginTop: 6 }}>
@@ -797,6 +959,8 @@ export default function OutlinePage() {
               </table>
             </div>
           ))}
+          {/* R39 §1：单元出稿的**就地**账目（题/事实句被丢弃、降级启发式、整单元未出稿…） */}
+          <LedgerAlerts entries={lastUnitLedger} subjectId={id} title="最近一次单元出稿记录" compact />
         </div>
       )}
     </div>
