@@ -121,7 +121,22 @@ def _run_validate() -> int:
         print(f"  [warning] {w}")
     if report.detail:
         print(f"  note: {report.detail}")
+    _semantics_report()
     return 0 if report.ok else 1
+
+
+def _semantics_report() -> None:
+    """R35 §12 语义自检闸门的**体检输出**（不阻断 validate：违规按 [semantics] 列出，便于全库体检）。"""
+    from .loader import load_library
+    from .verify import check_node
+
+    lib = load_library()
+    for loaded in lib.nodes:
+        for v in check_node(loaded.doc, seeds=4):
+            for p in v.problems:
+                print(f"  [semantics] {v.node_id}/{v.ex_id}: {p}")
+            for f in v.findings:
+                print(f"  [semantics?] {v.node_id}/{v.ex_id}: {f}")
 
 
 def _run_render(node_id: str, seed: int) -> int:

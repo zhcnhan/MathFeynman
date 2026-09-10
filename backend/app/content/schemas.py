@@ -78,6 +78,11 @@ class TemplateDoc(BaseModel):
     constraint: Optional[str] = None  # python 表达式，params 全部可用
     answer_expr: str = ""  # 答案表达式模板（代入 params 后应可 sympy 解析）
     equation: Optional[str] = None  # [实现扩展] equation_solution 用的机器方程模板（见 NOTES）
+    # R35 §12 语义自检闸门（**内容显式声明**；不猜题面关键词）：
+    #   expect:   标准答案的**独立算式**（L1 验算插件据此独立算一遍并与 answer_expr 比对）
+    #   requires: 题面里陈述的条件（*必须*被 constraint 强制保证；否则题面在说没保证的话）
+    #   domain:   领域谓词 {nonneg/integer/ratio: bool}（通用层按学科无关的谓词表校验渲染结果）
+    semantics: dict = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod

@@ -2902,3 +2902,72 @@ seed=3: 求 5 和 7 的最小公倍数，其中 7 是 5 的倍数。   -> 模板
   （如 `b % a == 0`）；② `answer_expr` 用 `lcm(a,b)` 之类**与条件自洽**的表达式，禁止"条件+答案"互相矛盾；
   ③ 该模板**当前仍在库中（用户在库可见）**，建议随 P2 一起重生成。
 
+---
+
+## 63. R35b · 语义自检闸门 + 28 模板题体检 + 缺陷节点重生成（2026-09-10）
+
+> 规格：`docs/09 R35 §12`（架构侧扩大我报的 s27 缺陷 → 4 例 + 根因"answer_expr 与题干同一次 LLM 调用自证"）。
+
+### 63.1 闸门三层（**学科无关是第一原则**）
+
+| 层 | 实现 | 说明 |
+|---|---|---|
+| ① 通用层（所有学科） | `content/verify.py::check_domain_rule`：渲染 N seed → 结果必须满足**内容显式声明**的领域谓词（`semantics.domain`: `nonneg`/`integer`/`ratio`）+ **学段政策**（`level=="primary"` 默认补 `nonneg`，小学不出现负数）；无声明 → **finding（要求声明）**，**不猜题面关键词** | 吃"声明"不吃"学科规则"；`integer` 必须显式声明（实测教训：分数加法/百分比在小学同样合法，一刀切判"非整数"是**假阳性**） |
+| ② L1 验算插件层 | `content/l1_math.py::MathSympyVerifier`（唯一与学科相关的一层）：**sympy 独立验算** `semantics.expect` 与 `answer_expr`（逐 seed 数值比对）+ `requires` 是否被 `constraint` **穷举反例**保证 | 经 **注册表** `register_l1/l1_for` 解析（**无 `if subject == "math"` 分支**）；`subject_of()` 只做命名空间映射（LEVELS→math preset） |
+| ③ 无 L1 的学科 | `l1=None` **如实标注**（不是漏做）；仍须过通用层 + R35 可答性 + 既有护栏 | 将来"数值+单位""代码沙箱"按**同一接口**注册 |
+
+**关键实现坑（值得留档）**：`sp.sympify("lcm(a, b)")` 会把 `lcm` 当"一般符号"化简成 **`a*b`**（sympy 默认符号互质）→ 独立验算退化成"抄 answer_expr"。修法：**先把参数代入表达式文本**（`lcm(a,b)` → `lcm(6,9)`）再 sympify ✓。
+
+**接线**：`pipeline.validate_semantics(raw_md)`（**与结构校验分开的独立函数**，各自调用）→ `generate_entry` 里校验失败**拒绝入库**（自动重试带错误反馈）；`content validate` **只报 `[semantics]`/`[semantics?]` 不阻断**（保住既有 CLI 契约，同时给出全库体检输出）；`ai/drafting.py` 出稿 prompt 增"语义自检纪律"（三处同改：schema + prompt + 用例）。
+
+### 63.2 闸门用例清单（`backend/tests/test_r35_semantics_gate.py`，10 条）
+
+| # | 用例 | 断言 |
+|---|---|---|
+| 1 | `test_gate_rejects_answer_expr_contradicting_independent_expect` | **造错必报**：`answer_expr ≠ expect` → 拒绝 |
+| 2 | `test_gate_rejects_lcm_template_written_as_product` | s27 形状：条件未强制 + `a*b` vs `lcm` **双错**都报 |
+| 3 | `test_gate_rejects_condition_not_enforced_by_constraint` | **造错必报**：`requires` 未被 constraint 保证 → 反例报；**补上 constraint 后同一算式通过** |
+| 4 | `test_gate_rejects_negative_count_in_primary` | 小学学段负数（39-47）→ 拒 |
+| 5 | `test_gate_rejects_fractional_discrete_quantity_when_declared` | 声明 `integer` 后"半个苹果"→ 拒 |
+| 6 | **`test_generic_layer_applies_to_non_math_subject`** | **换学科仍成立**：自定义学科 `s-testsubj`（**无 L1 插件**）→ 金额为负 / 个数非整 **均被拒** |
+| 7 | `test_generic_layer_no_declaration_is_finding_not_silent_pass` | 无声明 → finding（不静默通过、不猜） |
+| 8 | `test_primary_policy_adds_nonneg_but_not_integer` | 学段政策只加 nonneg（分数加法**不得**被误杀） |
+| 9 | `test_subject_namespace_and_registry` | 注册表解析（无学科分支） |
+| 10 | `test_pipeline_gate_entry_rejects_bad_template_md` | 生成端入口拒绝坏模板（拒绝入库） |
+
+### 63.3 28 模板题体检表（重生成前 → 处置 → 复验）
+
+体检工具：`backend/tests/audit_template_semantics.py`（工具非测试；`--json` 落档）。**重生成前**：29 条模板
+（含重生成后新增的 1 条）→ **违规 4 类/5 条**，其余 21 条"未声明 semantics"（finding）。
+
+| 节点/题 | 问题类型 | 处置 | 复验 |
+|---|---|---|---|
+| `primary.s27/ex1` | 条件未强制（题面说"b 是 a 的倍数"却 `constraint=None`）+ `answer_expr=a*b` 与 LCM 矛盾（a==b 必错） | **重生成** ✓（1 稿过闸门） | 声明 semantics ✓ 违规 0 |
+| `primary.s12/ex1` | 金额为负（7 元买 8 元 → -1 元） | **重生成** ✓ | 违规 0 |
+| `primary.s23/ex2` | 半个苹果（`total*x/(x+y)` 非整）+ 题面条件未强制；`ex1` 化简比却给比值 | **重生成** ✓ | 违规 0 |
+| `primary.s02/ex2` | 小学减法出负数（39-47 → -8） | **重生成** ✓ | 违规 0 |
+| `primary.s04/ex1` | 题干要"商和余数"两个量，`answer_expr` 只给商（答对被判错）——**欧拉追加发现** | **重生成** ✓（第 3 次尝试成功；前两稿 YAML/题型非法被拒） | 违规 0 |
+| `middle.0102/ex1–ex3`、`middle.0201/e1`、`middle.0202/e1`、`primary.0101–0104`、`s01/s03/s09/s10/s11/s13/s22` | **未声明 semantics**（finding） | **未改**（人工锚点不动；auto 的待下批按需重生成） | 仍为 finding |
+| 题面泄漏（种子相关） | 渲染答案原样出现在题干：`middle.0202/e1`（如 -5）、`primary.0102/e1`（如 3/5）、`0103`、`0104`、`s04` 等 **8 条**有命中 | **登记**（多数是"格式示例恰好等于答案"；建议把示例改成占位形式如 `x=…`） | 待裁 |
+
+**复验（重生成后）**：29 条模板 → **违规 0**；其中 **8 条已声明 semantics**（＝被修的 5 个节点的全部模板）；
+`content validate` **ok 25 节点 / 49 练习**（练习数 48→49：重生成内容题量变化）；audit 五学段不变。
+
+### 63.4 全量回归（不降）
+
+| 项 | 实测 | 与上一批 |
+|---|---|---|
+| `pytest backend/tests` | **370 collected / 368 passed + 2 skipped / 0 failed / 0 error，exit 0** | 360/358+2 → **+10 闸门用例** |
+| `content validate` | **ok，25 节点 / 49 练习** | 48→49（重生成所致，节点数不变） |
+| roadmap audit | **27/31/81/59/60**，错误项 0 | 不变 |
+| `npx tsc --noEmit` | exit 0 | 不变 |
+
+### 63.5 融合对照表补全（本批新增件）
+
+| 新增件 | 复用点 | 断言/用例 |
+|---|---|---|
+| 语义闸门通用层 | 既有 `templates.render_exercise` + 内容声明谓词 | 用例 4/5/6/7/8 |
+| L1 验算插件 | `docs/14 §2.4` L1 结构化可验的**注册表接口**（math 首个实例；非数学特权） | 用例 1/2/3/9 |
+| 生成端拒绝 | 既有 `pipeline.generate_entry` 重试+入库链路（validate_semantics 独立函数） | 用例 10 + `validate` 体检输出 |
+| 出稿纪律 | `ai/drafting` prompt（schema 三处同改） | 重生成 5 节点全过闸门（真模型实测） |
+

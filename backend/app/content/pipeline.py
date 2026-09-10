@@ -170,6 +170,36 @@ def validate_candidate(raw_md: str, known_ids: set[str]) -> list[str]:
     return errors
 
 
+def validate_semantics(raw_md: str) -> list[str]:
+    """R35 §12 **语义自检闸门**（与结构校验**分开的独立函数**，各自调用）：
+    模板题的答案必须与题面语义自洽——通用层（声明的领域谓词）+ L1 验算插件（math=sympy 独立验算）。
+    返回错误清单（空 = 过闸门；**不一致 → 拒绝入库**）。
+    """
+    from .verify import gate_errors
+
+    try:
+        meta, _ = parse_node_text(raw_md)
+        doc = NodeDoc(**meta)
+    except Exception as e:
+        return [f"语义闸门无法解析内容: {e}"]
+    return gate_errors(doc)
+
+
+def semantic_findings(raw_md: str) -> list[str]:
+    """体检用：闸门的"无法验证"提示（缺声明/无验算器）——不阻断入库，但要求内容显式声明。"""
+    from .verify import check_node
+
+    try:
+        meta, _ = parse_node_text(raw_md)
+        doc = NodeDoc(**meta)
+    except Exception as e:
+        return [f"语义体检无法解析内容: {e}"]
+    out: list[str] = []
+    for v in check_node(doc, seeds=4):
+        out.extend(f"{v.ex_id}: {f}" for f in v.findings)
+    return out
+
+
 # --------------------------------------------------------------------------
 # 入库策略（docs/12 P4：全学段默认自动入库；_drafts 仅由显式 force_drafts / 服务层熔断驱动）
 # --------------------------------------------------------------------------
@@ -229,6 +259,8 @@ def generate_entry(
             attempts_errors.append(f"[attempt {attempt}] 出稿器异常: {e}")
             continue
         errs = validate_candidate(raw_md, known_ids)
+        if not errs:
+            errs = validate_semantics(raw_md)   # R35 §12：语义闸门（独立函数、独立调用）
         if not errs:
             break
         attempts_errors.extend(f"[attempt {attempt}] {e}" for e in errs)
@@ -392,6 +424,8 @@ __all__ = [
     "generate_sequence",
     "generate_entry",
     "validate_candidate",
+    "validate_semantics",
+    "semantic_findings",
     "cross_level_gaps",
     "SELFCHECK_SEEDS",
 ]
