@@ -183,5 +183,13 @@ button.ghost { background: transparent; border: 1px solid #c5cdd6; }
 .selfextend-panel { border-top: 1px dashed #c5cdd6; margin-top: 12px; padding-top: 10px; }
 .selfextend-panel .primary { margin-top: 8px; }
 
+/* R35 S3：挑战题池（视觉上与核心流程区分——它**完全不上算**） */
+.card.challenge { border-color: #7e57c2; background: #faf7ff; }
+.card.challenge .prompt { font-size: 15px; margin: 8px 0; }
+.card.challenge .quote { border-left: 3px solid #b39ddb; padding-left: 8px; color: #4527a0; }
+/* R35 S4：退回讲解补讲（reteach） */
+.card.reteach { border-color: #b26a00; }
+.card.reteach .banner.warn { margin-top: 0; }
+
 
 

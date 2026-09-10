@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 from typing import Any, Iterable
 
 from ..content.citations import MIN_QUOTE_CHARS
@@ -38,6 +39,64 @@ EVIDENCE_PENALTY = 0.5
 # R36：实现已收敛到 `app.content.citations`（同一把尺子，供大纲材料溯源 / R35 basis 复用）；
 # 此处仅保留历史名字以兼容既有测试与调用方。
 MIN_EVIDENCE_CHARS = MIN_QUOTE_CHARS
+
+# --------------------------------------------------------------------------
+# R35 S4：学生原话里"有没有可引用的实质内容"
+#
+# 用途**只有一处**：追问纪律——学生没提供可引用的实质内容（如只写"我不知道"）时，
+# **禁止硬造发散题**，返回 `reteach`（退回讲解补讲）。
+#
+# 分层说明（不是两套机制，而是一道确定性前置 + 一道模型判定）：
+# 1. 本函数：**确定性前置**——让"我不想答"既不烧一次评分额度、也不换来一条无法回答的追问；
+# 2. 追问调用点：`student_quote` 必须逐字出自学生原话（同一把引文尺子）——真模型路径的**通用**兜底。
+#
+# 边界（如实分界）：这是一条**语言层启发式**（去敷衍用语后是否还剩实质内容），
+# 与学科无关（任何学科同一套），但**不可能百分百准确**；故它只用于"退回讲解"这一安全方向
+# （宁可多退一次讲解，也不发一条学生答不出的追问）。
+DISMISSIVE_MARKERS = (
+    "不知道", "不会", "不懂", "不明白", "不清楚", "没学过", "没听过", "不记得", "忘了",
+    "想不起来", "随便", "无所谓", "没兴趣", "不感兴趣", "放弃", "跳过", "空着",
+)
+# 纯语气/指代/礼貌填充词：去掉它们后仍不足以构成"可引用的实质内容"
+FILLER_MARKERS = (
+    "我", "你", "的", "了", "吧", "呢", "啊", "嗯", "哦", "嘛", "呀", "真的", "确实", "就是",
+    "还是", "这个", "那个", "一道", "这道", "题目", "老师", "其实", "应该", "好像",
+)
+
+
+def has_quotable_content(text: str, *, min_chars: int = MIN_QUOTE_CHARS) -> bool:
+    """学生的话里是否有**可逐字引用的实质内容**（R35 S4）。
+
+    判定：归一化后先过最短门槛；再剔掉敷衍用语与纯填充词——**仍不足门槛**即视为
+    "没有可引用的实质内容"（→ `reteach`）。空串/None → False。
+    """
+    norm = normalize_quote(text)
+    if len(norm) < min_chars:
+        return False
+    stripped = norm
+    for marker in DISMISSIVE_MARKERS + FILLER_MARKERS:
+        stripped = stripped.replace(marker, "")
+    return len(stripped) >= min_chars
+
+
+def student_quote(text: str, *, min_chars: int = MIN_QUOTE_CHARS) -> str:
+    """从学生原话里取一段**可逐字引用**的片段（R35 S4：追问必须先逐字引用学生刚说的话）。
+
+    优先取第一个整句；首句太短则逐字取前缀（取到刚好达门槛为止）。
+    原文归一化后不足门槛（无从引用）→ 返回空串（调用方据此走 `reteach`）。
+    """
+    flat = " ".join((text or "").split())
+    if not flat:
+        return ""
+    for sent in re.split(r"[。！？；!?;\n]+", flat):
+        s = sent.strip()
+        if len(normalize_quote(s)) >= min_chars:
+            return s
+    for n in range(1, len(flat) + 1):
+        cand = flat[:n]
+        if len(normalize_quote(cand)) >= min_chars:
+            return cand
+    return ""
 
 
 def quote_valid(quote: str, transcript: str) -> bool:
@@ -364,7 +423,10 @@ def gap_view(ledger: dict[str, Any], threshold: float) -> dict[str, Any]:
 __all__ = [
     "EVIDENCE_PENALTY",
     "MIN_EVIDENCE_CHARS",
+    "DISMISSIVE_MARKERS",
     "normalize_quote",
+    "has_quotable_content",
+    "student_quote",
     "quote_valid",
     "quote_invalid_reason",
     "empty_ledger",

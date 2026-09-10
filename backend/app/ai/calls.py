@@ -89,7 +89,63 @@ class FeynmanEvaluateOut(BaseModel):
 
 
 class FeynmanFollowupOut(BaseModel):
-    question_md: str
+    """R27 定向追问（R35 S4 补强）。
+
+    S4 纪律：追问**必须逐字引用学生刚说过的话**（`student_quote`，服务端做逐字包含校验，
+    与费曼 evidence / basis 同一把尺子），并指出"这句话缺了什么"（`missing`）。
+    学生**没有可引用的实质内容**（如只写"我不知道"）→ 置 `reteach=true`，
+    由服务端返回 `reteach`（退回讲解补讲），**禁止硬造发散题**。
+    """
+
+    question_md: str = ""
+    student_quote: str = ""   # 逐字引用学生原话（服务端校验包含关系）
+    missing: str = ""         # 这句话缺了什么（学生视角）
+    reteach: bool = False     # 无可引用内容 → 退回讲解补讲（不发追问）
+
+
+# ---------- R35 S3（挑战题池）：单独生成 / 单独判分 ----------
+class ChallengeIn(BaseModel):
+    """挑战题生成输入（**与核心题池刻意相反**：挑战题就是要超出讲解）。
+
+    字段与 `ExplainIn` 对齐，以便**复用同一套 ContextBlock 注入范式**（ai/prompts.context_block）。
+    """
+
+    session_id: str = ""
+    node_id: str = ""
+    node_title: str = ""
+    level: str = ""
+    explanation_body: str = ""
+    worked_examples: list[str] = Field(default_factory=list)
+    core_concepts: list[str] = Field(default_factory=list)
+    whitelist: list[str] = Field(default_factory=list)
+    profile_style_block: str = ""
+    asked: int = 0            # 本会话已生成次数（仅用于"换一道"去重，不限额）
+
+
+class ChallengeOut(BaseModel):
+    """一道挑战题（**永不进默认流程**、**完全不上算**：不进费曼账本/mastery/额度/掌握统计）。"""
+
+    prompt_md: str
+    answer_hint_md: str = ""   # 作答形式提示（如"只填数字"）
+    why_hard_md: str = ""      # 为什么它需要讲解之外的知识（对学习者解释，非考点）
+    difficulty: int = 3
+
+
+class ChallengeCheckIn(BaseModel):
+    session_id: str = ""
+    node_id: str = ""
+    node_title: str = ""
+    prompt_md: str
+    student_answer: str
+
+
+class ChallengeCheckOut(BaseModel):
+    """挑战题判分结果（**只记复盘**：不写任何账本）。"""
+
+    correct: bool = False
+    score: float = Field(default=0.0, ge=0, le=1)
+    feedback_md: str = ""      # 对学习者说的话（鼓励 + 指出差在哪）
+    better_md: str = ""        # 参考思路（挑战题可以给答案：它不上算，教比考重要）
 
 
 # ---------- R27：缺口补答评估（轻量，非整体重评） ----------
@@ -248,6 +304,16 @@ CALL_FEYNMAN_GAP_CHECK = CallSpec(
 CALL_CLASSIFY_ERROR = CallSpec(
     "classify_error", "light", ClassifyErrorIn, ClassifyErrorOut, temperature=0.0, max_retries=2
 )
+CALL_CHALLENGE_EXERCISE = CallSpec(
+    # R35 S3：挑战题**单独调模型生成**（永不出现在默认流程）。light 档足够；
+    # 温度高于核心题池（0.8）：挑战题要"发散"，这是用户拍板的特性，不是缺陷。
+    "challenge_exercise", "light", ChallengeIn, ChallengeOut, temperature=0.8, max_retries=2
+)
+CALL_CHALLENGE_CHECK = CallSpec(
+    # R35 S3：挑战题判分（无 rubric、无 L1 验算 → 如实分界，只能靠模型判）；
+    # 结果**只记复盘**，绝不并入费曼账本/mastery/额度/掌握统计。
+    "challenge_check", "light", ChallengeCheckIn, ChallengeCheckOut, temperature=0.2, max_retries=2
+)
 CALL_DRAFT_CONTENT = CallSpec(
     "draft_content", "light", DraftContentIn, DraftContentOut, temperature=0.6, max_retries=2
 )
@@ -394,6 +460,8 @@ CALLS: dict[str, CallSpec] = {
         CALL_FEYNMAN_FOLLOWUP,
         CALL_FEYNMAN_GAP_CHECK,
         CALL_CLASSIFY_ERROR,
+        CALL_CHALLENGE_EXERCISE,
+        CALL_CHALLENGE_CHECK,
         CALL_DRAFT_CONTENT,
         CALL_OUTLINE_DRAFT,
         CALL_UNIT_CONTENT,
@@ -431,6 +499,10 @@ __all__ = [
     "FeynmanFollowupIn",
     "FeynmanFollowupOut",
     "FeynmanMisconception",
+    "ChallengeIn",
+    "ChallengeOut",
+    "ChallengeCheckIn",
+    "ChallengeCheckOut",
     "GapCheckIn",
     "GapCheckOut",
     "ClassifyErrorIn",

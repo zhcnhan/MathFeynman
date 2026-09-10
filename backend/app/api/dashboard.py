@@ -65,7 +65,13 @@ def get_dashboard(db: Session = Depends(get_db)) -> dict:
     today_done = (
         db.query(func.count(models.Attempt.id))
         .join(models.Session, models.Attempt.session_id == models.Session.id)
-        .filter(models.Session.user_id == USER, func.date(models.Attempt.created_at) == today)
+        .filter(
+            models.Session.user_id == USER,
+            func.date(models.Attempt.created_at) == today,
+            # R35 S3 红线：挑战题**完全不上算**（只进复盘）→ 不得计入"今日完成"这类进度统计。
+            # 用 models.PROGRESS_KINDS 白名单（默认拒绝新 kind），而不是"排除 challenge"黑名单。
+            models.Attempt.kind.in_(models.PROGRESS_KINDS),
+        )
         .scalar()
         or 0
     )

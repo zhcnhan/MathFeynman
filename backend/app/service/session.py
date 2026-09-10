@@ -22,6 +22,8 @@ from .. import models
 from ..ai.calls import (
     AiCallError,
     AnswerQuestionIn,
+    ChallengeCheckIn,
+    ChallengeIn,
     ClassifyErrorIn,
     ExplainIn,
     FeynmanEvaluateIn,
@@ -68,10 +70,22 @@ ACTIONS = {
     "reissue_after_regen", # R25：内容纠错替换后，一键把正在做的旧题换成新题（带保护）
     "feynman_submit",      # R27：完整稿（首讲 / 整合重讲）→ 整体评分 feynman_evaluate
     "feynman_answer",      # R27：补答（只答当前追问）→ 轻量缺口补答评估（不再等同整体重评）
+    # R35 S3 挑战题池（**永不出现在默认流程**；不设额度/不计轮次/不影响任何进度）：
+    "challenge_start",     # 用户点「挑战一下」→ 单独调模型生成一道挑战题
+    "challenge_begin",     # 开始作答（纯 UI 状态推进，无任何后果）
+    "challenge_submit",    # 提交挑战题作答 → 单独判分；**只记复盘**
+    "challenge_cancel",    # 取消本次挑战（丢掉这题，无任何后果，不记 attempts）
+    "challenge_abandon",   # 明确放弃（"我不会/我不感兴趣"）→ 只记复盘，无任何后果
     "finish",
     "quit",
     "get",                 # 恢复/刷新当前步
 }
+
+CHALLENGE_ACTIONS = {"challenge_start", "challenge_begin", "challenge_submit",
+                     "challenge_cancel", "challenge_abandon"}
+
+# R35 S3：UI/接口**必须显式标注**的挑战题说明（后端直出，前端只渲染——口径唯一）
+CHALLENGE_NOTICE = "挑战题：需要讲解之外的知识，答不出不影响任何进度"
 
 
 class SessionError(ValueError):
@@ -118,6 +132,14 @@ def new_flow() -> dict[str, Any]:
             "edge_think": False,      # R12：上轮 fast 边缘分 → 本轮升 think（消费一次）
             "last_strategy": None,    # R12：最近一轮评分所用档位（评分卡标注）
         },
+        # R35 S3：挑战题池（**与掌握/费曼完全隔离**：这四个键只被 challenge_* 动作读写）
+        "challenge": {
+            "current": None,     # 当前挑战题 {prompt_md, answer_hint_md, why_hard_md, difficulty}
+            "phase": "idle",     # idle | offered | answering | graded（单题三态；任何相位都无后果）
+            "asked": 0,          # 已生成次数（**仅统计展示**，不限额、不参与任何门禁）
+            "answered": 0,       # 已作答次数（**仅统计展示**，不计轮次、不参与任何门禁）
+            "last": None,        # 最近一次判分结果（复盘展示用）
+        },
     }
 
 
@@ -152,6 +174,14 @@ _FEYNMAN_SHAPE: dict[str, tuple[type, ...]] = {
     "ledger": (dict,),
     "edge_think": (bool,),
     "last_strategy": (str, type(None)),
+}
+# R35 S3：挑战题块（与费曼/练习并列的独立块——**它的存在本身不影响任何进度**）
+_CHALLENGE_SHAPE: dict[str, tuple[type, ...]] = {
+    "current": (dict, type(None)),
+    "phase": (str,),
+    "asked": (int,),
+    "answered": (int,),
+    "last": (dict, type(None)),
 }
 
 
@@ -191,6 +221,9 @@ def _ensure_flow_shape(flow: dict[str, Any] | None) -> dict[str, Any]:
         flow["stage"] = STAGE_EXPLAIN
     _ensure_block(flow, "practice", _PRACTICE_SHAPE)
     f = _ensure_block(flow, "feynman", _FEYNMAN_SHAPE)
+    ch = _ensure_block(flow, "challenge", _CHALLENGE_SHAPE)
+    if ch.get("phase") not in ("idle", "offered", "answering", "graded"):
+        ch["phase"] = "idle"
     # R21/R12：lecture_cache 合法形态 = None 或含 lecture_md(str) 的 dict（脏缓存宁可重生成）
     cache = flow.get("lecture_cache")
     if cache is not None and not (isinstance(cache, dict) and isinstance(cache.get("lecture_md"), str)):
@@ -361,6 +394,8 @@ class SessionService:
             return self._act_feynman(db, sess, node, text, payload)
         if action == "finish":
             return self._act_finish(db, sess, node)
+        if action in CHALLENGE_ACTIONS:
+            return self._act_challenge(db, sess, node, action, payload)
         if action == "quit":
             sess.state = "quit"
             db.flush()
@@ -624,6 +659,12 @@ class SessionService:
                 events=events,
                 extra_payload={"verdict": "deferred", "message": f"口述太短（{len(text)} 字），请像对老师讲解一样完整说一遍（≥{MIN_FEYNMAN_CHARS} 字）。"},
             )
+        # R35 S4：学生没有可引用的实质内容（"我不知道"类敷衍）→ **退回讲解补讲（reteach）**，
+        # 不烧评分额度、不生成"无法回答的追问"（确定性前置；模型层另有 student_quote 兜底）。
+        if not fl.has_quotable_content(text):
+            events.append({"type": "feynman_reteach", "reason": "transcript_no_quotable_content"})
+            return self._response(db, sess, events=events,
+                                  extra_payload=self._reteach_payload(db, sess, node, "no_quotable_content"))
         threshold = node.feynman.rubric.pass_threshold
         eval_rounds = self._feynman_eval_rounds(f)
         if eval_rounds >= MAX_FEYNMAN_EVALS:
@@ -768,7 +809,14 @@ class SessionService:
             return self._response(db, sess, events=events)
 
         gap = fl.weakest(ledger, threshold)
-        q_out, q_degraded, q_gap = self._feynman_followup(db, sess, node, f, text, gap, payload)
+        q_out, q_degraded, q_gap, reteach_reason = self._feynman_followup(db, sess, node, f, text, gap, payload)
+        if reteach_reason:
+            # S4：追问必须逐字引用学生原话；引用不成立/学生无可引用内容 → **不发追问**，退回讲解
+            f["followup"] = None
+            f["followup_gap"] = None
+            events.append({"type": "feynman_reteach", "reason": reteach_reason})
+            return self._response(db, sess, events=events,
+                                  extra_payload=self._reteach_payload(db, sess, node, reteach_reason))
         events.append({"type": "feynman_followup", "round": round_no, "target_gap": (q_gap or {}).get("key")})
         db.flush()
         return self._response(
@@ -781,6 +829,9 @@ class SessionService:
                 "threshold": threshold,
                 "dimension_scores": card,
                 "followup_question": q_out.question_md,
+                # R35 S4：追问携带"逐字引用的学生原话"与"这句话缺了什么"
+                "followup_quote": str(getattr(q_out, "student_quote", "") or ""),
+                "followup_missing": str(getattr(q_out, "missing", "") or ""),
                 "followup_gap": q_gap,
                 "evidence_penalty": evidence_penalty,
                 "next_action": "answer",
@@ -943,23 +994,31 @@ class SessionService:
         transcript: str,
         gap: dict | None,
         payload: dict[str, Any],
-    ) -> tuple[FeynmanFollowupOut, bool, dict | None]:
-        """R27：定向追问（输入未达标缺口 unmet_gaps，一次一个；不再自由发问）。
+    ) -> tuple[FeynmanFollowupOut, bool, dict | None, str]:
+        """R27 定向追问 + **R35 S4 追问纪律**。返回 (追问, 是否降级, 目标缺口, reteach 原因)。
 
-        无缺口时不追问：直接返回"请整合重讲"的提示（挂待补答状态，学生可交完整稿终验）。
+        S4（本批新增，逐条落在代码上）：
+        - 追问**必须逐字引用学生刚说的话**：`student_quote` 必须能在本轮完整稿里逐字找到
+          （`feynman_ledger.quote_valid`，与 evidence/basis 同一把尺子）；
+        - 并指出**这句话缺了什么**：`missing` 非空；
+        - 学生**无可引用内容**、或引文不成立、或模型自陈 `reteach` → **不发追问**，
+          第四个返回值给出原因，由调用方返回 `reteach`（退回讲解补讲）；
+        - socratic 主题**只有在 basis 逐字成立时**才作为语料下发（模板套话不得兜底）。
         """
         if gap is None:
+            # 无缺口：这不是"追问"，而是"请交完整稿"的指令（不适用引文要求）
             return (
                 FeynmanFollowupOut(question_md="把追问里补上的内容整合进完整讲解，再提交一次完整稿（终验）。"),
                 False,
                 None,
+                "",
             )
         q_ctx = FeynmanFollowupIn(
             session_id=sess.id,
             node_id=node.id,
             student_transcript=transcript,   # R27：本轮完整稿（不拼历史）
             previous_scores=(f["last_scores"][-1] if f["last_scores"] else []),  # R10：最近一轮分维卡
-            socratic_followups=list(node.feynman.socratic_followups),
+            socratic_followups=self._backed_socratic(node),  # S4：只带有据的主题（模板套话不下发）
             unmet_gaps=[dict(g) for g in (gap,)],  # R27：最弱缺口（一次一个）
         )
         q_decision = self._resolve_tier(
@@ -967,9 +1026,82 @@ class SessionService:
             extra_think=bool(f.get("edge_think")) or ai_tier.feynman_round_should_think(f["rounds_done"] + 1),
         )
         q_out, q_degraded = self._call(db, self.gateway.feynman_followup, q_ctx, strategy=q_decision.strategy)
-        f["followup"] = q_out.question_md
+        quote = str(getattr(q_out, "student_quote", "") or "")
+        missing = str(getattr(q_out, "missing", "") or "")
+        question = str(getattr(q_out, "question_md", "") or "")
+        if getattr(q_out, "reteach", False):
+            return FeynmanFollowupOut(reteach=True), q_degraded, gap, "model_says_reteach"
+        if not fl.has_quotable_content(transcript):
+            return FeynmanFollowupOut(reteach=True), q_degraded, gap, "no_quotable_content"
+        if not quote or not fl.quote_valid(quote, transcript):
+            return FeynmanFollowupOut(reteach=True), q_degraded, gap, "quote_not_verbatim"
+        if not missing.strip():
+            return FeynmanFollowupOut(reteach=True), q_degraded, gap, "missing_not_stated"
+        if not question.strip():
+            return FeynmanFollowupOut(reteach=True), q_degraded, gap, "question_empty"
+        f["followup"] = question
         f["followup_gap"] = gap.get("key")
-        return q_out, q_degraded, gap
+        return q_out, q_degraded, gap, ""
+
+    def _reteach_payload(self, db: Session, sess: models.Session, node: NodeDoc, reason: str) -> dict[str, Any]:
+        """S4 `reteach` 响应体：**退回讲解补讲**（不翻转 state 机、不动任何账本）。
+
+        **为什么不把 stage 翻回 `explain`**（本批明确决策，见 NOTES §66）：练习已通过时
+        "讲解→例题→练习"会**重新出题**并再次计入 practice 账目，等于用一次"敷衍回答"
+        污染练习记录——与 S4 的目的（把学生送回讲解）背道而驰。
+        改为：**原阶段不动**，随响应直接下发讲解原文 + `next_action="reteach"`，
+        学生当场就能看讲解、补讲后再交一次完整稿。
+        """
+        cache = sess.flow_json.get("lecture_cache") or {}
+        lecture = str(cache.get("lecture_md") or "") or (node.explanation.body or node.body_md or "")
+        reasons = {
+            "no_quotable_content": "你这次没有讲出可供引用的实质内容（例如只说「我不知道」），"
+                                   "没有可以追问的点",
+            "quote_not_verbatim": "这次追问没能逐字引用你刚说过的话（服务端引文校验未通过）",
+            "missing_not_stated": "这次追问没有说清「你这句话缺了什么」",
+            "model_says_reteach": "这次没有可追问的实质内容",
+            "question_empty": "这次追问生成失败（内容为空）",
+        }
+        why = reasons.get(reason, "这次没有可追问的实质内容")
+        return {
+            "verdict": "reteach",
+            "next_action": "reteach",
+            "reteach": {
+                "reason": reason,
+                "message_md": (
+                    f"📖 **退回讲解补讲**：{why}。\n\n"
+                    "请先回看下面的讲解稿（尤其是本次未达标的维度），"
+                    "然后**再交一次完整讲解**——我不会拿一条你答不出的问题来逼你想。"
+                ),
+                "lecture_md": lecture,
+                "missing_dimensions": [
+                    {"key": g.get("key"), "description": g.get("description")}
+                    for g in (sess.flow_json.get("feynman", {}).get("ledger", {}).get("gaps") or [])
+                    if not g.get("filled")
+                ],
+            },
+        }
+
+    @staticmethod
+    def _backed_socratic(node: NodeDoc) -> list[str]:
+        """S4：**只有 basis 逐字成立**的 socratic 主题才作为追问语料下发（模板套话不得兜底）。
+
+        复用 `content.answerability.check_basis`（引文纪律**同一实现**，不重写包含校验）。
+        """
+        from ..content import answerability
+
+        lecture = node.explanation.body or node.body_md or ""
+        ids = answerability.fact_id_set(node.taught_facts or [])
+        follows = list(node.feynman.socratic_followups or [])
+        bases = list(node.feynman.socratic_basis or [])
+        out: list[str] = []
+        for i, ask in enumerate(follows):
+            basis = bases[i] if i < len(bases) else None
+            ok, _ = answerability.check_basis(basis, lecture=lecture, fact_ids=ids,
+                                              label=f"socratic[{i + 1}]")
+            if ok:
+                out.append(ask)
+        return out
 
     @staticmethod
     def _card_of(node: NodeDoc, dim_scores) -> list[dict]:
@@ -1005,6 +1137,153 @@ class SessionService:
             events=events,
             extra_payload={"message": "尚未达标，还差：" + "、".join(missing), "missing": missing},
         )
+
+    # ------------------------------------------------------------------
+    # R35 S3：挑战题池（**完全不上算**）
+    #
+    # 红线（docs/09 R35 §10 红线③ / 工单 §3b）：挑战题的作答**不进费曼账本**、**不参与 mastery**、
+    # **不消耗**整体稿/补答额度、**不计入**掌握统计（`user_nodes`）——只记复盘（`attempts.kind="challenge"`）。
+    # 它**永不出现在默认流程**：本节的四个键只被 `challenge_*` 动作读写，默认 `_response` 不带它们。
+    # 单题三态（开始作答/取消/明确放弃）**都要能点、都要无后果**：`asked/answered` 只是展示计数，
+    # **不设额度、不计轮次、不做任何门禁**（任何一处拿它们做判断都算违规）。
+    # ------------------------------------------------------------------
+    def _act_challenge(self, db: Session, sess: models.Session, node: NodeDoc, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+        flow = sess.flow_json
+        ch = flow["challenge"]
+        if action == "challenge_start":
+            return self._challenge_start(db, sess, node, payload, ch)
+        if action == "challenge_begin":
+            if ch.get("current") is None:
+                raise SessionError("当前没有挑战题：请先点「挑战一下」生成一道", code="invalid_state")
+            ch["phase"] = "answering"          # 纯 UI 状态推进：无任何后果
+            db.flush()
+            return self._response(db, sess, events=[{"type": "challenge_begin"}],
+                                  extra_payload=self._challenge_payload(ch))
+        if action == "challenge_submit":
+            return self._challenge_submit(db, sess, node, payload, ch)
+        if action == "challenge_cancel":
+            had = ch.get("current") is not None
+            ch["current"] = None
+            ch["phase"] = "idle"
+            db.flush()
+            events = [{"type": "challenge_cancelled"}] if had else []
+            return self._response(
+                db, sess, events=events,
+                extra_payload={**self._challenge_payload(ch),
+                               "message": "已取消本次挑战（**什么都没记**，进度不受影响）。"
+                               if had else "当前没有进行中的挑战题。"})
+        # challenge_abandon：明确放弃（"我不会/我不感兴趣"）—— 只记复盘，同样无后果
+        had = ch.get("current") is not None
+        if had:
+            self._record_challenge(db, sess, node, ch["current"], "", "abandoned", 0.0,
+                                   meta={"reason": "学习者明确放弃（我不会/我不感兴趣）"})
+        ch["current"] = None
+        ch["phase"] = "idle"
+        db.flush()
+        events = [{"type": "challenge_abandoned"}] if had else []
+        return self._response(
+            db, sess, events=events,
+            extra_payload={**self._challenge_payload(ch),
+                           "message": "已记下你放弃这道挑战题——**不影响任何进度**（只进复盘）。"
+                           if had else "当前没有进行中的挑战题。"})
+
+    def _challenge_start(self, db: Session, sess: models.Session, node: NodeDoc, payload: dict[str, Any], ch: dict[str, Any]) -> dict[str, Any]:
+        """「挑战一下」：**单独调模型生成**一道挑战题（永不出现在默认流程）。"""
+        ctx = ChallengeIn(
+            session_id=sess.id,
+            node_id=node.id,
+            node_title=node.title,
+            level=node.level,
+            explanation_body=node.explanation.body,
+            worked_examples=[w.prompt for w in node.worked_examples],
+            core_concepts=list(node.core_concepts),
+            whitelist=list(node.core_concepts) + node.prereqs,
+            profile_style_block=self._style_block(db),
+            asked=int(ch.get("asked") or 0),
+        )
+        decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"))
+        out, degraded = self._call(db, self.gateway.challenge_exercise, ctx, strategy=decision.strategy)
+        ch["asked"] = int(ch.get("asked") or 0) + 1          # 仅计数展示：不限额、不作门禁
+        ch["current"] = {
+            "prompt_md": str(out.prompt_md or ""),
+            "answer_hint_md": str(out.answer_hint_md or ""),
+            "why_hard_md": str(out.why_hard_md or ""),
+            "difficulty": int(out.difficulty or 3),
+        }
+        ch["phase"] = "offered"
+        ch["last"] = None
+        db.flush()
+        return self._response(db, sess, events=[{"type": "challenge_offered", "degraded": degraded}],
+                              extra_payload=self._challenge_payload(ch, degraded=degraded))
+
+    def _challenge_submit(self, db: Session, sess: models.Session, node: NodeDoc, payload: dict[str, Any], ch: dict[str, Any]) -> dict[str, Any]:
+        """提交挑战题作答 → **单独判分**；结果只记复盘。"""
+        cur = ch.get("current")
+        if not cur:
+            raise SessionError("当前没有挑战题：请先点「挑战一下」生成一道", code="invalid_state")
+        text = str(payload.get("answer", payload.get("user_answer", ""))).strip()
+        if not text:
+            raise SessionError("挑战题作答不能为空（想放弃请点「明确放弃」——同样不影响任何进度）",
+                               code="validation_error")
+        ctx = ChallengeCheckIn(session_id=sess.id, node_id=node.id, node_title=node.title,
+                               prompt_md=str(cur.get("prompt_md") or ""), student_answer=text)
+        decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"))
+        out, degraded = self._call(db, self.gateway.challenge_check, ctx, strategy=decision.strategy)
+        ch["answered"] = int(ch.get("answered") or 0) + 1    # 仅计数展示：不计轮次、不作门禁
+        ch["phase"] = "graded"
+        ch["last"] = {
+            "correct": bool(out.correct),
+            "score": float(out.score or 0.0),
+            "feedback_md": str(out.feedback_md or ""),
+            "better_md": str(out.better_md or ""),
+        }
+        self._record_challenge(db, sess, node, cur, text,
+                               "correct" if out.correct else "wrong", float(out.score or 0.0))
+        db.flush()
+        return self._response(
+            db, sess,
+            events=[{"type": "challenge_graded", "correct": bool(out.correct)}],
+            extra_payload={**self._challenge_payload(ch, degraded=degraded),
+                           "verdict": "challenge",
+                           "message": CHALLENGE_NOTICE + "（本次结果**只进复盘**）"})
+
+    def _record_challenge(self, db: Session, sess: models.Session, node: NodeDoc, cur: dict[str, Any],
+                          answer: str, verdict: str, score: float, meta: dict[str, Any] | None = None) -> None:
+        """挑战题留痕 → **只进复盘**（`attempts.kind="challenge"`）。
+
+        **绝不**写 `user_nodes`、**绝不**动 `practice`/`feynman`/账本/额度/画像——
+        本方法是挑战题唯一的落库点，据此保证"作答后四项均不变"。
+        """
+        db.add(
+            models.Attempt(
+                session_id=sess.id,
+                node_id=node.id,
+                kind="challenge",
+                exercise_id=None,
+                user_input=answer,
+                verdict=verdict,
+                meta_json={"source": "challenge", "score": score,
+                           "prompt_md": str(cur.get("prompt_md") or ""), **(meta or {})},
+            )
+        )
+        db.flush()
+
+    @staticmethod
+    def _challenge_payload(ch: dict[str, Any], *, degraded: bool = False) -> dict[str, Any]:
+        """挑战题响应视图（**只随 challenge_* 动作下发**，默认流程不带它）。"""
+        return {
+            "challenge": {
+                "notice": CHALLENGE_NOTICE,
+                "phase": str(ch.get("phase") or "idle"),
+                "question": ch.get("current"),
+                "last": ch.get("last"),
+                "asked": int(ch.get("asked") or 0),
+                "answered": int(ch.get("answered") or 0),
+                "degraded": degraded,
+                # 显式契约位：前端据此**不渲染任何进度/分数影响**（R35 S3 红线）
+                "counts_nothing": True,
+            }
+        }
 
     # ------------------------------------------------------------------
     # 内部：练习题目

@@ -150,14 +150,19 @@ class Attempt(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     node_id: Mapped[str] = mapped_column(String(64), index=True)
-    kind: Mapped[str] = mapped_column(String(16), default="exercise")  # exercise|feynman
+    kind: Mapped[str] = mapped_column(String(16), default="exercise")  # exercise|feynman|challenge
     exercise_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     params_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     user_input: Mapped[str] = mapped_column(Text, default="")
-    verdict: Mapped[str] = mapped_column(String(16), default="")  # correct|wrong|score|pass|fail|deferred
+    verdict: Mapped[str] = mapped_column(String(16), default="")  # correct|wrong|score|pass|fail|deferred|abandoned
     error_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     meta_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+# 计入"进度统计"的 attempts 种类（R35 S3 红线）：**挑战题（kind="challenge"）永远不在其中**——
+# 它只进复盘。任何按 attempts 汇总的"今日完成/学习量"都必须用本常量过滤，不得直接 count 全表。
+PROGRESS_KINDS = ("exercise", "feynman")
 
 
 class Review(Base):
@@ -231,6 +236,7 @@ __all__ = [
     "UserNode",
     "Session",
     "Attempt",
+    "PROGRESS_KINDS",
     "Review",
     "AiLog",
     "RelearnLog",

@@ -301,6 +301,48 @@ export interface FeynmanGapUpdate {
   evidence_reason?: string;
 }
 
+// ---- R35 S3：挑战题池（**完全不上算**；永不出现在默认流程） ----
+export interface ChallengeQuestion {
+  prompt_md: string;
+  answer_hint_md: string;
+  why_hard_md: string;
+  difficulty: number;
+}
+
+export interface ChallengeLast {
+  correct: boolean;
+  score: number;
+  feedback_md: string;
+  better_md: string;
+}
+
+export interface ChallengeView {
+  /** 后端直出的**显式标注**（UI 必须展示）："挑战题：需要讲解之外的知识，答不出不影响任何进度" */
+  notice: string;
+  /** 单题三态：idle（无题）/ offered（已生成，可开始作答）/ answering / graded */
+  phase: "idle" | "offered" | "answering" | "graded";
+  question: ChallengeQuestion | null;
+  last: ChallengeLast | null;
+  asked: number;
+  answered: number;
+  degraded: boolean;
+  /** 契约位：恒为 true —— 挑战题不计入任何进度（前端不得据此渲染进度影响） */
+  counts_nothing: boolean;
+}
+
+// ---- R35 S4：追问必须逐字引用学生原话并指出"这句话缺了什么" ----
+export interface FollowupEvidence {
+  quote: string;
+  missing: string;
+}
+
+export interface ReteachPayload {
+  reason: string;
+  message_md: string;
+  lecture_md: string;
+  missing_dimensions: { key: string; description: string }[];
+}
+
 export interface ProfileData {
   user_id: string;
   preferred_explanation_depth: number;

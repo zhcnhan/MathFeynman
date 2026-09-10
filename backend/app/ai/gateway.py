@@ -17,6 +17,8 @@ from .calls import (
     AnswerQuestionIn,
     AnswerQuestionOut,
     CALL_ANSWER_QUESTION,
+    CALL_CHALLENGE_CHECK,
+    CALL_CHALLENGE_EXERCISE,
     CALL_CLASSIFY_ERROR,
     CALL_EXPLAIN_NODE,
     CALL_FEYNMAN_EVALUATE,
@@ -24,6 +26,10 @@ from .calls import (
     CALL_FEYNMAN_GAP_CHECK,
     CALL_GENERATE_VARIANT,
     CALL_HINT_ON_ERROR,
+    ChallengeCheckIn,
+    ChallengeCheckOut,
+    ChallengeIn,
+    ChallengeOut,
     CiteBasis,
     ClassifyErrorIn,
     ClassifyErrorOut,
@@ -209,6 +215,17 @@ def sentence_with(body: str, needle: str, *, min_chars: int = citations.MIN_QUOT
     return ""
 
 
+def student_quote(transcript: str, *, min_chars: int = citations.MIN_QUOTE_CHARS) -> str:
+    """R35 S4：从学生原话里取一段**可逐字引用**的片段（离线兜底与真模型同一把尺子）。
+
+    取不到（归一化后不足门槛）→ 返回空串 → 调用方走 `reteach`（禁止硬造发散题）。
+    实现委托 `service.feynman_ledger.student_quote`（**单一实现**，不在网关里重写一份）。
+    """
+    from ..service.feynman_ledger import student_quote as _sq
+
+    return _sq(transcript, min_chars=min_chars)
+
+
 def filter_asks(out: ExplainOut, *, sources: list[str], fact_ids: set[str] | None = None) -> ExplainOut:
     """只保留**有据**的 asked_to_confirm（S6）：引文须逐字出自讲解（≥6 字，citations 同一把尺子）；
     若声明了 `taught_facts`，引用的 fact_ids 必须落在其中。无据的那条**直接丢弃**（模板套话不再兜底）。
@@ -247,6 +264,9 @@ class AiGateway(Protocol):
     def feynman_gap_check(self, ctx: GapCheckIn, *, strategy: str | None = None) -> GapCheckOut: ...
     def classify_error(self, ctx: ClassifyErrorIn) -> ClassifyErrorOut: ...
     def generate_practice_variant(self, ctx: VariantIn) -> VariantOut: ...
+    # R35 S3：挑战题池（单独生成 / 单独判分；**完全不上算**）
+    def challenge_exercise(self, ctx: ChallengeIn, *, strategy: str | None = None) -> ChallengeOut: ...
+    def challenge_check(self, ctx: ChallengeCheckIn, *, strategy: str | None = None) -> ChallengeCheckOut: ...
 
 
 class OfflineGateway:
@@ -303,18 +323,27 @@ class OfflineGateway:
 
     def feynman_followup(self, ctx: FeynmanFollowupIn, *, strategy: str | None = None) -> FeynmanFollowupOut:
         del strategy
+        # R35 S4：追问必须**逐字引用学生刚说的话**；引用不出来 → reteach（禁止硬造发散题）。
+        quote = student_quote(ctx.student_transcript)
+        if not quote:
+            return FeynmanFollowupOut(reteach=True)
         # R27：优先按"最弱缺口"定向追问（一次一个），不再自由发问
         gap = (ctx.unmet_gaps or [None])[0]
         if gap:
             key, desc = str(gap.get("key", "")), str(gap.get("description", "")).strip()
             if desc:
                 return FeynmanFollowupOut(
-                    question_md=f"请针对这一点补讲：**{desc}**（维度：{key}）。用你自己的话讲清依据即可。"
+                    question_md=(f"你刚才说：「{quote}」——这句话里缺的是：**{desc}**（维度：{key}）。"
+                                 "请就这一点补讲，用你自己的话讲清依据即可。"),
+                    student_quote=quote,
+                    missing=desc,
                 )
-        if ctx.socratic_followups:
-            return FeynmanFollowupOut(question_md=ctx.socratic_followups[0])
+        # 无缺口描述：**不套用 socratic 模板兜底**（S4），只针对学生原话要求讲透
         return FeynmanFollowupOut(
-            question_md="请用更具体的例子再讲一遍：这个概念解决什么问题？关键一步的依据是什么？"
+            question_md=(f"你刚才说：「{quote}」——这句话还不足以让我确认你讲懂了这个概念。"
+                         "请把它展开讲透：关键一步的依据是什么？"),
+            student_quote=quote,
+            missing="讲解还停在结论层面，没有给出关键一步的依据",
         )
 
     def feynman_gap_check(self, ctx: GapCheckIn, *, strategy: str | None = None) -> GapCheckOut:
@@ -323,6 +352,37 @@ class OfflineGateway:
 
     def classify_error(self, ctx: ClassifyErrorIn) -> ClassifyErrorOut:
         return ClassifyErrorOut(error_type="unknown")
+
+    # ---- R35 S3：挑战题池（离线确定性示例；**完全不上算**） ----
+    def challenge_exercise(self, ctx: ChallengeIn, *, strategy: str | None = None) -> ChallengeOut:
+        del strategy
+        concept = str((ctx.core_concepts or ["本单元内容"])[0])
+        return ChallengeOut(
+            prompt_md=(
+                f"（离线模式 · 示例挑战题）本单元只讲了「{concept}」在讲解稿里出现的那些情形。"
+                f"请**不看讲解**想一想：把「{concept}」用到讲解里**没有出现过的**情形"
+                "（换一类对象、数量级变大/变小、或出现极端值）会怎样？说说你的判断与理由。"
+            ),
+            answer_hint_md="用几句话说明判断与理由即可（挑战题没有标准答案）。",
+            why_hard_md="它要求讲解之外的迁移/推广知识——所以答不出**完全不影响任何进度**。",
+            difficulty=3,
+        )
+
+    def challenge_check(self, ctx: ChallengeCheckIn, *, strategy: str | None = None) -> ChallengeCheckOut:
+        del strategy
+        text = (ctx.student_answer or "").strip()
+        if len(text) < 6:
+            return ChallengeCheckOut(
+                correct=False, score=0.0,
+                feedback_md="挑战题没有标准答案；但你这次几乎没写内容——说一句你的判断和理由就好。",
+                better_md="（离线模式不提供参考思路。）",
+            )
+        return ChallengeCheckOut(
+            correct=True, score=0.6,
+            feedback_md="已记录（离线启发式：只看你有没有给出实质判断与理由，不判对错）。"
+                        "挑战题**不计入任何进度**，只进复盘。",
+            better_md="（离线模式不提供参考思路；接入真模型后会给出更具体的点评。）",
+        )
 
 
 # --------------------------------------------------------------------------
@@ -429,7 +489,7 @@ class OpenAICompatibleGateway:
         out = self._p.chat_json(CALL_FEYNMAN_EVALUATE, [{"role": "system", "content": system}, {"role": "user", "content": user}], strategy=strategy)
         return FeynmanEvaluateOut(**out.parsed)
 
-    # ---- 调用点 7：Socratic 追问（R27：定向未达标缺口） ----
+    # ---- 调用点 7：Socratic 追问（R27 定向缺口 + R35 S4 引文纪律） ----
     def feynman_followup(self, ctx: FeynmanFollowupIn, *, strategy: str | None = None) -> FeynmanFollowupOut:
         system = context_block(
             level="",
@@ -440,11 +500,21 @@ class OpenAICompatibleGateway:
             extra_bans=[
                 "追问必须**定向到 unmet_gaps 里最弱的那一个缺口**（一次只问一个问题、只问这一点），"
                 "不要泛泛自由发问，也不要给出答案。",
+                "**R35 S4 追问纪律（硬要求）**："
+                "① `student_quote` 必须**逐字**取自 student_transcript（照抄一段 ≥6 字的原话，"
+                "不得改写、不得拼接；服务端做逐字包含校验，不通过则整条追问作废）；"
+                "② `missing` 必须说清**这句话缺了什么**（学生视角，具体到这一点）；"
+                "③ `question_md` 只针对该缺口，并且要**引用学生原话**再提问。"
+                "④ 若学生的话里**没有可引用的实质内容**（例如只写「我不知道」「不会」），"
+                "**禁止硬造发散题**：把 `reteach` 置 true（`student_quote`/`missing`/`question_md` 留空）。",
+                "禁止任何指代不明的模板套话作为兜底（如「这个概念还适用于什么情况」"
+                "「它与你学过的内容有什么联系」）——无从判断的问题一律不出。",
             ],
         )
         user = task_json(
-            task="生成一条定向追问（question_md，可用 Markdown/LaTeX）：直接要求学生补讲 unmet_gaps"
-            "第一项的缺口（description），若不想照抄可换成同义问法，但**不得换到别的知识点**。",
+            task="生成一条定向追问（question_md，可用 Markdown/LaTeX）：先**逐字引用**学生说过的那句话"
+            "（student_quote），指出这句话缺了什么（missing），再要求学生就这一点补讲；"
+            "不得换到别的知识点；学生无可引用内容时置 reteach=true。",
             unmet_gaps=ctx.unmet_gaps,
             socratic_topics=ctx.socratic_followups,
             previous_scores=ctx.previous_scores,
@@ -479,6 +549,66 @@ class OpenAICompatibleGateway:
         )
         out = self._p.chat_json(CALL_FEYNMAN_GAP_CHECK, [{"role": "system", "content": system}, {"role": "user", "content": user}], strategy=strategy)
         return GapCheckOut(**out.parsed)
+
+    # ---- 调用点 14（R35 S3）：挑战题单独生成（**允许超出讲解**——与核心题池刻意相反） ----
+    def challenge_exercise(self, ctx: ChallengeIn, *, strategy: str | None = None) -> ChallengeOut:
+        system = context_block(
+            level=ctx.level,
+            explanation_body=ctx.explanation_body,
+            worked_examples=list(ctx.worked_examples or []),
+            whitelist=list(ctx.whitelist or []),
+            core_concepts=list(ctx.core_concepts or []),
+            style=ctx.profile_style_block,
+            extra_bans=[
+                "⚠️ 本调用点是**挑战题池**（R35 S3）：上面那条『禁止引入白名单之外的新名词/公式/方法』"
+                "**对本题不适用**——挑战题**就是要**超出讲解（更广的背景、迁移推广、极端情形、"
+                "与其它知识的联系）。这不是越界，是本池的定义。",
+                "但必须：只出**一道**题；可被一个没读过本讲解的人凭常识或外部知识**尝试**作答"
+                "（不许出无解、需要未公开数据、或依赖本节点私有编号的题）；"
+                "不得照抄讲解稿里的原题；用 why_hard_md 说明它为什么超出讲解。",
+            ],
+        )
+        user = task_json(
+            task="为这个节点出一道**挑战题**（prompt_md）：需要讲解之外的知识，答不出也不影响学习进度。"
+                 "给出 answer_hint_md（作答形式提示）与 why_hard_md（为什么它超出讲解，学生视角，不要泄答案本身）。",
+            node_title=ctx.node_title,
+            core_concepts=list(ctx.core_concepts or []),
+            asked_before=ctx.asked,
+        )
+        out = self._p.chat_json(
+            CALL_CHALLENGE_EXERCISE,
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            strategy=strategy,
+        )
+        return ChallengeOut(**out.parsed)
+
+    # ---- 调用点 15（R35 S3）：挑战题判分（只记复盘，不写任何账本） ----
+    def challenge_check(self, ctx: ChallengeCheckIn, *, strategy: str | None = None) -> ChallengeCheckOut:
+        system = context_block(
+            level="",
+            explanation_body="",
+            worked_examples=[],
+            whitelist=[],
+            core_concepts=[],
+            extra_bans=[
+                "这是**挑战题判分**：挑战题允许超出讲解，学生用课外知识作答是**正确行为**，不得因此扣分。"
+                "只判「有没有给出实质判断 + 理由是否站得住」；没有标准答案时，讲清楚即可给分。",
+                "feedback_md 必须对学习者说人话（鼓励 + 指出差在哪）；better_md 给参考思路"
+                "（挑战题不上算，教比考重要）。",
+            ],
+        )
+        user = task_json(
+            task="判定这道挑战题的作答（correct/score 0..1），给出 feedback_md 与 better_md。",
+            prompt_md=ctx.prompt_md,
+            student_answer=ctx.student_answer,
+            node_title=ctx.node_title,
+        )
+        out = self._p.chat_json(
+            CALL_CHALLENGE_CHECK,
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            strategy=strategy,
+        )
+        return ChallengeCheckOut(**out.parsed)
 
     # ---- 调用点 8：错误分类 ----
     def classify_error(self, ctx: ClassifyErrorIn) -> ClassifyErrorOut:
@@ -531,4 +661,7 @@ __all__ = [
     "MIN_FEYNMAN_CHARS",
     "offline_feynman_scores",
     "offline_gap_check",
+    "filter_asks",
+    "sentence_with",
+    "student_quote",
 ]

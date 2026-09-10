@@ -330,3 +330,53 @@ def test_p4_rejects_harder_without_new_facts():
                   taught_facts=[])
     probs = check_progression(doc, [pre])
     assert any("凭空加难" in p for p in probs), probs
+
+
+# ---------- §18 提升项：模板依据的**引文精度**（引文得准，不只是"能过校验"） ----------
+
+def test_opening_line_quote_is_warned_but_not_rejected():
+    """引文落在"开场白/过渡句" → **告警**（finding），**不**拒绝入库。
+
+    开场白同样逐字出自讲解，所以引文校验抓不住"引用得不准"；机械规则也分不干净
+    "过渡句"与"以『我们』开头的规则句"，故按架构侧口径只告警。
+    """
+    from app.content.verify import opening_quote_warning
+
+    assert opening_quote_warning("同学们，今天我们学习乘法。")
+    assert opening_quote_warning("**目标**：把方程变成 x = 数 的样子，那个数就是解")
+    assert opening_quote_warning("我们来总结一下：百分数就是分母为 100 的分数")
+    assert opening_quote_warning("移项要变号") == ""            # 规则句：不告警
+    assert opening_quote_warning("特别地，当 b 是 a 的倍数时，最小公倍数是 b。") == ""
+
+    tpl = _tpl("计算 {a} + {b}。", answer_expr="a + b",
+               semantics={"expect": "b + a", "domain": {"nonneg": True, "integer": True}})
+    tpl.basis = {"quote": "同学们，今天我们学习加法。"}
+    doc, ex = _doc("primary.s90", tpl)
+    doc.explanation.body = "同学们，今天我们学习加法。加法就是把两个数合起来。"
+    v = check_template("primary.s90", doc, ex, seeds=2)
+    assert v.ok is True, v.problems                      # 告警不拒绝入库
+    assert any("开场白" in f for f in v.findings), v.findings
+
+
+def test_library_template_basis_quotes_are_rule_sentences():
+    """全库现状锁定（R35b §18）：每条模板 `basis.quote` **逐字成立**且**不落在开场白**。
+
+    这是"引文得准"的机器可判部分（是否真支撑该模板仍由人读——见 NOTES §66 对照表）。
+    """
+    from app.content import citations
+    from app.content.loader import load_library
+    from app.content.verify import opening_quote_warning
+
+    checked = 0
+    for loaded in load_library().nodes:
+        doc = loaded.doc
+        lecture = doc.explanation.body or doc.body_md or ""
+        for ex in doc.exercises:
+            if ex.template is None:
+                continue
+            quote = str(getattr(getattr(ex.template, "basis", None), "quote", "") or "")
+            assert quote, f"{doc.id}/{ex.id} 缺模板级依据"
+            assert citations.is_valid(quote, lecture), f"{doc.id}/{ex.id} 引文不逐字出自讲解：{quote!r}"
+            assert not opening_quote_warning(quote), f"{doc.id}/{ex.id} 引文落在开场白/过渡句：{quote!r}"
+            checked += 1
+    assert checked >= 10, f"应至少覆盖人工锚点的模板题，实际 {checked}"

@@ -2,7 +2,7 @@
 // R9: AI 等待可感知 —— 首次讲解/提问/提示/费曼评分/重新生成期间显示计时横幅。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, ExerciseView, FeynmanGapUpdate, FeynmanLedger, NodeMeta, StepResponse, postStepStream } from "../api";
+import { api, ChallengeView, ExerciseView, FeynmanGapUpdate, FeynmanLedger, NodeMeta, ReteachPayload, StepResponse, postStepStream } from "../api";
 import ExercisePanel, { Feedback } from "../components/ExercisePanel";
 import { dimLabel } from "../components/feynmanLabels";
 import MdMath from "../components/MdMath";
@@ -11,7 +11,7 @@ import { ModelMode, tierLabel } from "../components/ModelMode";
 import TypeMd from "../components/TypeMd";
 
 /** 可能触发 LLM 的动作（等待横幅适用；其余动作仍禁用提交但通常瞬时） */
-const AI_ACTIONS = new Set(["ask_question", "regen_explain", "request_hint", "feynman_submit", "feynman_answer"]);
+const AI_ACTIONS = new Set(["ask_question", "regen_explain", "request_hint", "feynman_submit", "feynman_answer", "challenge_start", "challenge_submit"]);
 
 const EVENT_TEXT: Record<string, string> = {
   exercise_correct: "✓ 答对了！继续",
@@ -30,6 +30,14 @@ const EVENT_TEXT: Record<string, string> = {
   feynman_relearn: "费曼额度用尽仍未通过 → 回炉重学",
   feynman_edge_recheck: "⚖️ 本次接近及格线，已用更认真的档位复核一遍（取较高分）",
   feynman_answer_too_short: "补答太短，请具体回答追问里要你补讲的那一点",
+  // R35 S4：无可引用内容 → 退回讲解补讲（不发无法回答的追问）
+  feynman_reteach: "📖 这次没有可追问的实质内容 → 已退回讲解补讲（不扣分、不耗额度）",
+  // R35 S3：挑战题池（完全不上算）
+  challenge_offered: "🎲 挑战题已生成（需要讲解之外的知识；答不出不影响任何进度）",
+  challenge_begin: "开始作答挑战题（不影响任何进度）",
+  challenge_graded: "挑战题已判分（只记复盘，不影响任何进度）",
+  challenge_cancelled: "已取消本次挑战（什么都没记）",
+  challenge_abandoned: "已放弃这道挑战题（只记复盘）",
   node_mastered: "🏆 节点已掌握，进入复习队列",
   hint_given: "💡 已给出提示",
   notation_error: "输入无法解析——请按提示改法（不计错）",
@@ -51,6 +59,10 @@ export default function SessionPage() {
   const [modelMode, setModelMode] = useState<ModelMode>("smart"); // R12
   const [canReissue, setCanReissue] = useState(false); // R25：内容纠错替换成功后允许一键换题
   const [notice, setNotice] = useState<string | null>(null);
+  // R35 S3：挑战题池（**与默认流程完全分离**：只在用户点「挑战一下」后才出现）
+  const [challenge, setChallenge] = useState<ChallengeView | null>(null);
+  const [challengeAnswer, setChallengeAnswer] = useState("");
+  const [reteach, setReteach] = useState<ReteachPayload | null>(null); // R35 S4：退回讲解补讲
   const didInit = useRef(false);
   const didHydrateDraft = useRef(false); // R25：每会话只恢复一次草稿
 
@@ -244,6 +256,11 @@ export default function SessionPage() {
       setResp(r);
       if (action === "reissue_after_regen") setCanReissue(false);
       setEvents((prev) => [...prev.slice(-6), ...r.events]);
+      // R35 S3：挑战题视图**只随 challenge_* 动作下发**（默认流程 payload 里没有它）
+      if (r.payload?.challenge) setChallenge(r.payload.challenge as ChallengeView);
+      // R35 S4：reteach（退回讲解补讲）；换阶段/新提交时清掉
+      if (r.payload?.reteach) setReteach(r.payload.reteach as ReteachPayload);
+      else if (action === "feynman_submit" || action === "feynman_answer") setReteach(null);
       // 阶段推进时清空交互区；对应草稿一并清除
       if (action !== "feynman_submit" && action !== "feynman_answer") {
         setQuestion("");
@@ -365,7 +382,48 @@ export default function SessionPage() {
           )}
           {step === "done" && <DoneView payload={payload} onHome={() => nav("/")} onHistory={() => nav("/feynman-history")} />}
 
+          {/* R35 S4：追问无据/学生无可引用内容 → 退回讲解补讲（不发无法回答的追问） */}
+          {reteach && (
+            <div className="card reteach">
+              <h2>返回讲解补讲</h2>
+              <div className="banner warn"><TypeMd text={reteach.message_md} /></div>
+              {reteach.missing_dimensions?.length > 0 && (
+                <ul className="objectives">
+                  {reteach.missing_dimensions.map((g) => (
+                    <li key={g.key}>还差：<strong>{dimLabel(g.key)}</strong>——<MdMath text={g.description} /></li>
+                  ))}
+                </ul>
+              )}
+              {reteach.lecture_md && <div className="lecture"><TypeMd text={reteach.lecture_md} /></div>}
+            </div>
+          )}
+
+          {/* R35 S3：挑战题池（用户主动触发；**永不出现在默认流程**） */}
+          {challenge?.question && (
+            <ChallengePanel
+              view={challenge}
+              answer={challengeAnswer}
+              setAnswer={setChallengeAnswer}
+              submitting={submitting}
+              onBegin={() => act("challenge_begin")}
+              onSubmit={() => act("challenge_submit", { answer: challengeAnswer })}
+              onCancel={() => { setChallengeAnswer(""); void act("challenge_cancel"); }}
+              onAbandon={() => { setChallengeAnswer(""); void act("challenge_abandon"); }}
+            />
+          )}
+
           <div className="action-row">
+            {/* R35 S3：「挑战一下」——用户主动触发、单独调模型生成；默认流程里没有它 */}
+            {challenge?.question ? (
+              <button className="ghost" disabled={submitting} onClick={() => { setChallengeAnswer(""); void act("challenge_cancel"); }}>
+                关闭挑战题
+              </button>
+            ) : (
+              <button className="ghost" disabled={submitting} onClick={() => void act("challenge_start")}
+                title="单独生成一道需要讲解之外知识的题；答不出不影响任何进度">
+                {submitting ? "生成中…" : "🎲 挑战一下"}
+              </button>
+            )}
             {step === "practice" && canReissue && (
               <button className="ghost" disabled={submitting} onClick={async () => { await act("reissue_after_regen"); }}>
                 {submitting ? "♻️ 换题中…" : "🔄 换新题（已纠错替换）"}
@@ -583,6 +641,13 @@ function FeynmanView({ payload, submitting, text, setText, onSubmit, onAnswerFol
       {hasFollowup && (
         <div className="followup">
           <h3>定向追问（就这一个缺口，答完即可看到涨分）</h3>
+          {/* R35 S4：追问必须**逐字引用学生刚说的话**，并指出"这句话缺了什么" */}
+          {payload?.followup_quote ? (
+            <div className="quote">你刚才说：「{payload.followup_quote as string}」</div>
+          ) : null}
+          {payload?.followup_missing ? (
+            <div className="gap">这句话缺的是：<MdMath text={payload.followup_missing as string} /></div>
+          ) : null}
           <TypeMd text={followup!} />
           {payload?.followup_gap?.description && (
             <div className="gap">缺口：<MdMath text={payload.followup_gap.description} /></div>
@@ -620,6 +685,55 @@ function FeynmanView({ payload, submitting, text, setText, onSubmit, onAnswerFol
           口述需 ≥20 字。补答只涨账本可见分；**通过必须交完整稿**（≥{Math.round(threshold * 100)} 分）。
         </span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * R35 S3：挑战题面板（**完全不上算**）。
+ *
+ * - 单题三态**都要能点、都要无后果**：开始作答 / 取消 / 明确放弃；
+ * - 顶部**显式标注**（后端直出 `notice`）："挑战题：需要讲解之外的知识，答不出不影响任何进度"；
+ * - 不显示任何进度/额度/分数影响（`counts_nothing`），判分结果只作复盘展示。
+ */
+function ChallengePanel({ view, answer, setAnswer, submitting, onBegin, onSubmit, onCancel, onAbandon }: any) {
+  const q = view?.question;
+  const last = view?.last;
+  const answering = view?.phase === "answering" || view?.phase === "graded";
+  return (
+    <div className="card challenge">
+      <h2>🎲 挑战题</h2>
+      <div className="banner warn">{view?.notice}</div>
+      {q?.why_hard_md ? <div className="comment"><MdMath text={q.why_hard_md} /></div> : null}
+      <div className="prompt"><MdMath text={q?.prompt_md ?? ""} /></div>
+      {q?.answer_hint_md ? <div className="hint">作答提示：{q.answer_hint_md}</div> : null}
+
+      {!answering ? (
+        <div className="input-row">
+          <button className="primary" disabled={submitting} onClick={onBegin}>开始作答</button>
+          <button className="ghost" disabled={submitting} onClick={onCancel}>取消（放弃本次，无任何后果）</button>
+          <button className="ghost" disabled={submitting} onClick={onAbandon}>明确放弃（我不会/我不感兴趣）</button>
+        </div>
+      ) : (
+        <>
+          <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={4}
+            placeholder="说说你的判断与理由（挑战题没有标准答案；答不出也不影响进度）…" />
+          <div className="input-row">
+            <button className="primary" disabled={submitting || !answer.trim()}
+              onClick={onSubmit}>{submitting ? "判分中…" : "提交挑战题作答"}</button>
+            <button className="ghost" disabled={submitting} onClick={onCancel}>取消</button>
+            <button className="ghost" disabled={submitting} onClick={onAbandon}>明确放弃</button>
+          </div>
+        </>
+      )}
+
+      {last && (
+        <div className={`banner ${last.correct ? "ok" : "warn"}`}>
+          <div><TypeMd text={last.feedback_md} /></div>
+          {last.better_md ? <div className="comment">参考思路：<TypeMd text={last.better_md} /></div> : null}
+          <div className="hint">本次记录只进复盘，不计入掌握/费曼账本/任何额度。</div>
+        </div>
+      )}
     </div>
   );
 }
