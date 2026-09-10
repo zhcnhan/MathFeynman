@@ -669,3 +669,57 @@ R27 前落库）正是该结构——用户验收 R27 新流程的**第一个动
 
 **文档同步**：本裁决；docs/13 §3 工单已同步；实现记录由 Euler 追加 NOTES §48+。
 
+## R31 · R30 验收裁决（F6 边缘带复评 + F4/F5/F2 + R29 引申 · 2026-09-10）
+
+**架构侧独立复跑（不采信汇报）**：
+- pytest **325 passed + 2 skipped**（327 collected，exit 0；架构侧以标记计数 + exit 0 独立确认，
+  与 Euler junit 计数一致；基线 308/306+2 → +19 = F6 7 + F5 2 + flow 自愈 10）；
+- `npx tsc --noEmit` exit 0；`npm run build` ✓ 1.03s；content validate **ok 26/54**；
+  audit 五学段 **ALL_OK=True**（环/反向前置/boss 未匹配/锚点缺失全 0）；
+- git 链 4f7990b→23fc603→49e5149→f66af5f→f8c856d→d110bd9 与汇报吻合；工作树干净；
+- **F2 落实核验**：`git ls-files --eol backend/app/service/session.py` = `i/lf w/lf attr/text eol=lf`；
+  `.gitattributes` 无 BOM、LF、UTF-8，三条规则（`*.py`/`*.ts`/`*.tsx text eol=lf`）就位，docs 未被牵连；
+- **R29 热修未回退**：`test_r27_legacy_session.py` 仍全绿（行为被 `_ensure_flow_shape` 超集覆盖）。
+
+**代码审查确认**（逐条对 R30 规格）：
+1. F6 判定与比较都在**净化后的本轮评分卡**上做（`clean_card` / `card_combined`），
+   入账用 `merge_clean_card` **避免二次 ×0.5 降级**——这是本轮最容易被写错的一处，实现正确；
+2. 触发三条件齐备；复评复用**同一 ctx**（同稿/同 rubric/`previously_acknowledged`）；
+3. 复评抛 `AiCallError` → 保留首次结果、不 500、事件 `second=None`；
+4. 仅在 `second > first` 时采用，`strategy`/`strategy_reason` 记**实际采用**那次；
+   `f["last_strategy"]` 同步为采用值；`meta.recheck` 四字段完整；
+5. `edge_think` 仅在**采用 FAST** 时才置（已 think 则不再标）——比要求更严谨；
+6. F5 `MIN_EVIDENCE_CHARS=6` 同时约束"过短"与"不在本轮文本"，且给出区分原因的中文说明；
+7. F4 前后端同措辞（`session.py:907` / `SessionPage.tsx:26`），docs/05/06/07 同步；
+8. `_ensure_flow_shape` 为幂等单一入口（整块缺失→默认；缺键→补；错类型→**单键**回退；
+   ledger 复用 `normalize_ledger`），调用点 4 处；`_backfill_feynman_keys` 已删但行为被覆盖。
+
+**结论：R30 全部验收通过、放行。**
+
+### 疑点裁决（Euler NOTES §50 五条）
+
+1. **边缘带判定取"本轮评分卡加权分"而非"是否会因此不过线"** → ✅ 接受现状（判定口径与入账口径
+   一致，更易审计）。**列为可选微优化 F6-b**：加 `first_combined < threshold` 前置条件
+   （一行），即可省掉"本轮本来就会过"时的复评开销；不阻塞，随下个**功能批**做（本批之后的立心批
+   不改逻辑，故不塞进去）。
+2. **`recheck.used=true, second_combined=null`（复评失败）语义** → ✅ 采纳现状：
+   `used` = "**已尝试**"（留成本痕迹），`taken` 表示"**被采用**"。docs/06 §2.0 已按此写明，保持。
+3. **带内复评仍不过 → 仍置 `edge_think`（相邻两轮各一次 think）** → ✅ 接受：单轮 ≤1 次额外
+   heavy 调用的纪律未破；最坏成本已在 meta 可见。
+4. **practice 整块缺失只补默认 + 中文 409，不做 stage 一致性回退** → ✅ 判断正确：
+   属状态机语义变更，超出本批授权；已留档，需要时另裁。
+5. **`_ensure_flow_shape` 在 `_response` 每帧调用** → ✅ 接受（幂等、实测无性能影响）；
+   flow 结构若显著变大再加短路（留档）。
+
+### 新增留档（架构侧观察）
+
+- **F5 权衡**：最短 6 字会"错杀"短但合法的引文（如只引"移项"二字）→ 这是刻意的：
+  evidence 应为**短语级依据**而非单词；若真机反馈误伤过多，再降到 4 字（常量已集中，改一格）。
+- **F6 未跑真模型** → ✅ 可接受：本批需"分数精确落带"，只有桩能稳定覆盖；
+  抖动证据已由 R28 F6 留档。用户浏览器走查仍是最终验收（见 docs/13 §3）。
+
+**下一批（用户已定）**：立心清理（文档为主 + 代码内文案/注释可改，**逻辑不动**）+ 工作目录改名
+`MathFeynman` → `YanHui`；规格见 docs/15 §6/§7。
+
+**文档同步**：本裁决；docs/13 §3 已随批更新。
+
