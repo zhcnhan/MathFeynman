@@ -1304,7 +1304,8 @@ def _section_level_basis(healthy: list[dict], picked: list[dict], unit) -> dict:
 
     两个来源（都不编造）：
     ① ``bookmap`` 目录级结构给出的 ``entry.sections``（章 → 节）；
-    ② 条目正文里**行首编号节名**（``1.1 太阳系的组成``）——教材正文常自带这种节标题。
+    ② 条目正文里**行首节名**——**R42 B4** 数字编号（``1.1 太阳系的组成``）＋
+       **R46 C** 中文序数（``第一节 恒星`` / ``第二讲 …``）；教材正文常自带这种节标题。
     只有节名与单元标题/概念标签**确定性匹配**（归一化相等或互相包含）时才给；
     否则返回空（宁缺勿造，与 R36 D2 / R37 S5 口径一致）。
     """
@@ -1340,11 +1341,18 @@ def _section_level_basis(healthy: list[dict], picked: list[dict], unit) -> dict:
     return best
 
 
-_HEADING_LINE = re.compile(r"^\s*(\d{1,2}(?:\.\d{1,2}){1,2})\s+(\S[^\n]{0,60})$")
+_ZH_ORD = "一二三四五六七八九十百"
+# 行首节标题（**R42 B4** 数字编号 + **R46 C** 中文序数）：`1.1 太阳系的组成` / `第一节 恒星` / `第二讲 …`
+# 中文序数只认 `第<一~九十九>[节讲课篇]` 这种**明确节标记**，不做任何模糊匹配（宁缺勿造）。
+_HEADING_LINE = re.compile(
+    rf"^\s*(\d{{1,2}}(?:\.\d{{1,2}}){{1,2}}|第[{_ZH_ORD}]{{1,3}}[节讲课篇])\s+(\S[^\n]{{0,60}})$")
+# 用于"切到下一节前"的行首标题探测（与上面同一套形态）
+_NEXT_HEADING = re.compile(
+    rf"(?m)^\s*(?:\d{{1,2}}(?:\.\d{{1,2}}){{1,2}}|第[{_ZH_ORD}]{{1,3}}[节讲课篇])\s+\S")
 
 
 def _body_section_headings(text: str) -> list[str]:
-    """条目正文里**行首编号节标题**（如 ``1.1 太阳系的组成``）——不确定则返回空表。"""
+    """条目正文里**行首节标题**（``1.1 太阳系的组成`` / ``第一节 恒星``）——不确定则返回空表。"""
     out: list[str] = []
     for line in str(text or "").splitlines():
         m = _HEADING_LINE.match(line.strip())
@@ -1374,21 +1382,31 @@ def _first_quote_sentence(text: str, section: str, *, min_chars: int = 20) -> st
 def _section_text(entry_text: str, section: str) -> str:
     """从条目正文里切出**某一节**的正文（节标题行 → 下一个节标题行之前）。
 
-    节标题形态：``1.1 太阳系的组成`` / ``1.1.2 …``（目录里的编号节名）。
+    节标题形态：``1.1 太阳系的组成`` / ``1.1.2 …``（目录里的编号节名）＋
+    **R46 C**：``第一节 恒星`` / ``第二讲 …``（中文序数节名）。
+
+    定位**空白弹性**（全角空格/多空格/制表符都认）：先按"行首标题"定位，落不到再退回子串查找。
     切不出来（该节名不在正文里）→ 返回空串（调用方不编造引文）。
     """
     body = str(entry_text or "")
     sec = str(section or "").strip()
     if not body or not sec:
         return ""
-    idx = body.find(sec)
-    if idx < 0:
-        return ""
-    start = idx + len(sec)
+    start = -1
+    parts = re.split(r"\s+", sec, maxsplit=1)
+    if len(parts) == 2:  # 标题＝"前缀 + 标题文字" → 行首匹配（中间空白弹性）
+        m = re.search(rf"(?m)^\s*{re.escape(parts[0])}\s+{re.escape(parts[1])}\s*$", body)
+        if m:
+            start = m.end()
+    if start < 0:
+        idx = body.find(sec)
+        if idx < 0:
+            return ""
+        start = idx + len(sec)
     rest = body[start:]
-    m = re.search(r"(?m)^\s*\d{1,2}(?:\.\d{1,2}){1,2}\s+\S", rest)
-    if m and m.start() > 0:
-        rest = rest[: m.start()]
+    m2 = _NEXT_HEADING.search(rest)
+    if m2 and m2.start() > 0:
+        rest = rest[: m2.start()]
     return rest.strip()
 
 
