@@ -102,6 +102,59 @@ def feynman_round_should_think(current_round: int) -> bool:
     return current_round >= 2
 
 
+# ---------------------------------------------------------------------------
+# R42 C1：**降档必须显性**（architecture 裁决 docs/09 R41 §3-③：逐次记账）
+# ---------------------------------------------------------------------------
+# "降档"＝**本来该走重推理档（think），实际跑了轻档（fast）**。三种成因：
+#   ① 用户单次覆盖 `payload.think_deep=false`（override=false）；
+#   ② 用户模型模式 = light（关掉触发，但保住 college/ai 底线——那种**不算**降档）；
+#   ③ 命中升级触发的场景（如"轮次≥2 应变 think"）在 smart 下**未**升级。
+# 判据（可判定、不猜）：`base == think`（学段/内容要求 think）**且**最终 decision == fast。
+# 这是"没按用户以为的档位跑"，属铁则正题；降档是异常路径，量级可控。
+def downgrade_of(decision: TierDecision, *, level: str | None = None,
+                 content_think: bool | None = None,
+                 model_mode: str = "smart", override: bool | None = None) -> dict | None:
+    """返回**降档说明**（未降档 → ``None``）：``{base, strategy, reason, reason_zh}``。"""
+    base = base_strategy(level=level, content_think=content_think)
+    if base != THINK or decision.strategy != FAST:
+        return None
+    if override is False:
+        zh = "本节点按学段/内容本应走**重推理档（think）**，但本次被**单次覆盖**为轻档（think_deep=false）"
+    elif model_mode == "light":
+        zh = ("本节点按学段/内容本应走**重推理档（think）**，但当前模型模式为「⚡ 快」，"
+              "本次降为轻档（fast）")
+    else:
+        zh = (f"本节点按学段/内容本应走**重推理档（think）**，本次按策略解析降为轻档（fast）"
+              f"（解析依据：{decision.reason}）")
+    return {"base": base, "strategy": decision.strategy, "reason": decision.reason,
+            "reason_zh": zh, "model_mode": model_mode,
+            "override": None if override is None else bool(override)}
+
+
+def note_downgrade(decision: TierDecision, *, subject_id: str = "", unit_id: str = "",
+                   call_name: str = "", level: str | None = None,
+                   content_think: bool | None = None, model_mode: str = "smart",
+                   override: bool | None = None) -> dict | None:
+    """**R42 C1**：若本次是降档 → 记一条账本（``CAT_MODEL_CALL``，中文原因）；返回降档说明。"""
+    info = downgrade_of(decision, level=level, content_think=content_think,
+                        model_mode=model_mode, override=override)
+    if info is None:
+        return None
+    try:
+        from ..service import ledger
+
+        ledger.note(
+            ledger.CAT_MODEL_CALL, f"模型档位（{call_name or decision.strategy}）",
+            info["reason_zh"] + "——如需重推理，可在设置里切到「🧠 深度」或单次勾选深度思考",
+            impact=ledger.SCOPE_THIS_RUN, remedy=ledger.REMEDY_YES,
+            subject_id=subject_id, unit_id=unit_id,
+            detail={"kind": "tier_downgrade", "call_name": call_name, **info},
+        )
+    except Exception:  # 记账失败不影响调用
+        pass
+    return info
+
+
 __all__ = [
     "TierDecision",
     "FAST",
@@ -112,5 +165,7 @@ __all__ = [
     "feynman_recheck_band",
     "feynman_round_should_think",
     "is_think_level",
+    "downgrade_of",
+    "note_downgrade",
     "THINK_LEVELS",
 ]

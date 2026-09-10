@@ -45,7 +45,6 @@ def _view(db, call_name: str) -> dict:
         "label": spec.label,
         "purpose": spec.purpose,
         "notes": spec.notes,
-        "editable_fields": ["system"] + (["user"] if spec.user else []),
         # system
         "system": cur_system,
         "default_system": default_system,
@@ -54,17 +53,23 @@ def _view(db, call_name: str) -> dict:
         "default_raw_template": spec.system,
         "system_is_default": not sys_custom,
         "system_diff": reg.diff_lines(default_system, cur_system),
-        # user（本批界面只读对照）
+        # user（**R42 C2：开放编辑**——raw 原文可改，diff/恢复都覆盖 user）
         "user": cur_user,
         "default_user": default_user,
+        "raw_user_template": (row.user_text if usr_custom else spec.user),
+        "default_raw_user_template": spec.user,
         "user_is_default": not usr_custom,
         "user_diff": reg.diff_lines(default_user, cur_user),
+        "editable_fields": ["system"] + (["user"] if spec.user else []),
         # 兼容/汇总字段：整条是否全默认 = 界面"是否默认"列
         "is_default": (not sys_custom) and (not usr_custom),
         "updated_at": _iso(row.updated_at) if row is not None else "",
         "required_placeholders": list(spec.system_required_placeholders),
         "required_tokens": list(spec.system_required_tokens),
         "placeholders": spec.placeholders,
+        # R42 C2：user 的硬约束（界面按字段分别提示"删了会拒存"）
+        "user_required_placeholders": list(spec.user_required_placeholders),
+        "user_required_tokens": list(spec.user_required_tokens),
     }
 
 

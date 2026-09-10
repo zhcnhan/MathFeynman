@@ -476,7 +476,7 @@ class SessionService:
         )
         # R12：策略档 → 触发 b（超纲 out_of_scope 时自动 think 重生成一次）
         override = payload.get("think_deep")
-        decision = self._resolve_tier(db, node=node, override=override)
+        decision = self._resolve_tier(db, node=node, override=override, call_name="answer_question")
         out, degraded = self._call(db, self.gateway.answer_question, ctx, strategy=decision.strategy)
         upgraded = False
         strategy_used = decision.strategy
@@ -486,7 +486,7 @@ class SessionService:
             and getattr(out, "out_of_scope", False)
         ):
             # 超纲/需深思 → think 重生成一次覆盖回复（用户感知"这问题值得深思"）
-            think_decision = self._resolve_tier(db, node=node, override=True)
+            think_decision = self._resolve_tier(db, node=node, override=True, call_name="answer_question")
             out2, deg2 = self._call(db, self.gateway.answer_question, ctx, strategy=think_decision.strategy)
             out, degraded, upgraded = out2, deg2, True
             strategy_used = think_decision.strategy
@@ -522,7 +522,7 @@ class SessionService:
             user_answer=str(payload.get("user_answer", "")),
             judge_detail=detail,
         )
-        decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"))
+        decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"), call_name="hint_on_error")
         out, degraded = self._call(db, self.gateway.hint_on_error, ctx, strategy=decision.strategy)
         p["hints_this"] += 1
         db.flush()
@@ -584,7 +584,7 @@ class SessionService:
         p["streak_min"] = None
         p["attempts_this"] += 1
         events.append({"type": "exercise_wrong", "retry_left": max(0, 2 - p["attempts_this"])})
-        hint_decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"))
+        hint_decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"), call_name="hint_on_error")
         hint_out, degraded = self._call(db,
             self.gateway.hint_on_error,
             HintOnErrorIn(
@@ -692,7 +692,8 @@ class SessionService:
         # + 用户覆盖(model_mode / payload.think_deep)
         trigger_think = bool(f.get("edge_think")) or ai_tier.feynman_round_should_think(eval_rounds + 1)
         decision = self._resolve_tier(
-            db, node=node, override=payload.get("think_deep"), extra_think=trigger_think
+            db, node=node, override=payload.get("think_deep"), extra_think=trigger_think,
+            call_name="feynman_evaluate",
         )
         f["edge_think"] = False  # 消费边缘 flag（仅对下一轮生效一次）
         f["last_strategy"] = decision.strategy
@@ -895,7 +896,8 @@ class SessionService:
                 "previous_score": gap.get("score"),
             },
         )
-        decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"))
+        decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"),
+                                      call_name="feynman_gap_check")
         try:
             # R7 精神：LLM 调用前先提交（补答评估虽为 light 档，仍不持写锁）
             db.commit()
@@ -1024,6 +1026,7 @@ class SessionService:
         q_decision = self._resolve_tier(
             db, node=node, override=payload.get("think_deep"),
             extra_think=bool(f.get("edge_think")) or ai_tier.feynman_round_should_think(f["rounds_done"] + 1),
+            call_name="feynman_followup",
         )
         q_out, q_degraded = self._call(db, self.gateway.feynman_followup, q_ctx, strategy=q_decision.strategy)
         quote = str(getattr(q_out, "student_quote", "") or "")
@@ -1201,7 +1204,8 @@ class SessionService:
             profile_style_block=self._style_block(db),
             asked=int(ch.get("asked") or 0),
         )
-        decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"))
+        decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"),
+                                      call_name="challenge_exercise")
         out, degraded = self._call(db, self.gateway.challenge_exercise, ctx, strategy=decision.strategy)
         ch["asked"] = int(ch.get("asked") or 0) + 1          # 仅计数展示：不限额、不作门禁
         ch["current"] = {
@@ -1227,7 +1231,8 @@ class SessionService:
                                code="validation_error")
         ctx = ChallengeCheckIn(session_id=sess.id, node_id=node.id, node_title=node.title,
                                prompt_md=str(cur.get("prompt_md") or ""), student_answer=text)
-        decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"))
+        decision = self._resolve_tier(db, node=node, override=payload.get("think_deep"),
+                                      call_name="challenge_check")
         out, degraded = self._call(db, self.gateway.challenge_check, ctx, strategy=decision.strategy)
         ch["answered"] = int(ch.get("answered") or 0) + 1    # 仅计数展示：不计轮次、不作门禁
         ch["phase"] = "graded"
@@ -1613,7 +1618,7 @@ class SessionService:
         # 档位联动（R21）：缓存非"手动单次指定"（explicit）且其档位 ≠ 当前全局解析档位 →
         # 自动作废，按新档位重生成（用户切换 快/深 后旧讲解不残留旧档）。
         if cache is not None and not cache.get("explicit"):
-            desired = self._resolve_tier(db, node=node, override=None)
+            desired = self._resolve_tier(db, node=node, override=None, call_name="explain_node")
             if cache.get("strategy") and cache["strategy"] != desired.strategy:
                 flow["lecture_cache"] = None
                 cache = None
@@ -1621,7 +1626,8 @@ class SessionService:
             # R12：regen_explain 可携带单次 think_deep → 本帧消费（视为显式单次，不被联动翻回）
             regen_override = flow.pop("regen_think_override", None)
             explicit = regen_override is not None
-            decision = self._resolve_tier(db, node=node, override=regen_override)
+            decision = self._resolve_tier(db, node=node, override=regen_override,
+                                          call_name="explain_node")
             ctx = ExplainIn(
                 session_id=sess.id,
                 node_id=node.id,
@@ -1674,17 +1680,32 @@ class SessionService:
         """R12：当前用户全局模型模式（smart|light|deep）。"""
         return self._profile(db).model_mode
 
-    def _resolve_tier(self, db: Session, *, node: NodeDoc | None = None, override: Any = None, extra_think: bool = False):
-        """R12：按 基础档(学段/content.thinking) + 触发(extra_think) + 用户覆盖 决策 fast|think。"""
+    def _resolve_tier(self, db: Session, *, node: NodeDoc | None = None, override: Any = None,
+                      extra_think: bool = False, call_name: str = ""):
+        """R12：按 基础档(学段/content.thinking) + 触发(extra_think) + 用户覆盖 决策 fast|think。
+
+        **R42 C1**：决策链的**唯一出口** → 在此统一判断"是否降档（本该 think 却跑了 fast）"，
+        是则逐次 `ledger.note(CAT_MODEL_CALL, …)` 记中文原因（架构侧 R41 §3-③ 裁决）。
+        """
         content_think = bool(node.feynman.thinking) if node is not None else None
         level = node.level if node is not None else None
-        return ai_tier.resolve(
+        model_mode = self._model_mode(db)
+        decision = ai_tier.resolve(
             level=level,
             content_think=content_think,
-            model_mode=self._model_mode(db),
+            model_mode=model_mode,
             override=(None if override is None else bool(override)),
             extra_think=extra_think,
         )
+        try:  # 降档显性（不阻塞主流程）
+            ai_tier.note_downgrade(
+                decision, subject_id="", unit_id=(node.id if node is not None else ""),
+                call_name=call_name, level=level, content_think=content_think,
+                model_mode=model_mode, override=(None if override is None else bool(override)),
+            )
+        except Exception:
+            pass
+        return decision
 
     def _profile(self, db: Session) -> Profile:
         user = ensure_user(db, self.user_id)

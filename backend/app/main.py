@@ -67,6 +67,17 @@ async def lifespan(app: FastAPI):
             )
         except Exception as e:  # 内容库异常不阻塞启动（可后续 POST /content/validate 排查）
             logger.warning("内容库同步失败（服务仍可启动）: %s", e)
+    # **R42 C3：审计全文文件按保留期自动清理**（架构侧 R41 §3-⑤ 裁决）——
+    # 清理**必须记账**（"已清理哪几条"），不得静默删；失败不阻塞启动。
+    try:
+        from .service import ai_trace
+
+        cleaned = ai_trace.cleanup_old(None)
+        if cleaned.get("count"):
+            logger.info("审计保留期清理完成: 删除 %s 个文件（保留期 %s 天，已记入总账）",
+                        cleaned["count"], cleaned.get("keep_days"))
+    except Exception as e:
+        logger.warning("审计保留期清理失败（服务仍可启动）: %s", e)
     yield
 
 

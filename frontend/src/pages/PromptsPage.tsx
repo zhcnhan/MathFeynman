@@ -1,6 +1,7 @@
-// R39 §2 · 设置 →「提示词」页
-// 左侧调用点列表（中文名 + 用途一句话）；右侧编辑器；显示**当前值 / 是否默认 / 上次修改时间**；
-// 单条恢复默认 + 全部恢复默认（恢复前确认）；显示"与默认的差异（改了哪几行）"；
+// R39 §2 · 设置 →「提示词」页（**R42 C2：system 与 user 模板都可编辑**）
+// 左侧调用点列表（中文名 + 用途一句话）；右侧编辑器（system / user 两个字段切换）；
+// 显示**当前值 / 是否默认 / 上次修改时间**；
+// 单条恢复默认（可按字段）+ 全部恢复默认（恢复前确认）；显示"与默认的差异（改了哪几行）"；
 // 删掉必填占位符/硬约束 → 中文报错并**拒绝保存**。
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
@@ -17,14 +18,22 @@ type PromptItem = {
   default_system: string;
   system_is_default: boolean;
   system_diff: DiffLine[];
+  /** 可编辑的模板原文（带 {占位符}） */
+  raw_template: string;
+  default_raw_template: string;
   user: string;
   default_user: string;
+  /** R42 C2：user 模板也开放编辑 */
+  raw_user_template: string;
+  default_raw_user_template: string;
   user_is_default: boolean;
   user_diff: DiffLine[];
   is_default: boolean;
   updated_at: string;
   required_placeholders: string[];
   required_tokens: string[];
+  user_required_placeholders?: string[];
+  user_required_tokens?: string[];
   placeholders: string[];
 };
 
@@ -67,7 +76,10 @@ function DiffView({ title, diff }: { title: string; diff: DiffLine[] }) {
 export default function PromptsPage() {
   const [items, setItems] = useState<PromptItem[]>([]);
   const [active, setActive] = useState<string>("");
+  // R42 C2：两个字段各自编辑（system / user）
+  const [field, setField] = useState<"system" | "user">("system");
   const [draft, setDraft] = useState("");
+  const [draftUser, setDraftUser] = useState("");
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -79,7 +91,10 @@ export default function PromptsPage() {
       const name = keep ?? active ?? r.prompts[0]?.call_name ?? "";
       setActive(name);
       const cur = r.prompts.find((p) => p.call_name === name);
-      if (cur) setDraft(cur.system);
+      if (cur) {
+        setDraft(cur.raw_template);
+        setDraftUser(cur.raw_user_template ?? "");
+      }
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -98,7 +113,11 @@ export default function PromptsPage() {
     setErr("");
     setMsg("");
     const it = items.find((p) => p.call_name === name);
-    if (it) setDraft(it.system);
+    if (it) {
+      setDraft(it.raw_template);
+      setDraftUser(it.raw_user_template ?? "");
+      if (!it.editable_fields.includes("user")) setField("system");
+    }
   };
 
   const save = async () => {
@@ -109,8 +128,10 @@ export default function PromptsPage() {
     setErr("");
     setMsg("");
     try {
-      await api.put(`/prompts/${cur.call_name}`, { system: draft });
-      setMsg("已保存：下一次生成即使用新提示词（可在「AI 对话记录」里对照）。");
+      // 只提交当前字段（另一字段保持原样；两个字段都能改 → R42 C2）
+      const body = field === "user" ? { user: draftUser } : { system: draft };
+      await api.put(`/prompts/${cur.call_name}`, body);
+      setMsg(`已保存（${field}）：下一次生成即使用新提示词（可在「AI 对话记录」里对照）。`);
       await load(cur.call_name);
     } catch (e) {
       setErr((e as Error).message); // 中文拒存原因（缺占位符/硬约束）
@@ -119,12 +140,14 @@ export default function PromptsPage() {
     }
   };
 
-  const resetOne = async () => {
+  const resetOne = async (f?: "system" | "user") => {
     if (!cur) return;
-    if (!window.confirm(`把「${cur.label}」恢复为默认提示词？自定义内容会删除（已记入总账）。`)) return;
+    const what = f === "user" ? "user 模板" : f === "system" ? "system 模板" : "整条提示词";
+    if (!window.confirm(`把「${cur.label}」的**${what}**恢复为默认？自定义内容会删除（已记入总账）。`))
+      return;
     setBusy(true);
     try {
-      await api.post(`/prompts/${cur.call_name}/reset`, {});
+      await api.post(`/prompts/${cur.call_name}/reset`, { field: f ?? "" });
       setMsg("已恢复默认。");
       await load(cur.call_name);
     } catch (e) {
@@ -195,23 +218,42 @@ export default function PromptsPage() {
               <div className="dim" style={{ fontSize: 12 }}>
                 {cur.purpose}
                 <br />
-                当前值：{cur.system_is_default ? "**默认**" : "**你已修改**"}
+                当前值：
+                {field === "user"
+                  ? (cur.user_is_default ? "**默认**" : "**你已修改**")
+                  : (cur.system_is_default ? "**默认**" : "**你已修改**")}
                 {cur.updated_at ? ` · 上次修改：${cur.updated_at.replace("T", " ").replace("+00:00", " UTC")}` : ""}
                 {cur.notes ? ` · 提示：${cur.notes}` : ""}
               </div>
-              {cur.required_placeholders.length > 0 && (
+              {/* R42 C2：字段切换（system / user 都可改） */}
+              <div className="input-row" style={{ gap: 6, marginTop: 6 }}>
+                <button className={field === "system" ? "depth active" : "depth"} disabled={busy}
+                        onClick={() => setField("system")}>
+                  system 模板{cur.system_is_default ? "" : "（已改）"}
+                </button>
+                {cur.editable_fields.includes("user") && (
+                  <button className={field === "user" ? "depth active" : "depth"} disabled={busy}
+                          onClick={() => setField("user")}>
+                    user 模板{cur.user_is_default ? "" : "（已改）"}
+                  </button>
+                )}
+              </div>
+              {(field === "user" ? cur.user_required_placeholders ?? [] : cur.required_placeholders).length > 0 && (
                 <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
-                  必填占位符（删掉会拒存）：{cur.required_placeholders.map((x) => `{${x}}`).join(" ")}
+                  必填占位符（删掉会拒存）：
+                  {(field === "user" ? cur.user_required_placeholders ?? [] : cur.required_placeholders)
+                    .map((x) => `{${x}}`).join(" ")}
                 </div>
               )}
-              {cur.required_tokens.length > 0 && (
+              {(field === "user" ? cur.user_required_tokens ?? [] : cur.required_tokens).length > 0 && (
                 <div className="dim" style={{ fontSize: 12 }}>
-                  必留硬约束（删掉会拒存）：{cur.required_tokens.join(" / ")}
+                  必留硬约束（删掉会拒存）：
+                  {(field === "user" ? cur.user_required_tokens ?? [] : cur.required_tokens).join(" / ")}
                 </div>
               )}
               <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                value={field === "user" ? draftUser : draft}
+                onChange={(e) => (field === "user" ? setDraftUser(e.target.value) : setDraft(e.target.value))}
                 spellCheck={false}
                 style={{
                   width: "100%",
@@ -229,18 +271,27 @@ export default function PromptsPage() {
                   保存（立即生效）
                 </button>
                 <button className="ghost" disabled={busy} onClick={() => void resetOne()}>
-                  恢复默认（本条）
+                  恢复默认（整条）
                 </button>
-                <button className="ghost" disabled={busy} onClick={() => setDraft(cur.default_system)}>
+                <button className="ghost" disabled={busy} onClick={() => void resetOne(field)}>
+                  恢复默认（仅 {field}）
+                </button>
+                <button className="ghost" disabled={busy}
+                        onClick={() => (field === "user"
+                          ? setDraftUser(cur.default_raw_user_template ?? "")
+                          : setDraft(cur.default_raw_template))}>
                   载入默认文本（不保存）
                 </button>
               </div>
-              <DiffView title="system" diff={cur.system_diff} />
+              <DiffView title={field === "user" ? "user" : "system"}
+                        diff={field === "user" ? cur.user_diff : cur.system_diff} />
               {cur.editable_fields.includes("user") && (
                 <details style={{ marginTop: 8 }}>
-                  <summary className="dim">user 模板（当前由程序渲染；本页只读对照）</summary>
+                  <summary className="dim">
+                    {field === "user" ? "system（只读对照）" : "user（只读对照）"}
+                  </summary>
                   <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, maxHeight: 240, overflow: "auto" }}>
-                    {cur.user}
+                    {field === "user" ? cur.system : cur.user}
                   </pre>
                 </details>
               )}

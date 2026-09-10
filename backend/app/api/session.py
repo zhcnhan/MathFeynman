@@ -10,6 +10,7 @@ R12-b 流式（docs/09 R12 §3）：`POST /session/step?stream=1` 返回 SSE—�
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from typing import Iterator
@@ -22,6 +23,8 @@ from sqlalchemy.orm import Session
 from ..db import SessionLocal
 from ..service.session import ExerciseBrokenError, SessionError, SessionService
 from .deps import get_db, get_session_service, raise_session_error
+
+logger = logging.getLogger("yanhui")
 
 router = APIRouter(prefix="/session", tags=["session"])
 
@@ -127,10 +130,14 @@ def session_get(session_id: str, db: Session = Depends(get_db), svc: SessionServ
 
 
 def _trace_step(outcome: str, session_id: str, action: str, extra: str = "", detail: str = "") -> None:
-    """B（R9 #6 排查）：轻量链路日志（stderr 直出，uvicorn 控制台可见）。"""
-    import sys
+    """B（R9 #6 排查）：轻量链路日志（uvicorn 控制台可见）。
 
-    msg = f"[session.step] {outcome} session={session_id} action={action} extra={extra}"
-    if detail:
-        msg += f" detail={detail[:200]}"
-    print(msg, file=sys.stderr, flush=True)
+    **R42 D3 处置**：按 R39 §1"禁止各处自行 print"的字面，本函数改为**标准 logging**
+    （不再是裸 ``print``），并在此**明确豁免**其"必须进账本"的要求——
+    理由：这是**正常的步骤轨迹**（每次 /session/step 都打），不是"没按用户以为的方式使用输入/产出"
+    的偏离事件；按 R41 §3-① 的口径（"账本定位是偏离用户预期，成功路径不记，否则淹没真信号"），
+    它**不进 `content_ledger`**（否则每点一次"下一步"就多一条账目）。
+    真正的偏离（降级/丢弃/失败/限额/降档）仍一律经 ``service.ledger`` 记账 + 界面可见。
+    """
+    logger.info("[session.step] %s session=%s action=%s extra=%s%s",
+                outcome, session_id, action, extra, (f" detail={detail[:200]}" if detail else ""))

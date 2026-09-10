@@ -16,11 +16,16 @@
 
 设计约束：
 - **不阻塞主流程**：任何写库异常都被吞掉（只返回 id），绝不让"记账"把业务弄挂；
+  **但"记账自己失败"不许静默**（R42 D1）：写库异常会打一行 stderr 兜底日志 ``[ledger] 记账失败: …``；
+- **并发隔离**（R42 D2）：当前收集器用 ``contextvars.ContextVar``（不是模块级 list）——
+  FastAPI 线程池/异步下并发请求**不会串账**；
 - **中文原因**：``reason`` 必须是中文人话（验收口径：账本有中文原因）；
 - **可判定**：每条"静默路径"都要有账本写入 + 用例（"造错必报"同款口径）。
 """
 from __future__ import annotations
 
+import contextvars
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -158,24 +163,31 @@ class Accumulator:
                          for e in self.entries[:5])
 
 
-# 当前线程/调用链的"隐含收集器"（API 层建，深层函数无需层层传参即可记账）。
-_CURRENT: list[Accumulator] = []
+# 当前调用链的"隐含收集器"（API 层建，深层函数无需层层传参即可记账）。
+# **R42 D2**：用 ``contextvars.ContextVar``（**不是模块级 list**）——
+# FastAPI 线程池/异步下并发请求各有自己的上下文，**不会串账**；
+# 同一上下文内可**嵌套**（内层 collector 覆盖外层，退出后自动还原）。
+_CURRENT: contextvars.ContextVar[Accumulator | None] = contextvars.ContextVar(
+    "yanhui_ledger_current", default=None)
 
 
 @contextmanager
 def collector(subject_id: str = "", unit_id: str = "", *, persist: bool = True) -> Iterator[Accumulator]:
-    """建立一次操作的收集器上下文：``with ledger.collector(sid, uid) as acc: ...``。"""
+    """建立一次操作的收集器上下文：``with ledger.collector(sid, uid) as acc: ...``。
+
+    可嵌套（内层生效，退出后还原外层）；**线程/任务隔离**（ContextVar 语义）。
+    """
     acc = Accumulator(subject_id=subject_id, unit_id=unit_id, persist=persist)
-    _CURRENT.append(acc)
+    token = _CURRENT.set(acc)
     try:
         yield acc
     finally:
-        _CURRENT.pop()
+        _CURRENT.reset(token)
 
 
 def current() -> Accumulator | None:
     """当前收集器（无则 None）；供深层调用点"顺手记账"而不必改所有签名。"""
-    return _CURRENT[-1] if _CURRENT else None
+    return _CURRENT.get()
 
 
 def note(category: str, object: str, reason: str, *, impact: str = "", remedy: str = "",
@@ -200,7 +212,12 @@ def note(category: str, object: str, reason: str, *, impact: str = "", remedy: s
 # 落库 + 查询（**总账页**通道）
 # ---------------------------------------------------------------------------
 def write(entry: Entry) -> int | None:
-    """把一条账目写入 ``content_ledger`` 表；失败**不影响主流程**（返回 None）。"""
+    """把一条账目写入 ``content_ledger`` 表；失败**不影响主流程**（返回 None）。
+
+    **R42 D1**：保持"不阻塞主流程"不变（**不抛异常**），但**加一道进程日志兜底**
+    （stderr，形如 ``[ledger] 记账失败: …``）——让"记账自己失败"**不静默**
+    （架构侧 R41 §5 观察项 1）。
+    """
     try:
         from ..db import SessionLocal
         from .. import models
@@ -214,7 +231,13 @@ def write(entry: Entry) -> int | None:
             db.add(row)
             db.commit()
             return int(row.id or 0) or None
-    except Exception:  # 记账失败绝不影响业务（铁则要求"不阻塞主流程"）
+    except Exception as e:  # 记账失败绝不影响业务（铁则要求"不阻塞主流程"）
+        try:
+            print(f"[ledger] 记账失败: {type(e).__name__}: {e}"
+                  f"（类别={entry.category} 对象={entry.object} 原因={entry.reason[:80]}）",
+                  file=sys.stderr)
+        except Exception:  # 连日志都写不出去也不能炸
+            pass
         return None
 
 
