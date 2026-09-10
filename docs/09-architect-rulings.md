@@ -527,4 +527,51 @@ content 26/49、git 链 c365412→107ccad 与汇报吻合、工作树干净。**
 
 **文档同步**：本裁决；docs/05 §5 费曼流程更新为 v3（见该节）；docs/13 §3 工单已替换为
 本裁决派工；IMPLEMENTATION_NOTES 由 Euler 实现时追加执行记录。
+## R28 · R27 验收裁决（费曼追问 v3 · 2026-09-10）
+
+**架构侧独立复跑（不采信汇报）**：pytest **305 passed + 2 skipped**（307 collected，exit 0，架构侧两次复跑一致）；
+`npx tsc --noEmit` 通过；`npm run build` 通过（1.18s）；content validate **ok 26/54**；
+audit 五学段全绿（cycles/content_prereq_violations/boss_unmatched/anchors_missing 全 0）；
+git 链 187f0d0→443efb0→bfd5bea→a3dbddc 与汇报吻合；工作树干净。
+代码审查确认：R25 合并稿拼接已**彻底移除**（`backend/app` 内无"【AI 追问】/【我的补充回答】"残留）；
+`_enter_feynman` 现为单一定义且保留 R17 防御；补答只允许更新 `target_gap` 维度（越权键被丢弃）；
+账本 max 合成、回炉清账本、evidence 归一化包含校验与 ×0.5 降级均按规格落地。
+**结论：R27 功能验收通过**；以下 5 项为留档/更正项，不阻塞。
+
+### F1（须更正汇报口径）· 真模型回归数字与留档不符
+汇报称"整合终验 0.863 pass（1.0/0.8/0.85/0.6）、补答 correctness 0.0→1.0、综合 0.0→0.4"。
+实测留档（`%TEMP%\mf_r27_live.db`，架构侧已复核）为：
+- id=4 首讲 0.0（四维全 0，evidence_valid=True）→ id=5 补答 correctness **0.95**、账本综合 **0.38** →
+  id=6 终验 **0.73** pass、本轮卡 **correctness 0.95 / own_words 0.55 / evidence 0.60 / self_correction 0.60**；
+  session `stage=done, passed=True, rounds_done=2, answers_done=1`。
+**定性结论成立**（答追问后分数可见上升、不再出现"两轮逐字同分/引文引旧文"、终验过线）——
+但**数字须以留档为准**。另：该回归跑在**临时 DB**（非应用库 `backend/data/mathfeynman.db`），
+应用库最新记录仍是 R27 之前的 id=31，用户真实节点未被改写（无数据风险）。
+**给 Euler**：今后真模型回归必须留档——DB 路径 + 各轮 score/dims/evidence_valid 写入
+IMPLEMENTATION_NOTES 对应小节；汇报数字直接取自留档，不得口述估算。
+
+### F2 · session.py 行尾符翻转（整文件伪 diff）
+443efb0 将 `backend/app/service/session.py` 由全 LF 改为全 CRLF（0→1340 CRLF），
+致该文件 2448 行伪 diff、覆写 blame。仅此一文件（gateway/前端未翻转；仓库本身混用：
+104 个 .py 为 LF，7 个历史 CRLF）。
+**裁决**：列为下批微任务——`session.py` 归一化回 LF + 增 `.gitattributes`
+（建议 `*.py text eol=lf`、`*.ts`/`*.tsx text eol=lf`；docs 的 CRLF 维持现状），防复发。
+
+### F3 · 通过判定用"账本累计分"而非"本轮完整稿分"（留档待裁）
+`_act_feynman` 的 `passed` 依据 = `fl.combined(ledger)`（维度历轮 max）≥ threshold，
+而 R27 §5 字面为"任意一次**整体稿评分** ≥ threshold"。差异：补答抬高的维度分会被后续
+平庸完整稿"继承"。本次实测两者同值（0.73）未触发偏差；防挤牙膏的底线（必须交完整稿）仍在。
+**裁决**：✅ 接受现状（符合"答对认账"精神、且学生仍须交完整稿），但**列入用户裁定项**：
+若要求"末次完整稿自身须过线"，改为对本轮 card 单独合成即可（一行改动）。
+
+### F4 · 补答未补上后追问被清空（规格保真度）
+`_act_feynman_answer` 结束时 `f["followup"]=None`，而 `feynman_answer` 要求存在追问 →
+"同一缺口可再追一次"实际须**先再交一次完整稿**换取新追问（预算自洽：整体稿≤3 / 补答≤2）。
+**给 Euler**：UI/文案把"稍后可再追一次"说清为"再交一次完整讲解后，会针对该缺口再问"。
+
+### F5 · evidence 校验无最短长度门槛（加固建议）
+现为"归一化（去空白/标点/省略号）子串包含"；极短引文（如单字）可平凡通过。
+**给 Euler**：加最短归一化长度（建议 ≥6 字）才认定有效，否则按无效降级；与 F3 同批做。
+
+**文档同步**：本裁决；NOTES §46–§47 已含实现记录（数字更正见 F1）；docs/13 §3 工单关闭（R27 ✅）。
 

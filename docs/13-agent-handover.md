@@ -42,26 +42,21 @@
   新增/改动端点都要满足；sample 级测试锁定。
 
 ## 3. 当前活动工单（新实例的第一个任务）
-> 历史批次（R1–R24、docs/14 Phase A A1–A4、Phase B B1–B5、Phase C C1–C5、**R27 费曼追问语义 v3**）
-> 已完成并 git 提交（基线 pytest 305 passed + 2 skipped（离线默认）、audit 5 学段全绿、
-> content 26/54）；详见 IMPLEMENTATION_NOTES §9–§47、docs/09 R1–R27。
+> 历史批次（R1–R27、docs/14 Phase A/B/C）已完成并 git 提交。**R27 费曼追问 v3 已实现并验收（R28）**：
+> 提交链 443efb0（后端账本/双提交）→ bfd5bea（UI 双入口+得分条）→ a3dbddc（协议/文档）；
+> 基线 pytest **305 passed + 2 skipped**（架构侧复跑）、tsc/build 通过、content 26/54、audit 五学段全绿。
+> 详见 docs/09 R27（规格）+ R28（验收裁决）、IMPLEMENTATION_NOTES §46–§47。
 
-1. **R27 费曼追问语义 v3（混合制）—— ✅ 已实现并验收**（docs/09 R27 全规格 + docs/05 §5 v3 +
-   本 NOTES §46 后端实现 / §47 真模型回归）：
-   ① 两类提交分离（`feynman_submit`=完整稿 / `feynman_answer`=补答）；R25 合并稿拼接已删除；
-   ② 评分对象 = 本轮文本 + `previously_acknowledged`；evidence 服务端**归一化包含校验**（违规降级标记）；
-   ③ `service/feynman_ledger.py` 缺口账本（维度历轮最高分 + 缺口清单）+ `feynman_gap_check`
-      补答评估（调用点 13，light，只更新缺口所属维度）；追问定向 `unmet_gaps`（一次一个）；
-   ④ 预算：整体稿 ≤3、补答 ≤2；额度尽/3 次未过 → relearn（`_feynman_reset` 含账本清零）；
-      R10/R11/R17 分支语义经回归锁定（409/回炉/清零）；
-   ⑤ UI：费曼视图双提交入口 + 实时得分条（账本维度分 + 缺口提示 + 综合分/门槛进度 + 额度徽标）；
-   ⑥ 测试：`backend/tests/test_feynman_v3.py` ×11 函数 / 14 用例（三条集成路径 + evidence 纪律 +
-      账本不降级 + 补答不越权 + 已认可上下文）；全量 pytest 305+2 离线；前端 tsc/build 通过；
-      真模型走查（行星科学 u01）实测：首讲 0.0 → 答追问 0.4 → 整合终验 0.863 pass。
-2. **待架构裁决（本轮新增，NOTES §46 疑点）**：evidence 校验取"归一化包含"而非严格逐字（LLM 排版
-   差异）；降级系数 0.5 不归零；预算按次数计；离线启发式分档仅影响无 key 演示；`_enter_feynman`
-   重复定义缺陷已修（原 R17 防御实际未生效）。
-3. 后续派发视用户验收与需求：docs/14 §7 待细化项、数学内容持续治理（roadmap 到段精核）。
+1. **无阻塞工单**。R27 遗留微任务（下批，非紧急，见 docs/09 R28）：
+   - F2 行尾符号治理：`backend/app/service/session.py` 归一化回 LF + 新增 `.gitattributes`
+     （建议 `*.py`/`*.ts`/`*.tsx text eol=lf`；docs 的 CRLF 维持），防整文件伪 diff 复发；
+   - F4 文案：补答未补上后需"再交一次完整讲解"才会针对该缺口再追问，UI 措辞说清；
+   - F5 加固：evidence 校验加最短归一化长度（建议 ≥6 字）才认定有效；
+   - F1 纪律：真模型回归必须留档（DB 路径 + 各轮 score/dims/evidence_valid 写 NOTES，数字取自留档）。
+2. **用户裁定项（F3）**：通过判定现用"账本累计分（维度历轮 max）≥ 阈值"；若要求
+   "末次完整稿自身须过线"，改为对本轮 card 单独合成（一行改动）——待用户拍板。
+3. 真人浏览器验收（用户动作）：行星科学 u01 走一遍"首讲→补答→整合终讲"，
+   确认分数可见上升、缺口提示/额度徽标正确（真模型回归已在临时 DB 通过：0.0 → 补答 0.95/综合 0.38 → 终验 0.73 pass）。
 4. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"；涉及 docs/02/03/05/06/07/14 的语义
    变更在实现时顺带同步。
 
