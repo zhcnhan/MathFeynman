@@ -47,6 +47,16 @@
 > 主体提交 `92b6ff9`；代码内文案/注释清理为**未提交工作树**（14 文件，逐条复核零逻辑变更）。
 > **下一批 = R33（小批）**：文档/配置一致性收尾 + 用户真人验收清单；规格见 docs/09 R32 §4
 > 与 `.runtime/EULER_TICKET_R32.md`。
+>
+> **R33 已执行完毕（Euler，2026-09-10 · 待架构侧验收）**：
+> ① 任务 A 文档尾巴——`docs/02` §3 目录树首行改 `YanHui/` 并按实测补齐实有目录；旧名 `MathFeynman`
+> 全仓复核（40 处命中）并逐处分类"改 / 有意保留 / 不能改"；
+> ② 任务 B 库名归一——库文件改名 `mathfeynman.db` → `yanhui.db`（备份 + SHA256 核对 + 六项计数
+> 26/3/31/2/113/0 逐位一致），`.env` 同步；**另查出第二层根因：进程环境变量优先于 `.env`**
+> （`load_dotenv()` 默认不 override，见 NOTES §54）；
+> ③ 任务 C 真人验收清单（NOTES §55，用户动作，待用户走查）。
+> 规格/工单：`.runtime/EULER_TICKET_INIT_R33.md`；实现记录：NOTES **§52–§55**；
+> 提交：`51c6a62`（NOTES §52 + docs/02）、`b90c160`（NOTES §53/§54 + docs/15）、收尾提交（NOTES §55 + 本文件）。
 > 提交链：443efb0（后端账本/双提交）→ bfd5bea（UI）→ a3dbddc（协议）→ 65282e9/8927a20（R28 裁决）
 > → fe9902d（R29 热修 + 回归用例）→ b1c1b05（R30 规格）
 > → **4f7990b（F6）→ 23fc603（F5）→ 49e5149（F4）→ f66af5f（R29 引申 flow 自愈）→ f8c856d（F2 行尾）**。
@@ -87,6 +97,14 @@
   属环境限制而非代码问题，需在普通终端复核）；git 仓库不含 data/、_drafts、resume/。
   R30 前基线为 306+2（R30 批 +19 = F6 7 / F5 2 / flow 自愈 10）。
 - 工作目录已改名：`D:\DeepseekHarness\YanHui`（旧名 MathFeynman；执行记录见 docs/09 R32 §3）。
+- **数据库（R33 任务 B 已归一，2026-09-10）**：真实库＝`backend/data/yanhui.db`（六项计数
+  user_nodes 26 / sessions 3 / attempts 31 / subjects 2 / concepts 113 / reviews 0）。改名前的旧库备份在
+  `D:\DeepseekHarness\_backups\yanhui-db-20260910-160212\`（含 SHA256 核对记录）。
+  ⚠️ **启动后端前先确认环境里没有旧值**：`load_dotenv()` 默认**不覆盖**已存在的环境变量，
+  若终端继承了 `MF_DB_PATH=backend/data/mathfeynman.db`（旧 DSH 进程的残留），应用会**静默新建空库**——
+  排查与处置见 NOTES §54 B4/B7。**建议重启 DSH/换新终端后再 `scripts\dev.ps1`。**
+- `.runtime/pids.txt` 可能与实际监听进程不符（实测过：记录 9084/2944，实际监听者 19852），
+  故 `scripts\stop.ps1` 不一定停得掉；停服请**以端口定位**复核（8000/5173 无监听才算停干净）。
 - `.venv` 改名后重建时曾漏装 dev 依赖（pytest 缺失）→ 已补装 `pytest 9.1.1`/`pytest-cov 7.1.0`
   （`pip install -e "backend[dev]"`）。**改名/重建 venv 后必跑这一步，否则基线不可复跑。**
 - 品牌：YanHui（颜回）全科教练。当前工单见 §3（R32 已验收，下一批 R33）。

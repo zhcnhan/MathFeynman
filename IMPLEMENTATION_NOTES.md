@@ -2284,3 +2284,111 @@ sessions 3 / attempts 31 / subjects 2 / concepts 113）。根因＝`.env` 的 `M
 2. 若要**永久**免除进程环境干扰，可考虑（需架构裁决，本批未做）：启动脚本里显式覆盖
    `MF_DB_PATH`，或让 `config.py` 改用 `load_dotenv(override=True)`——**两者都属逻辑/行为改动，超出本批授权**。
 
+## 55. R33 任务 C：真人验收清单（用户动作）+ 疑点（2026-09-10）
+
+> 规格来源：docs/09 R32 §4「用户动作（R33 真人验收清单）」。Euler 只负责清单**准确、可执行**；
+> 下面全部是**用户动作**，本批未代跑（真人浏览器走查无法由 Euler 代做）。
+
+### C0 · 前置（Euler 已办妥，用户直接开浏览器）
+
+- 后端已在 8000、前端已在 5173 运行（PID 见 `.runtime/pids.txt`）；数据库已是 `backend/data/yanhui.db`。
+- 打开 **http://127.0.0.1:5173/**（后端 API http://127.0.0.1:8000/api/health 已 200）。
+- ⚠️ **若你要自己重启服务**：请**先重启 DSH（或换一个新开的终端）**再跑 `scripts\dev.ps1`，
+  否则该终端会继承 DSH 进程里残留的旧 `MF_DB_PATH`（见 §54 B4/B7），又指回旧库名。
+
+### C1 · 遗留会话费曼 v3 全流程（R29 修复后的真实走查）
+
+- [ ] 打开遗留会话 `s-f2decfcf.u01:a7689b7ebf`（行星科学，库中 state=learning）——
+      **应正常打开，不再出现"会话不可用"**（R29 修复前该动作为必现 500）。
+- [ ] **首讲**：提交一段完整讲解 → 出现评分卡（维度分/综合分/门槛进度）。
+- [ ] **补答**：有追问时点「回答追问」提交 → 得分条应**可见上升**（缺口维度分涨）、缺口提示同步更新；
+      不再出现"两轮逐字同分"。
+- [ ] **整合重讲**：点「整合后完整重讲」提交完整稿 → 综合分/进度条刷新；过线则进入 mastered + 复习队列。
+- [ ] **额度徽标**：整体稿 ≤3 / 补答 ≤2 显示正确；补答未补上时的文案应为
+      「**再交一次完整讲解后，会针对该缺口再问**」（F4 口径）。
+- [ ] 若本轮综合分落边缘带 `[0.65, 0.78]`：应出现
+      「⚖️ 本次接近及格线，已用更认真的档位复核一遍（取较高分）」横幅（R30 F6）。
+
+### C2 · 真实 SearXNG 端到端
+
+- [ ] 自托管 SearXNG（需开 JSON 输出）后配 `MF_SEARCH_PROVIDER=searxng` / `MF_SEARXNG_URL`；
+- [ ] 学科 → 大纲/材料 → 联网候选：返回候选清单；勾选后抓正文入库（不整本下载）；
+- [ ] 未配置时：UI 应显示中文"未配置检索后端"提示，而不是报错。
+
+### C3 · PDF 上传 UI
+
+- [ ] 上传 ≤20MB 的 PDF → 分页入库、材料列表出现；
+- [ ] 超限 / 非 PDF / 无文本层 → **中文**错误提示（不得裸英文堆栈）。
+
+### C4 · math 停用 / 重新启用演示
+
+- [ ] 停用 math → 仪表盘顶部中文提示 + 图谱与内容隐藏、不影响其他学科；
+- [ ] 重新启用 → 内容与进度恢复（"移除可恢复"语义）。
+
+### C5 · 材料可追溯重生成
+
+- [ ] 让引用材料的单元重生成 → 来源标注可查、可追溯。
+
+### 疑点（挂"待架构裁决"，本批未擅改）
+
+1. **进程环境变量覆盖 `.env`（§54 B4/B7）**：是否需要把 `config.py` 改为
+   `load_dotenv(override=True)`，或在 `scripts\dev.ps1` 里显式设置 `MF_DB_PATH`？
+   —— 二者都属**行为/逻辑改动**，超出 R33"零逻辑改动"授权，故只记录不实施。
+2. **`.gitignore` 是唯一非 UTF-8 的入库文件**（GBK/ANSI，中文注释显示为乱码；实测 200 个入库文件中仅此 1 个）。
+   git 按字节匹配模式，**功能不受影响**；本批未改（改编码会造成整文件伪 diff，且属"编码/配置变更"）。
+   是否列入后续清理批，请架构侧裁。
+3. **NOTES §51（架构侧留档）"库路径遗留"的时点问题**：迁移完成后该段文字已过时，但它是**架构侧 2026-09-10 的
+   时点记录**，改写会伪造历史 → 本批**未回改**，仅在 §54 记录结果。若架构侧希望标注"已迁移"，一句话即可。
+4. **提交标签与实际内容的小偏差（自曝）**：任务 A1 的 `docs/02` 改动与 NOTES §52 **同批落入 `51c6a62`**
+   （消息只标了 §52）；`docs/15` + NOTES §53/§54 落入 `b90c160`。本地领先 `origin/main` 37 个提交、**未推送**，
+   为避免改写历史未做 rebase；以本节记录为准。若架构侧要求重排提交，请明示后再动。
+5. **`backend/data/mathfeynman.db.bak-20260908-220309`**（229376B，2026-09-08 的应用库旧备份，git 忽略）
+   仍在盘上。备份政策"只留当前运行版本数据"针对 DSH 缓存；此文件是**应用库的旧备份**，
+   是否清理请用户/架构侧定 —— 本批**未删**（改名批次不做删除动作）。
+6. 备份目录内新增 `stray-from-misconfigured-restart\`（§54 B4 的误建空库三件套，留作证据）：
+   确认无保留价值后可删（本批保留）。
+
+## 56. R33 验收自证（逐条给证据 · 2026-09-10）
+
+> 对应工单 `.runtime/EULER_TICKET_INIT_R33.md` §7。数字一律取自留档，不口述估算。
+
+1. **pytest（终检）**：`.\.venv\Scripts\python -m pytest backend/tests -q --junitxml=.runtime/r33_pytest_final.xml`
+   → junit 权威计数 **tests=327 / failures=0 / errors=0 / skipped=2**（= **325 passed + 2 skipped**，
+   time=111.619s，exit 0，离线）→ 与 §2 基线**逐位一致**。
+   三次留档：`.runtime/r33_pytest_baseline.xml`（开机）、`.runtime/r33_pytest_afterA.xml`（任务 A 后）、
+   `.runtime/r33_pytest_final.xml`（收尾），三者同为 327/0/0/2。
+2. **content validate**：`.\.venv\Scripts\content.exe validate` → `ok=True nodes=26 exercises=54`，exit 0。
+   **audit 五学段**：primary **27** / middle **31** / high **81** / college **59** / ai **60**，
+   各 `ok=True`，cycles / prereq_missing / anchors_missing / content_prereq_violations / boss_unmatched /
+   cross_reverse **全 0**。
+3. **前端**：`npx tsc --noEmit`（frontend/）→ **exit 0**。（`npm run build` 在受限沙箱会因 esbuild 子进程
+   EPERM 失败，属环境限制；按 docs/13 §4 以 tsc 为准。）
+4. **任务 A**：改动清单 + 每处「为何改 / 为何保留不改」见 **§53**（A1 目录树逐项、A2 残留 40 处分类表、
+   A3 历史工单注记）。
+5. **任务 B**：备份路径 `D:\DeepseekHarness\_backups\yanhui-db-20260910-160212\`（3 文件 + SHA256 逐项核对
+   + 副本 integrity ok）；**迁移前后六项计数对照**（迁移前 → 迁移后）：
+   user_nodes **26 → 26** / sessions **3 → 3** / attempts **31 → 31** / subjects **2 → 2** /
+   concepts **113 → 113** / reviews **0 → 0**（**逐位一致，零损失**）；
+   页面/接口冒烟：8000 与 5173 均监听，`/api/health`、`/api/dashboard`、`/api/subjects`、
+   `/api/selfextend/status`、`/api/campaign`、前端 `/` **全部 200、无 500、无白屏**；
+   **异常与回滚记录**：无异常，未触发回滚；唯一插曲＝进程环境变量导致误建空库（已 move 出留存，见 §54 B4）。
+6. **任务 C**：可勾选真人验收清单见 **§55**（C0 前置 + C1–C5 五组，用户动作）。
+7. **git**：本批提交均标注 `R33` —— `51c6a62`（NOTES §52 + docs/02）、`b90c160`（NOTES §53/§54 + docs/15）、
+   收尾提交（NOTES §55/§56 + docs/13）；工作树**干净**（`git status --short` 为空）。
+   本地领先 `origin/main` 若干提交、**未推送**（沿用既有"不自动推远端"惯例）。
+
+**本批改动文件清单**
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `docs/02-architecture.md` | 入库·文档 | §3 目录树：首行 `YanHui/` + 按实测补齐/纠正（含删去 3 个不存在的组件名） |
+| `docs/15-architect-handover.md` | 入库·文档 | §3a R33 状态、§7B⑥ 库路径同步 + 新教训 |
+| `docs/13-agent-handover.md` | 入库·文档 | §3 R33 执行摘要、§4 库路径与停服口径 |
+| `IMPLEMENTATION_NOTES.md` | 入库·日志 | §52 续接基线 / §53 任务 A / §54 任务 B / §55 任务 C+疑点 / §56 自证（本节） |
+| `.env` | 本地·忽略 | `MF_DB_PATH` → `backend/data/yanhui.db` |
+| `backend/data/yanhui.db(+wal/shm)` | 本地·忽略 | 由 `mathfeynman.db(+wal/shm)` **改名**而来（数据不变） |
+| `.runtime/EULER_TICKET_R27.md`、`R30.md` | 本地·忽略 | 各加一行"本文件为历史留档"注记（正文不改写） |
+| `D:\DeepseekHarness\_backups\yanhui-db-20260910-160212\` | 仓库外 | 迁移前备份（含 SHA256 核对）+ 误建空库证据 |
+
+**零逻辑改动自证**：本批未触碰 `backend/app/**`、`frontend/src/**`、`content/**`、`backend/tests/**`
+（`git diff --stat 4604fcf..HEAD` 仅含 docs 与 NOTES）→ 测试数字与基线逐位一致（第 1 条）。
+
