@@ -32,6 +32,7 @@
 > 清理说明（Phase C C6）：本节早期条目已随 docs/09 裁决史（R1–R23）逐一闭合；**当前"待架构
 > 裁决"以各批次节内「疑点（挂待架构裁决）」为准**（最新：§48–§50 R30 五条 + §40–§45 与
 > docs/14 §7 未决/待细化）。
+> **最新挂账总表＝ §58「待架构裁决 / 未决」（2026-09-10 R34-fin 批更新）——续接请先读 §58。**
 > 早期 M3"无 key 冒烟未执行"记录已过时：配 LLM_API_KEY 后真模型冒烟（test_live_ai）与 Phase C
 > 真模型验收（test_phase_c_live，行星科学 10 单元 AI 内容）均已实测通过（§44）。
 
@@ -2434,4 +2435,119 @@ sessions 3 / attempts 31 / subjects 2 / concepts 113）。根因＝`.env` 的 `M
 
 **零逻辑改动自证**：本批未触碰 `backend/app/**`、`frontend/src/**`、`content/**`、`backend/tests/**`
 （`git diff --stat 4604fcf..HEAD` 仅含 docs 与 NOTES）→ 测试数字与基线逐位一致（第 1 条）。
+
+---
+
+## 57. R34-fin 收尾批：数据清空后的合规确认（2026-09-10）
+
+> 工单 `.runtime/EULER_TICKET_R34_FIN.md`；背景＝用户为测试「生成大纲」清空学习数据
+> （行星科学硬删 / math 停用 / 进度归零，架构侧记录见 docs/15 §3.1）。本批**只做确认**，零逻辑改动。
+
+### 57.1 任务 1 · 全量回归（留档 `.runtime/r34fin_pytest.xml`）
+
+| 项 | 实测 | 期望 | 结论 |
+|---|---|---|---|
+| `pytest backend/tests` | **327 collected / 325 passed + 2 skipped / 0 failed / 0 error，exit 0**（116.55s） | 325+2 / 327 | ✅ 一致 |
+| `content validate` | **ok=True nodes=25 exercises=48** | ok（真实库 25 内容文件） | ✅ 如实记录（原 26/54，差＝已硬删的行星科学内容） |
+| roadmap `audit()` | **primary 27 / middle 31 / high 81 / college 59 / ai 60**，各 `ok=True`，错误项全 0 | 27/31/81/59/60 | ✅ 不变（roadmap 文件未动） |
+| `npx tsc --noEmit` | exit 0 | exit 0 | ✅ |
+
+**结论**：清空真实库**不影响**测试数字——`backend/tests/conftest.py` 在导入 app 之前就把
+`MF_DB_PATH` 指向临时库（L52–L54）、`MF_CONTENT_ROOT` 指向会话级内容副本（L68–L71），
+真实库与测试完全隔离。故"清空后 pytest 仍 325+2"是**预期内**的，不构成疑点。
+
+### 57.2 任务 2 · 清空后体验一致性
+
+**(a) math 停用态（API 实测，全部 200）**
+
+| 端点 | 实测 |
+|---|---|
+| `GET /api/subjects` | `{"subjects":[]}`（默认隐藏停用者，符合 B4 设计） |
+| `GET /api/subjects?include_removed=1` | 仅 `math`，`enabled=false`、`removed_at=2026-09-10T09:03:52` |
+| `GET /api/dashboard` | 全 0：`mastered/learning/available/locked/consecutive_days/today_done = 0`，`recommended_node=null` |
+| `GET /api/graph` | **0 节点 0 边**，200 |
+| `GET /api/campaign` | 5 个学段容器在、**关卡节点总数 0**（内容与关卡地图已隐藏） |
+
+**(b) ❌ 发现一处真实缺陷（显示层 · 本批未修 · 记 §58-6）**：仪表盘顶部中文停用提示**不会出现**。
+- 证据链（代码 + 接口实测）：`frontend/src/pages/DashboardPage.tsx:44` 取的是 `api.get("/subjects")`
+  —— **默认不含已移除学科**；L50–51：
+  `const math = subs.subjects.find((x) => x.id === "math"); setMathEnabled(math ? math.enabled : true);`
+  → math 停用时该列表为空 → `find` 得 `undefined` → **回退成 `true`** → L95 `mathEnabled === false`
+  的横幅（L96–99 中文提示"预置学科（数学）已停用…"）**不渲染**。
+- 实测接口：`GET /api/subjects` → `{"subjects":[]}`（与上述推断一致）。
+- 拟修（**一行，待架构裁决，本批严禁改逻辑故只登记**）：改取 `"/subjects?include_removed=1"`
+  （回退表达式可保持不变）。
+
+**(c) 学科列表页（代码路径确认，未真点）**：`SubjectsPage.tsx:38` 用 `include_removed=1`；
+L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案「暂无启用中的学科。可新建自定义学科，
+或在下方「已移除」中重新启用。」；L160 分组「已移除（大纲/内容文件留盘 · 可重新启用）」。
+→ 与当前状态（唯一学科 math 停用）一致。**未点「重新启用」**（保持现场给用户测建新学科）。
+
+**(d) 全链路走查（真模型，脚本 `.runtime/r34fin_walkthrough.py`，输出 `.runtime/r34fin_walkthrough.out.txt`）**
+
+| 步骤 | 结果 |
+|---|---|
+| 新建自定义学科 `POST /api/subjects` | **201**（`s-r34walk`，kind=custom） |
+| 起草大纲 `POST /outline/draft`（真模型） | **200**，`source=ai`，3 单元（u01/u02/u03） |
+| 采纳 `PUT /outline`（status=active） | **200**，`revision=1`、units=3 |
+| 懒生成内容 `POST /units/{id}/content` ×3（真模型） | **3/3 → 200**，`status=created`，落盘 `content/stages/s-r34walk/*.md` |
+| 进度视图 `GET /progress` | **200**（3 单元 todo、u01 open） |
+| 硬删 `DELETE /subjects/s-r34walk?hard=true` | **204**，学科列表回到仅 math（停用） |
+
+全程 **0 个 500**；错误中文化抽查：`count=99` → **422**「参数校验失败：单元数量：格式或取值有误。
+请修正后重试。」；不存在学科 → **404**「学科不存在或已停用: s-doesnotexist（重新启用请见列表「管理已移除」）」。
+
+**(e) 现场影响（如实登记；未做任何 DB 手改）**
+
+| 表/项 | 走查前 | 走查后 | 说明 |
+|---|---|---|---|
+| `nodes` | 25 | 28 | +3 为 `s-r34walk.u01–u03` **残影且 `enabled=0`**——属 hard 删除的**设计行为**（Node 行禁用、不物理删，`outline/store.py:196`），与清空时那 3 行行星科学残节点同类 |
+| `nodes(enabled=1)` | 25 | **25** | 真实内容库不变 ✅ |
+| `user_nodes` | 0 | 25 | 懒生成触发 `sync_content` 的"重算全部用户状态"（`service/library.py:56`）；25 行均为默认 `locked`，dashboard 仍全 0、graph 仍 0 节点 → 不影响体验 |
+| `ai_logs` | 38 | 42 | 走查 4 次真模型调用（`outline_draft` ×1 + `unit_content_draft` ×3） |
+| 其余 | — | — | `subjects 1 / concepts 83 / edges 28 / sessions,attempts,reviews,feedback,relearn_logs,user_concepts 全 0` **逐位不变** ✅ |
+
+文件层：`content/subjects/` 仅剩 `math/`；`content/stages/` 回到 **25** 个 `.md`（走查产物随硬删物理清除）；
+`git status` **干净**（无残留、无未跟踪文件）。→ 若要求回到"绝对 0"，需删 3 行
+`nodes where enabled=0 and id like 's-r34walk.%'` 与 25 行 `user_nodes`；**本批未执行**（数据写操作，等指令）。
+
+### 57.3 任务 3 · 口径登记（一行）
+
+> **auto 内容随生成即入版控（当前口径）**：运行期懒生成落盘的内容文件
+> （如 `content/stages/primary/topic_数与运算/node_primary_s27_auto.md`）由架构侧 `git add` 入库
+> （提交 `83e1ad5`）——即"内容库＝git 管理"这一约束**对运行期 auto 产物同样成立**（`git ls-files`
+> 实测 content/stages 下 **30** 条已入库，含 12 个 `*_auto.md`）。本批**未**写任何自动提交逻辑
+> （属未裁定的新机制）。
+
+### 57.4 R33 两处遗留已闭合（登记，避免下任困惑）
+
+- 旧库快照 `backend/data/mathfeynman.db.bak-20260908-220309`：**已不存在**（R33 §3.5 的"暂留"项已清）。
+- 误建空库证据 `_backups\yanhui-db-20260910-160212\stray-from-misconfigured-restart\`：**已不存在**
+  （R33 §3.6 的"暂留至验收结束"项已清）；该备份目录现仅剩迁移前三件套（`mathfeynman.db` + wal/shm）。
+
+## 58. 待架构裁决 / 未决（挂账清单 · 2026-09-10 更新）
+
+> 供下一任 Euler 续接用：本节＝**当前所有未闭项**的单一入口。凡本节已裁决的项，实现时在此标注结果。
+
+1. **R35 全量规格（可答性 S1–S8）——下一批主战场**：见 `docs/09 R35` 与 `.runtime/EULER_TICKET_R35.md`；
+   **本批未实现**（R34-fin 只做合规确认）。
+   ⚠️ **需架构侧先澄清**：R35 §5 的 R35a 指向**行星科学 u01/u04**（补讲解/删越界题/补例题），
+   但该学科已按用户指令**硬删**（内容+大纲+材料+注册行）→ R35a 的作业对象已不存在，
+   需重新指定（新建学科复现？或改用 math 导入类内容？）。
+2. **真实 SearXNG 端到端**：需用户自托管实例后配 `MF_SEARCH_PROVIDER=searxng` / `MF_SEARXNG_URL`。
+3. **PDF 上传 UI 真人走查**；**材料可追溯重生成**（引用材料参与的单元重生成 + 来源可查）。
+4. **math preset 本体是否彻底清**：当前保留 25 个内容文件 + 258 单元大纲（仅 `enabled=0`）。
+   若要"纯白纸"（连内容文件一并清），属另一条指令。
+5. **`.runtime/EULER_TICKET_R34.md` 已作废、不要执行**：其两项已由架构侧直办——
+   `dev.ps1` 库路径确定性（`17646f8`）、`.gitignore` 转 UTF-8（`17646f8`）、
+   `stop.ps1` 进程树（`e55c8b3`）、启动器加固（`4a032d2`）。
+6. **【本批新发现】仪表盘"数学已停用"横幅不显示**（§57.2b）：`DashboardPage.tsx:44/50-51` 用
+   默认（不含已移除）的学科列表推断 `mathEnabled`，`find` 失配后回退 `true` → 中文停用提示不渲染。
+   **一行可修**（改取 `/subjects?include_removed=1`）；属显示层缺陷，不影响 API/判定。
+   本批按"零逻辑改动"只登记、未修。
+7. **【本批新发现】走查在真实库的痕迹是否清理**（§57.2e）：3 行 `nodes(enabled=0)` 残影
+   （`s-r34walk.u01–u03`）+ 25 行 `user_nodes` 默认状态行。二者均不影响 dashboard/graph 显示，
+   但偏离 docs/15 §3.1 记录的"其余全 0"基线。**本批未擅自改库**，等指令（清理 SQL 见 §57.2e）。
+8. **R35 审计脚本要入库**（`docs/09 R35 §5` / 工单 §5 要求"审计脚本必须入库长期保留"）：
+   架构侧现存于 `_backups\r35-audit-20260910-170300\`；入库时机与路径待定（R35b 批一并做）。
 
