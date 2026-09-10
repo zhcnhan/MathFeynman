@@ -68,6 +68,27 @@
   用户数据 **26/3/31/2/113** 不变；服务 8000/5173 均 200。
 - 体积效果：frontend 93.6 → 67.8 MB，backend 3.5 → 1.2 MB。**运行必需项（`.venv` 146 MB、
   `frontend\node_modules` 68 MB）与备份区均未动。**
+
+### 5.2 启动/停止脚本加固（2026-09-10 由架构侧直办）
+
+发现并修复 3 个真问题（`_dsh-local\` 为 git 忽略区，改动仅本机生效，故在此留档）：
+
+1. **`scripts\stop.ps1` 只杀 `pids.txt` 登记 PID，不杀子进程树** → 前端 `cmd → npm → node(vite)` 的
+   真正服务进程会变成**孤儿**继续占 5173（实测复现）。**已改为递归杀整棵子进程树（由深到浅）
+   + 按命令行兜底清理 `uvicorn app.main` / `frontend\node_modules...vite`**。
+   实测：停止后 8000/5173 **无监听、孤儿 0 个**（注意：刚停时的"仍在响应"是 TIME_WAIT 假象，
+   等几秒再判定）。
+2. **`_dsh-local\start-dsh.ps1` 按"npx 缓存目录时间戳"挑版本**（`Sort-Object Stamp -Descending`）
+   → 时间戳极易被复制/解压改变，一个"看起来更新"的旧缓存会压过真正更新的版本（这正是 0.1.2 事故
+   能复发的机制）。**已改为读各缓存 `package.json` 的 `version`、转成补零排序键按版本号取最新**
+   （多份缓存时打印全部候选）。实测：`Using cached DSH v0.1.5-rc.1` ✅。
+3. **`_dsh-local\stop-dsh.ps1` 只杀端口监听者、不杀其子进程树**（DSH 的 subprocess runner 会被留下），
+   且 `Get-NetTCPConnection` 失败时无兜底。**已改为：端口监听者→整棵树，netstat 与
+   "命令行匹配 `bin.js web`" 双兜底。**
+
+**附带纪律（再次踩到）**：`.ps1` 含中文时**必须有 UTF-8 BOM**，否则 Windows PowerShell 5.1 按 ANSI
+解码 → 中文注释变乱码 → **整脚本语法错误**（本轮 `stop.ps1`/`stop-dsh.ps1` 都因此一度解析失败，
+补 BOM 后 4 个脚本解析错误数全为 0）。纯 ASCII 的脚本（如 `start-dsh.ps1`）无此问题。
 - .env：LLM_API_KEY / MF_AUTO_EXTEND / LLM_MAX_TOKENS_PER_DAY；git 三端镜像 git-mirror（GitHub↔Gitee，
   仓库 zhcnhan/颜回（YanHui） 与 gengzisama/颜回（YanHui））。
 - **备份政策（用户 2026-09-10 定，长期有效）**：
