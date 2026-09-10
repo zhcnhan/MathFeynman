@@ -49,6 +49,10 @@
 - 服务 scripts\dev.ps1（前端 5173/后端 8000）；日志 .runtime\backend.err.log。
 - .env：LLM_API_KEY / MF_AUTO_EXTEND / LLM_MAX_TOKENS_PER_DAY；git 三端镜像 git-mirror（GitHub↔Gitee，
   仓库 zhcnhan/颜回（YanHui） 与 gengzisama/颜回（YanHui））。
+- **备份落盘位置（用户 2026-09-10 定）**：一律放 `D:\DeepseekHarness\_backups\`（**不再放桌面**）。
+  现存两份：`dsh-full-backup-20260910-153523`（52886 文件 / 723 MB，`.dsh` 全量）、
+  `projcache-backup-20260910-151100`（68 文件 / 0.84 MB，事故当天救援副本，v3 缓存格式）。
+  规矩：**先复制 → 逐文件核对（计数 + 大小/哈希）→ 通过后才删原份**，顺序不可反。
 - 用户是"架构师↔Euler"之间的唯一中继：你给指令文本，用户粘贴；Euler 汇报由用户带回。
 
 ## 6. 精神基调（用户立 · 2026-09-10 · 架构师须内化，非代码改动）
