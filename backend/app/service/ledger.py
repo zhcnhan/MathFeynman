@@ -120,13 +120,16 @@ class Accumulator:
 
     def record(self, category: str, object: str, reason: str, *,
                impact: str = "", remedy: str = "", unit_id: str = "",
-               subject_id: str = "", detail: dict | None = None) -> Entry:
+               subject_id: str = "", detail: dict | None = None,
+               persist: bool = True) -> Entry:
+        """记一条账目；``persist=False`` ＝ 只进内存（就地提示），**不落库**
+        （R44 B：调用方已用 `write_via` 在同一事务里落过库时，避免二次落库/写锁自锁）。"""
         e = Entry(category=str(category), object=str(object or ""), reason=str(reason or ""),
                   impact=str(impact or ""), remedy=str(remedy or ""),
                   subject_id=subject_id or self.subject_id, unit_id=unit_id or self.unit_id,
                   detail=dict(detail or {}), created_at=_now_iso())
         self.entries.append(e)
-        if self.persist:
+        if self.persist and persist:
             write(e)
         return e
 
@@ -211,6 +214,26 @@ def note(category: str, object: str, reason: str, *, impact: str = "", remedy: s
 # ---------------------------------------------------------------------------
 # 落库 + 查询（**总账页**通道）
 # ---------------------------------------------------------------------------
+def _log_failure(e: Exception, entry: Entry) -> None:
+    """记账失败时的 stderr 兜底（**不静默**；连日志都写不出去也不能炸）。"""
+    try:
+        print(f"[ledger] 记账失败: {type(e).__name__}: {e}"
+              f"（类别={entry.category} 对象={entry.object} 原因={entry.reason[:80]}）",
+              file=sys.stderr)
+    except Exception:
+        pass
+
+
+def _row_of(entry: Entry):
+    from .. import models
+
+    return models.ContentLedger(
+        subject_id=entry.subject_id, unit_id=entry.unit_id, category=entry.category,
+        object=entry.object, reason=entry.reason, impact=entry.impact,
+        remedy=entry.remedy, detail_json=dict(entry.detail or {}),
+    )
+
+
 def write(entry: Entry) -> int | None:
     """把一条账目写入 ``content_ledger`` 表；失败**不影响主流程**（返回 None）。
 
@@ -220,24 +243,36 @@ def write(entry: Entry) -> int | None:
     """
     try:
         from ..db import SessionLocal
-        from .. import models
 
         with SessionLocal() as db:
-            row = models.ContentLedger(
-                subject_id=entry.subject_id, unit_id=entry.unit_id, category=entry.category,
-                object=entry.object, reason=entry.reason, impact=entry.impact,
-                remedy=entry.remedy, detail_json=dict(entry.detail or {}),
-            )
+            row = _row_of(entry)
             db.add(row)
             db.commit()
             return int(row.id or 0) or None
     except Exception as e:  # 记账失败绝不影响业务（铁则要求"不阻塞主流程"）
-        try:
-            print(f"[ledger] 记账失败: {type(e).__name__}: {e}"
-                  f"（类别={entry.category} 对象={entry.object} 原因={entry.reason[:80]}）",
-                  file=sys.stderr)
-        except Exception:  # 连日志都写不出去也不能炸
-            pass
+        _log_failure(e, entry)
+        return None
+
+
+def write_via(db, entry: Entry) -> int | None:
+    """把一条账目落进**调用方现有事务**（与调用方一起提交 / 一起回滚）。
+
+    **R44 B 引入的唯一理由**：调用方**已持有写事务**时（例：回炉 —— `demote_to_learning`
+    刚 flush 过 `user_nodes`/`relearn_logs`），若仍走 `write()` 的**独立连接**，SQLite 会
+    **自锁**（外连接等内连接、内连接又在等外连接提交 → `database is locked`），账目**静默丢失**。
+    这里改用调用方会话落库（`flush` 后本会话与后续读取都能看到），**仍是同一份账本**
+    （`content_ledger` 表 + 本模块唯一入口，不新建第二套账）。
+
+    口径：账目与调用方**同生共死**——回炉被回滚，则它的索引条目一并回滚（这正是要的语义：
+    索引指向的那次回炉确实存在）。
+    """
+    try:
+        row = _row_of(entry)
+        db.add(row)
+        db.flush()
+        return int(row.id or 0) or None
+    except Exception as e:
+        _log_failure(e, entry)
         return None
 
 
@@ -303,5 +338,6 @@ __all__ = [
     "CAT_COVERAGE", "CAT_OTHER", "SCOPE_THIS_RUN", "SCOPE_UNIT", "SCOPE_SUBJECT", "SCOPE_GLOBAL",
     "REMEDY_YES", "REMEDY_NO", "REMEDY_RETRY", "REMEDY_CONFIRM",
     "Entry", "Accumulator", "category_label", "collector", "current", "note", "write",
+    "write_via",
     "list_entries", "counts_by_category",
 ]

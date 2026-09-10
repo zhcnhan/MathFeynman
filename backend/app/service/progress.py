@@ -176,17 +176,75 @@ def mark_mastered(db: Session, user_id: str, node_id: str, graph: KnowledgeGraph
 
 
 def demote_to_learning(db: Session, user_id: str, node_id: str, graph: KnowledgeGraph, reason: str) -> None:
-    """mastered → learning（复习降级回炉，docs/03 §3）；留痕 relearn_logs。"""
+    """mastered → learning（复习降级回炉，docs/03 §3）；留痕 relearn_logs。
+
+    **R44 B（R41 §3-③ 漏做项）**：回炉还要在 **R39 总账**留一条**引用条目**——
+    只做索引（`detail.ref="relearn_logs"` + `relearn_id`），**不复制** `relearn_logs` 的明细
+    （保持单一权威源）；同一次回炉**幂等**（只记一条）。
+    """
     row = db.get(models.UserNode, (user_id, node_id))
     if row is not None and row.state == MASTERED:
         row.state = LEARNING
         row.consecutive_correct = 0
         row.mastered_at = None
-        db.add(
-            models.RelearnLog(user_id=user_id, node_id=node_id, reason=reason)
-        )
+        log = models.RelearnLog(user_id=user_id, node_id=node_id, reason=reason)
+        db.add(log)
         db.flush()
+        # R44 B：总账引用条目（幂等；失败不阻塞回炉本身）
+        note_relearn_in_ledger(db, user_id=user_id, node_id=node_id, reason=reason,
+                               relearn_id=int(getattr(log, "id", 0) or 0))
         recompute_states(db, user_id, graph)
+
+
+def note_relearn_in_ledger(db: Session, *, user_id: str, node_id: str, reason: str,
+                           relearn_id: int = 0, extra_key: str = "") -> bool:
+    """**R44 B**：在总账里给"回炉"记一条**引用条目**（中文原因 + 指向 `relearn_logs`）。
+
+    幂等判据＝ ``detail.ref == "relearn_logs"`` 且 ``detail.relearn_id`` / ``extra_key`` 相同
+    （同一次回炉被多条路径调用时**只留一条**）。返回是否新记了一条。
+
+    - 类别：``CAT_OTHER``（总账页可筛"其它"）；
+    - **只做索引**：不把 `relearn_logs` 的明细内容抄进来（单一权威源不变）；
+    - **落库走调用方事务**（`ledger.write_via(db, …)`，R44 实测修正）：回炉发生在
+      `demote_to_learning` 已 flush 的写事务里，用独立连接的 `ledger.write` 会与自身事务
+      争 SQLite 写锁（`database is locked`）→ 账目丢失；改走同一事务后与回炉**同生共死**。
+      若有活跃收集器（会话路径），同时补一条**就地提示**条目（不重复落库）。
+    """
+    from . import ledger
+
+    ref_key = str(relearn_id or extra_key or f"{node_id}:{reason}")
+    try:
+        existing = (
+            db.query(models.ContentLedger)
+            .filter(models.ContentLedger.category == ledger.CAT_OTHER,
+                    models.ContentLedger.unit_id == node_id)
+            .all()
+        )
+        for row in existing:
+            detail = dict(row.detail_json or {})
+            if detail.get("ref") != "relearn_logs":
+                continue
+            if str(detail.get("relearn_id") or detail.get("ref_key") or "") == ref_key:
+                return False  # 同一次回炉已记账 → 幂等跳过
+    except Exception:  # 查重失败也不能阻塞回炉（宁可多一条也不静默）
+        pass
+    reason_zh = (f"节点回炉重学：{reason or '复习/练习未通过'}——"
+                 "明细见**复习记录**（`relearn_logs`，本条目只做索引，不重复存内容）")
+    entry = ledger.Entry(
+        category=ledger.CAT_OTHER, object=f"节点 {node_id} · 回炉", reason=reason_zh,
+        impact=ledger.SCOPE_UNIT, remedy=ledger.REMEDY_YES, unit_id=node_id,
+        detail={"ref": "relearn_logs", "relearn_id": int(relearn_id or 0),
+                "ref_key": ref_key, "user_id": user_id, "kind": "relearn_index"},
+        created_at=ledger._now_iso(),
+    )
+    acc = ledger.current()
+    if acc is not None:  # 有活跃收集器 → 同步补进"就地提示"（persist=False，避免二次落库）
+        try:
+            acc.record(ledger.CAT_OTHER, entry.object, entry.reason, impact=entry.impact,
+                       remedy=entry.remedy, unit_id=node_id, detail=entry.detail, persist=False)
+        except Exception:
+            pass
+    return ledger.write_via(db, entry) is not None
 
 
 __all__ = [
@@ -197,5 +255,6 @@ __all__ = [
     "mark_learning",
     "mark_mastered",
     "demote_to_learning",
+    "note_relearn_in_ledger",
     "REVIEWING",
 ]

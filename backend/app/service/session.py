@@ -1342,11 +1342,24 @@ class SessionService:
         events.append({"type": "relearn_notice", "reason": "本轮 5 题未连续答对 3 题，请重读讲解后再试"})
 
     def _relearn_explain(self, db: Session, sess: models.Session, node: NodeDoc, events: list[dict], reason: str = "练习连续答错") -> None:
+        """回炉到讲解重学（练习连错 2 次 / 费曼额度尽）。
+
+        **R44 B（R41 §3-③）**：这里也是"回炉发生点" → 在 **R39 总账**留一条**引用条目**
+        （`detail.ref="relearn_logs"`，只做索引不复制明细）；**同一次回炉幂等**（按会话+节点+原因去重）。
+        """
         flow = sess.flow_json
         _practice_reset_cycle(flow["practice"])  # 模块级函数，非方法（热修 R11）
         _feynman_reset(flow["feynman"])  # R17：同上——回炉后重新走费曼必须从第 0 轮开始
         flow["stage"] = STAGE_EXPLAIN
         events.append({"type": "relearn_notice", "reason": reason})
+        try:  # 记账失败不阻塞回炉本身
+            from . import progress as progress_svc
+
+            progress_svc.note_relearn_in_ledger(
+                db, user_id=self.user_id, node_id=node.id, reason=reason,
+                extra_key=f"{sess.id}:{reason}")
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # 内部：费曼/达标
