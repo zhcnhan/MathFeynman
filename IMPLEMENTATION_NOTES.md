@@ -2541,6 +2541,9 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
    （不带 `test_` 前缀 → 不被 pytest 收集、不随常规 CI；手动门槛见 docs/13 §4）。
 2. **真实 SearXNG 端到端**：需用户自托管实例后配 `MF_SEARCH_PROVIDER=searxng` / `MF_SEARXNG_URL`。
 3. **PDF 上传 UI 真人走查**；**材料可追溯重生成**（引用材料参与的单元重生成 + 来源可查）。
+   **R37 部分闭合**：来源可查已闭（`GET /coverage` + 单元 `meta.coverage` + 讲解尾部"教材依据"）；
+   **"按材料变化强制重生成"仍缺**（`POST /units/{id}/content` 是幂等的，内容在库即返回 `exists`；
+   要重生成需先删内容文件或加 `force` 入口——**未做**，见 §67.6）。
 4. **math preset 本体是否彻底清**：当前保留 25 个内容文件 + 258 单元大纲（仅 `enabled=0`）。
    若要"纯白纸"（连内容文件一并清），属另一条指令。
 5. **`.runtime/EULER_TICKET_R34.md` 已作废、不要执行**：其两项已由架构侧直办——
@@ -2562,9 +2565,11 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
 10. ~~**P4（难度只能靠已教事实累积）目前只有 prompt 约束**~~ → **✅ 已闭（R35b §65.4）**：
     `answerability.check_progression()` 两条机器校验（引用必须已教 / 加难必须加事实）**已接生成端**，
     含造错用例；已随可答性闸门一起跑（`outline/generate.py`）。
-11. **【R36 D/P 新发现】材料注入只做"分节摘要"**（PDF 按页 / Markdown 标题 / 段落兜底，每节 ≤400 字、
-    总量 ≤`MF_OUTLINE_MATERIAL_MAX_CHARS`）：**未做语义级摘要**——大部头书籍注入的是"每节开头若干字"。
-    若实际体验不佳，可加一次轻模型摘要（成本/复杂度上升，未裁定）。
+11. ~~**【R36 D/P 新发现】材料注入只做"分节摘要"**（PDF 按页 / Markdown 标题 / 段落兜底，每节 ≤400 字、
+    总量 ≤`MF_OUTLINE_MATERIAL_MAX_CHARS`）：**未做语义级摘要**——大部头书籍注入的是"每节开头若干字"。~~
+    → **✅ 已闭（R37 S1，2026-09-10）**：默认改为**不设预算**（`MF_MATERIAL_INJECT_MAX_CHARS=0`）+ 按
+    `bookmap` 章/节结构注入**完整正文** + 按 `MF_MATERIAL_BATCH_CHARS` 在章/页边界分批；旧变量只在**显式设置**
+    时生效（回落截断口径）。样本实测注入量 6,000 → **103,448 字**；见 **§67.1/§67.2**。
 12. **【长期纪律】AI 输出 schema 与 prompt 的字段一致性**是易漏点（§60.4：schema 漏声明
     `materials` → pydantic 静默丢弃，单测用假 provider 测不出）。**今后新增 AI 输出字段必须同时改
     `ai/calls.py` 的 out schema + prompt + 一条 schema 往返用例**。（本批挑战题两个调用点已照此办：
@@ -2582,6 +2587,13 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     （`asked` +1，旧题在 flow 里被覆盖）。若要"刷新后仍在"，需加一个显式读端点
     （如 `GET /session/{id}/challenge`）——**未做**，因为那会把挑战题变成"半个默认流程"。
     取舍请架构侧裁定（倾向：保持现状＝规格优先）。
+
+16. **【R37 待架构侧确认】5 条**（详述见 §67.6）：
+    ① 离线段（无 `LLM_API_KEY`）+ 有教材：仍出稿但覆盖状态如实记"未覆盖（本内容无教材依据）"，
+    是否改为**拒绝出稿**？② 难度**非降钳制**的副作用（书序上一个 3 会抬高其后全部单元）；
+    ③ 讲解"整句命中教材"仅 19%（转述 + 夹引号，S3 允许），是否要更贴原文；
+    ④ 附录类小条目（45 字）也会成为单元（S2 无豁免规则）；⑤ 有章节地图时**单元数由书决定**
+    （样本 46 个），`count` 只在无地图时生效——与 docs/14 §2.1 字面略有出入。
 
 
 ---
@@ -3338,5 +3350,136 @@ lecture_md, missing_dimensions[]}` + 事件 `feynman_reteach`；离线路径同�
 4. **`has_quotable_content` 是语言层启发式**（§66.3 第 1 层）：去掉敷衍用语后仍不足 6 字才算"无可引用"，
    个别"半敷衍"句子（如"我真的不会这道题，没学过"）可能落到第 2 层由模型判 reteach——
    方向安全（多一次模型判定、结论仍是 reteach 或按原话追问），但**不是百分百确定**，如实登记。
+
+
+---
+
+## 67. R37 教材真源化（Source-First）：S1–S9 落地与验收自证（2026-09-10）
+
+> 用户指令原话要旨："**不用节省成本**。我导入教材，他就应该**教会我这本教材的一切**——大纲、题目、
+> AI 去**直接理解这本教材**然后出具，**各种东西都应该这样**。"
+> 性质：**产品级地基变更**——"教材＝参考" → "**教材＝权威真源**"。规格见 docs/09 R37、工单
+> `.runtime/EULER_TICKET_R37.md`。
+
+### 67.1 做了什么（按 S1–S9）
+
+| 项 | 落地件（新增/改动） | 关键点 |
+|---|---|---|
+| **S1 不省成本** | `outline/bookmap.py`（新）、`materials.draft_materials/_full_blocks/_make_batches`、`config.material_inject_max_chars/material_batch_chars` | 默认 `MF_MATERIAL_INJECT_MAX_CHARS=0`＝**不限**；按章/节注入**完整正文**；书太大按 `MF_MATERIAL_BATCH_CHARS`（默认 60000）在**章/页边界**分批（每批都带全书地图），**绝不"前 N 字"**；显式设上限才回落 R36 截断口径 |
+| **S2 大纲＝书的目录** | `bookmap.parse_book`（目录 + 运行页码 → 章/节）、`materials.coverage_problems/coverage_summary/entry_order/unit_order_key`、`draft.finalize_candidate` 书序重排/重编号/线性先修/难度单调化、`api/subjects.put_outline` 全覆盖 422 | 地图条目 → 单元；**未映射 → 违规**；起草期先**确定性回捞**、再按**教材目录补齐**并记问题（书的结构不是编造）；跨批 `prereqs` 不可靠 → 一律以**书序**线性串联 |
+| **S3 讲解＝讲全教材该段** | `generate._ai_draft(material_text=…)`（教材锚定硬要求 8–11 条）、`unit_material_pack` | 注入该单元对应章/节的**完整正文**；讲解＝该段完整演绎（可换措辞/举例，不得省略要点、不得加教材外事实） |
+| **S4 题目/例题/rubric 由教材派生** | 同 S3 + R35 既有 `basis`/`worked_examples`/rubric | 每题 `basis.quote` 必须逐字出自教材；例题仍走 R35 A3 口径（书里有的直接用，没有则由书中内容构造并在讲解尾部标"据教材 X 节"） |
+| **S5 教材锚定（本批核心）** | `answerability.clean_facts/check_basis/gate_node(material=…)`、`AnswerabilityReport.dropped_facts/material_checked`、`generate` 失败三档 | **第三类校验**：事实句/引文必须逐字出自教材原文；**重试一次** → 题目仍不行**丢弃该题**、事实句仍不行**整单元失败**（`status="uncovered"`，不落盘）；违规文案全中文并说明"教材里没有这句话 vs 该段没讲到" |
+| **S6 覆盖账本** | `materials.coverage_ledger`、`GET /subjects/{sid}/coverage`、`outline_store` 单元 `meta.coverage`、大纲页覆盖卡 | 每单元记录 来源材料 + 节标签 + 覆盖状态（完整/部分/未覆盖）+ 命中事实数/丢弃题数；大纲页显示 `已覆盖节/总节` + 未覆盖清单；**教材未覆盖 → 明确中文告知，不编造** |
+| **S7 扫描版诚实边界** | `materials.text_health`（入库写入 frontmatter）、`add_material`/`list_materials`/PDF 上传响应、`draft_outline` 与 `put_outline` 拒绝 | 每页字符数 + 有文字页占比 → `healthy=false` + "本书是扫描版、未提取到文字，请先 OCR 或改用文本版"；**起草/采纳都拒绝**，不静默出稿；**不做 OCR** |
+| **S8 大纲阶段读得到书的结构** | 同 S1/S2（章节地图 + 目标章节正文） | 起草 prompt 里同时给**全书地图**与**本批完整正文** |
+| **S9 融合约束** | 复用 `content/citations.py`（唯一尺子）、闸门三层、`content/subjects/<sid>/materials/`、学科生命周期、`attempts/feedback` | **无平行机制**；无 `if subject == "math"`；R37 只给尺子加了教材排版归一化（全角 ASCII 折算 + 私用区字形剔除），**不新增第二份实现** |
+
+### 67.2 真实样本对照（同一学科 / 同一本教材，架构侧立项证据 → 本批实测）
+
+样本：学科「行星科学」`s-f2decfcf`，材料 `researchgate-17551026c7.md`（271,991 字，126 页）。
+**改造前**样本留档 `D:\DeepseekHarness\_backups\r37-before-20260910-195904\`；本批重建前又备份到
+`D:\DeepseekHarness\_backups\r37-regen-20260910-2043xx\`（含旧 `stages/`+`subjects/`）。
+
+| 检查项 | 改造前（架构侧实测） | 改造后（本批实测） |
+|---|---|---|
+| `taught_facts` 命中教材 | **0/4** | **9/9（100%）** |
+| 各题 `basis.quote` 命中教材 | **0/4** | **5/5（100%）** |
+| 讲解句子 ≥12 字**整句**命中教材 | 0/16 | 5/26（19%；S3 允许换措辞，整句照抄非硬要求） |
+| 讲解句**内含**教材逐字片段 ≥12 字 | 0/16 | **14/26（54%）** |
+| 讲解字数 | 520 | **1,805** |
+| 大纲 | 14 单元（全部来自前言/目录） | **46 单元；20/20 章/节条目全覆盖，未覆盖清单为空** |
+| 教材结构识别 | — | `kind=toc`：**13 章 + 7 附录 = 20 条目**（目录 + 运行页码精确对齐；已按书末"参考文献/索引"截去其后 34 页） |
+| 注入量（起草） | 6,000 字上限（分节摘要） | **103,448 字 / 2 批**（完整正文，`inject_max_chars=0`） |
+| 覆盖状态（u01） | 无此概念 | `部分`（9 条事实句逐字出自教材；4 条模型自撰句被**丢弃**，0 题被丢弃） |
+
+审计工具：`backend/tests/audit_material_binding.py`（docstring 写明属工具、不随 CI）——
+复跑命令与输出：
+
+```
+.\.venv\Scripts\python backend/tests/audit_material_binding.py s-f2decfcf
+taught_facts 命中教材：9/9（100%）
+basis.quote 命中教材：5/5（100%）
+讲解句内含教材逐字片段(≥12字)：14/26（54%）
+结论：内容与教材有字面接地（无系统性零接地）。
+```
+
+**生成链路实测**（真模型 deepseek-chat，`MF_MATERIAL_BATCH_CHARS=60000`）：
+`/outline/draft` 200（24.5s，2 批）→ `/outline` 采纳 revision 3→4 → 删除旧
+`node_s-f2decfcf.u01_auto.md` → `/units/s-f2decfcf.u01/content` 200（14.8s，
+"出稿：AI（教材锚定）；覆盖状态：部分"）→ `/coverage` 200（`total/covered = 20/20`、`uncovered = []`）。
+生成出的讲解会**引用式演绎**（"教材指出：…"），facts/题目引文 100% 可回查。
+
+### 67.3 造错必报用例（本批新增 11 条，`backend/tests/test_r37_material_binding.py`）
+
+| 用例 | 断言（必报） |
+|---|---|
+| `test_r37_s5_fact_not_in_material_fails_whole_unit` | 事实句只在讲解里、教材里没有 → 两轮后 `status="uncovered"`、note 含"教材未覆盖此单元"、**磁盘无落盘文件** |
+| `test_r37_s5_exercise_quote_not_in_material_is_dropped` | 某题引文只在讲解里 → **丢弃该题**（落盘文件里没有该题），其余保留，`coverage.status="部分"`、`dropped_exercises=1` |
+| `test_r37_s5_grounded_unit_is_kept_whole` | 事实句/引文都逐字出自教材 → `created` + `coverage.status="完整"`；prompt 里确有**整章正文**与教材锚定硬要求 |
+| `test_r37_s1_injection_defaults_to_unlimited_and_grows_with_book` | 默认 `inject_max_chars=0`、`truncated=False`、`used_chars` 随书规模增长；显式 500 才截断 |
+| `test_r37_s1_large_book_is_batched_by_structure` | 超阈值 → 分批；3 章正文**一句不丢**（不是"前 N 字"） |
+| `test_r37_s2_draft_units_cover_every_chapter` | 候选 `coverage={total:2,covered:2,uncovered:[]}` |
+| `test_r37_s2_unmapped_chapter_is_filled_from_book_toc_and_reported` | 模型漏映射 → 按**教材目录**补齐 + 记问题，`uncovered=[]` |
+| `test_r37_s2_put_outline_rejects_unmapped_chapter_zh` | 手工大纲漏章 → **中文 422"教材覆盖不全"**；补全后 200 |
+| `test_r37_s6_coverage_ledger_api` | `/coverage` 给出 来源/节标签/状态/note；条目 `covered=true` 且列出单元 id |
+| `test_r37_s7_scanned_material_reported_and_refused` | 无文本层材料 → `text_health.healthy=false` + 中文；起草 422（含"扫描"）；采纳 422（含"文本层"） |
+| `test_r37_citation_ruler_folds_fullwidth_and_private_use` | 全角数字/私用区字形归一化（教材排版），尺子仍单一实现 |
+
+**改到既有用例的只有 1 处**（R36 `test_d2_citation_stripped_when_regeneration_also_fails`）：
+R37 S2 要求"章节不得因溯源不成立而悄悄消失"，故该用例的断言从"`units[0].materials == []`"改为
+"**被剔除引用的那个单元**保持无溯源（宁缺勿造口径不变）+ 该章由教材目录补齐并记问题"——**没有放宽**
+（仍是 `ok=False`、仍报"溯源不成立"），只是把"书不能丢章"的新规格写进断言。
+
+### 67.4 融合对照表（R37 行：每条新增件 → 复用点 → 断言）
+
+| 新增件 | 复用点（禁新建平行机制） | 断言/用例 |
+|---|---|---|
+| 教材结构解析 `outline/bookmap.py`（章→节地图） | **不是**第二套材料机制：它只是材料层的新解析器，入口仍在 `outline/materials.py` | `test_r37_s1_*` / 真实样本 `kind=toc` 20 条目 |
+| 完整正文注入 + 结构化分批 | 复用 R36 的 `draft_materials()` 唯一入口与 `material_usage` 口径 | `test_r37_s1_injection_defaults_to_unlimited_and_grows_with_book`、`test_r37_s1_large_book_is_batched_by_structure` |
+| 教材锚定（第三类校验） | **复用 `content/citations.py`**（同一把尺子，含新增归一化）与 R35 `gate_node` 结构 | `test_r37_s5_*` 三条 + `test_r37_citation_ruler_folds_fullwidth_and_private_use` |
+| 事实句/引文逐字出自教材 | 复用 `TaughtFact`/`BasisDoc`/`AnswerabilityReport`（**不新建表/字段体系**）；结论落在既有 auto 内容文件 | 同上 + `content validate` ok |
+| 覆盖账本 | 复用大纲 `OutlineUnit.materials`/`meta`（**不新建存储**）+ 材料层结构解析 | `test_r37_s6_coverage_ledger_api`、`GET /coverage` |
+| "未覆盖"如实告知 | 复用既有中文错误/note 通道（`errors_zh` 口径），不新增状态机 | `uncovered` 走既有 `status` 字段 + 前端误报修正 |
+| 扫描版检测 | 复用 `pdfparse`/`add_material` 入库链路（健康度写 frontmatter，不新建材料类型） | `test_r37_s7_scanned_material_reported_and_refused` |
+| 大纲全覆盖校验 | 复用 `validate_outline_doc` + `PUT /outline` 的 422 通道 | `test_r37_s2_put_outline_rejects_unmapped_chapter_zh` |
+| 出稿失败三档 | 复用 R35 既有"重试一次 → 丢弃 → 失败"骨架（本次把"教材"接进同一骨架） | `test_r37_s5_*` |
+| 审计工具 | 复用 `content/citations.py` 尺子 + 既有审计脚本范式（`audit_*` 不带 `test_` 前缀） | `audit_material_binding.py` 工具输出 |
+
+### 67.5 回归与验收（实测，非推算）
+
+| 项 | 基线（架构侧） | 本批实测 |
+|---|---|---|
+| `pytest backend/tests` | 392 passed + 2 skipped / 394 | **403 passed + 2 skipped / 405 collected，0 failed / 0 error**（+11 R37 用例） |
+| `content validate` | ok 25/50 | **ok 26 nodes / 55 exercises**（差 1 节点 5 练习＝R37 重建的 `s-f2decfcf.u01`；旧样本 1 节点 4 练习） |
+| audit 五学段 | 27/31/81/59/60 | **27/31/81/59/60，ok=True**（逐位一致） |
+| `tsc --noEmit` / `vite build` | exit 0 | **exit 0 / exit 0** |
+| `guardrails.semantics_stats()` | {30,0,30,0} | **{templates:30, violations:0, verified:30, unverified:0, l1_subjects:['math']}**（逐位一致） |
+| 真样本接地 | 0/4、0/4、0/16 | **9/9、5/5、句内含逐字片段 14/26** |
+
+**提交链（每步单独提交，标 R37，未与其它裁决混提）**：
+`713a702`（后端核心 S1–S8）→ `22f4cbc`（11 条造错必报用例）→ `c534eaa`（大纲页覆盖账本 + 扫描版告知 + uncovered 展示）
+→ `eac1faf`（书序重排/编号/线性先修/难度单调化 + 溯源规范标签 + 幂等重新记账 + 审计工具）→ 本节（文档 + NOTES + §58）。
+**未污染**：测试仍走临时内容根/临时库；真实盘上只改了 `content/subjects/s-f2decfcf/outline.yaml`（revision 1→4）
+与 `content/stages/s-f2decfcf/node_s-f2decfcf.u01_auto.md`（旧样本已在 `_backups` 归档），
+两者都是**本次验收锚点要求**的重新生成产物，且仍未入版控（`.runtime`/`_backups` 同理）。
+
+### 67.6 疑点 / 需架构侧确认（已登记 §58）
+
+1. **离线（无 `LLM_API_KEY`）且有教材时**：无法读教材 → 仍走启发式出稿并落盘，但覆盖状态如实记为
+   **"未覆盖：本内容无教材依据（离线启发式）"**，响应 note 与大纲页徽标都显示——**没有静默**。
+   若架构侧要求"有教材且无模型时**也拒绝出稿**"，请裁定（当前取舍：保住离线机制可跑通/可测，
+   与 R36 的"离线可用优先"一致）。
+2. **难度单调化的副作用**：书序线性串联要求"先修难度不得高于后继"（R36 P1），故 R37 把书序上的难度
+   做**非降钳制**；样本里第 2 章（动力学）判 3 后，后续单元全被抬到 3（`notes` 里有说明）。
+   替代方案（保留模型原始难度、只让先修取"不高于自己"的最近单元）会让部分单元变成"根单元"——
+   请架构侧定取舍。
+3. **讲解的"整句命中率"只有 19%**：模型以**转述 + 夹引号**（"教材指出：…"）方式演绎，S3 明文允许换措辞；
+   若希望"更贴原文"，需在 prompt 上进一步约束或加"逐段覆盖"校验（当前**未做**，如实登记）。
+4. **附录类条目（如"附录D 元素周期表" 45 字）也会成为 1 个单元**：S2 要求"每个章节映射 ≥1 单元"，
+   故它被目录补齐；若架构侧认为附录不必成单元，需要一条"哪些条目可豁免覆盖"的规则（当前**无豁免**）。
+5. **单元数不再受 `count` 约束**：有章节地图时，单元数由书的结构决定（本样本 46 个，`UNIT_LOCAL` 上限放宽到 60）；
+   `count` 只在无地图时生效——与 docs/14 §2.1"用户指定单元数"的字面略有出入，请确认口径。
+
 
 

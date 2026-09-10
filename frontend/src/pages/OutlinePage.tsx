@@ -625,6 +625,17 @@ export default function OutlinePage() {
             {candidate.problems?.length > 0 && (
               <div className="banner warn">候选提示：{candidate.problems.slice(0, 5).join("；")}</div>
             )}
+            {candidate.coverage && (
+              <div className={candidate.coverage.uncovered.length ? "banner warn" : "banner ok"}>
+                教材覆盖：已覆盖节 {candidate.coverage.covered} / {candidate.coverage.total}
+                {candidate.coverage.uncovered.length > 0
+                  ? `；未覆盖：${candidate.coverage.uncovered.join("、")}`
+                  : "（未覆盖清单为空）"}
+              </div>
+            )}
+            {(candidate as any).notes?.length > 0 && (
+              <div className="dim" style={{ fontSize: 12 }}>{(candidate as any).notes.join("；")}</div>
+            )}
             {candidate.units.map((u, i) => (
               <div key={u.id} style={{ padding: "4px 0", borderBottom: "1px solid #eef2f6" }}>
                 <strong>{i + 1}. {u.title}</strong>{" "}

@@ -22,19 +22,20 @@
 | POST | `/subjects` | 创建自定义学科（body: label/description/subject_id?，id 须 `^[a-z][a-z0-9-]*$`） |
 | GET / DELETE | `/subjects/{subject_id}` | 学科详情 / 删除自定义学科（preset 不可删） |
 | GET | `/subjects/{subject_id}/outline` | 当前大纲全文（审阅；无大纲 404） |
-| PUT | `/subjects/{subject_id}/outline` | 采纳/整份重生成（custom；revision+1；结构校验：唯一/自指/环/引用/**R36 P1 难度不得倒置（roadmap 源豁免）**）；**R36 D3**：服务端按各单元 `materials[].title` 反查 material_id 写入 `source_materials`（引用不存在的材料 → 中文 422） |
+| PUT | `/subjects/{subject_id}/outline` | 采纳/整份重生成（custom；revision+1；结构校验：唯一/自指/环/引用/**R36 P1 难度不得倒置（roadmap 源豁免）**）；**R36 D3**：服务端按各单元 `materials[].title` 反查 material_id 写入 `source_materials`（引用不存在的材料 → 中文 422）；**R37 S2/S7**：**教材章节全覆盖校验**（地图条目未映射 → 中文 422"教材覆盖不全"）、材料文本层不合格 → 中文 422 |
 | POST | `/subjects/{subject_id}/outline/validate` | 校验候选大纲（不落盘，返回问题清单，UI 预览用；按 `source` 生效 P1——roadmap 源豁免） |
 | PATCH | `/subjects/{subject_id}/outline/units/{unit_id}` | 单元局部改（custom 任意白名单字段；preset 仅 concept_tags 等附加字段） |
 | POST | `/subjects/{subject_id}/outline/regenerate` | 大纲重生成：math=roadmap 派生 revision+1；custom=重新起草候选（不落盘，采纳 PUT 才 +1；**同样注入引用材料**） |
-| POST | `/subjects/{subject_id}/outline/draft` | AI/启发式起草大纲候选（body: brief/count/group_hint；LLM_API_KEY 时走 CALL_OUTLINE_DRAFT，否则离线启发式；不落盘，供审阅后 PUT 采纳）（A4）；**R36 D1–D4**：注入该学科引用材料的分节摘要（`MF_OUTLINE_MATERIAL_MAX_CHARS` 预算、超限截断留痕；**材料可选，无材料退化为现状**），要求逐单元 `materials:[{title,section}]` 溯源并服务端校验（不成立 → 驳回重生成一次 → 仍不成立则剔除并记问题）；响应含 `source_materials` 与 `material_usage{count,used_chars,dropped,truncated}` |
-| POST | `/subjects/{subject_id}/units/{unit_id}/content` | 懒生成单元内容（source:auto 落盘 + 库/DB 同步，幂等；仅 custom 学科；math 走 roadmap 流水线）（A4） |
+| POST | `/subjects/{subject_id}/outline/draft` | AI/启发式起草大纲候选（body: brief/count/group_hint；LLM_API_KEY 时走 CALL_OUTLINE_DRAFT，否则离线启发式；不落盘，供审阅后 PUT 采纳）（A4）；**R36 D1–D4**：注入该学科引用材料，要求逐单元 `materials:[{title,section}]` 溯源并服务端校验（不成立 → 驳回重生成一次 → 仍不成立则剔除并记问题）；**R37 S1/S2/S8**：默认**不设注入预算**（`MF_MATERIAL_INJECT_MAX_CHARS=0`；显式>0 才回落 R36 截断口径），按 `outline.bookmap` 的**章→节地图**注入**完整正文**，书太大按 `MF_MATERIAL_BATCH_CHARS` 在章/页边界**分批**（绝不"前 N 字"）；单元由书序派生并按书序重排（`notes` 记录规范化决定）；每个章/节条目必须映射到 ≥1 个单元（未映射者先确定性回捞、再按教材目录补齐并记 `problems`）；**扫描/图片版（文本层不合格）→ 中文 422**；响应含 `source_materials`、`material_usage{count,used_chars,dropped,truncated,batches,inject_max_chars,blocked}`、`coverage{total,covered,uncovered}`、`notes` |
+| POST | `/subjects/{subject_id}/units/{unit_id}/content` | 懒生成单元内容（source:auto 落盘 + 库/DB 同步，幂等；仅 custom 学科；math 走 roadmap 流水线）（A4）；**R37 S3/S4/S5**：注入该单元对应教材章/节的**完整正文**；事实句与题目引文必须**逐字出自教材**，否则丢弃该题 / 整单元失败（`status="uncovered"`，中文 note，**不落盘**）；响应含 `coverage{status:完整\|部分\|未覆盖, grounded_facts, dropped_facts, dropped_exercises, sources, note}` |
+| GET | `/subjects/{subject_id}/coverage` | **R37 S6 覆盖账本**：`total/covered/uncovered`（章/节条目 ↔ 单元映射）+ `materials[{healthy,structure_kind,structure_note}]` + `entries[]` + `units[{sources,status,note,grounded_facts,dropped_exercises}]`（大纲页同源展示） |
 | GET | `/subjects/{subject_id}/progress` | 学科进度视图（单元 达成/等效/开放 + 内容节点状态；A2） |
 | POST | `/subjects/{subject_id}/progress/recompute` | 幂等重算概念掌握证据（= 数学历史掌握迁移入口；A2） |
 | POST | `/subjects/{subject_id}/progress/reset` | 显式重置学科进度（清概念层 + 学科内容掌握；body `{mode: all}`；A2） |
 | GET / PUT | `/subjects/{subject_id}/policy` | 内容来源策略（ai/import/web/mixed，默认 ai；B3） |
 | POST | `/subjects/{subject_id}/materials/upload` | 本地导入文本 → 本地引用库（B3；粘贴文本入口保留） |
-| POST | `/subjects/{subject_id}/materials/upload-pdf` | **PDF/文档上传**（multipart：title? + file）→ pypdf 分页/分节文本 → 引用库（kind=pdf；≤20MB 等限制、失败中文 422；C2） |
-| GET | `/subjects/{subject_id}/materials` | 引用材料列表（含 kind：local/web/pdf 与源文件名；B3+C2） |
+| POST | `/subjects/{subject_id}/materials/upload-pdf` | **PDF/文档上传**（multipart：title? + file）→ pypdf 分页/分节文本 → 引用库（kind=pdf；≤20MB 等限制、失败中文 422；C2）；**R37 S7**：响应含 `text_health{pages,chars,healthy,checked,note}`——无文本层/极稀疏 → `healthy=false` + 中文告知"请先 OCR 或改用文本版"（**不再静默**；该材料会被起草/采纳拒绝） |
+| GET | `/subjects/{subject_id}/materials` | 引用材料列表（含 kind：local/web/pdf、源文件名、**R37 `text_health`**；B3+C2） |
 | DELETE | `/subjects/{subject_id}/materials/{material_id}` | 删除单条材料（B3） |
 | POST | `/subjects/{subject_id}/materials/search` | 联网候选清单（C1 provider 抽象：默认未启用 → `{items:[], note:中文提示, backend:{configured:false}}`（UI 标注"未配置检索后端"）；配 SearXNG → 检索 →（配 LLM_API_KEY）LLM 整理候选） |
 | POST | `/subjects/{subject_id}/materials/select` | 勾选候选 → 本地化引用；`items[].fetch=true` 时抓取该公开网页正文入库（text/html、大小上限；失败回落摘要；不整本下载书籍）（B3+C1） |

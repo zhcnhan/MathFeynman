@@ -119,6 +119,35 @@
 6. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"（本批 5 条见 §50）；涉及
    docs/02/03/05/06/07/14 的语义变更在实现时顺带同步。
 
+> **R37（教材真源化 Source-First，S1–S9）已由 Euler 落地（2026-09-10 · 待架构侧验收）**：
+> ① **S1 不省成本**：`MF_MATERIAL_INJECT_MAX_CHARS` 默认 **0＝不限**；按 `outline.bookmap` 的
+> **章 → 节地图**注入**完整正文**；书太大按 `MF_MATERIAL_BATCH_CHARS`（默认 60000）在章/页边界**分批**
+> （绝不"前 N 字"）；显式设上限才回落 R36 截断口径。实测同一本书：注入量 **6,000 → 103,448 字**（2 批）；
+> ② **S2 大纲＝书的目录**：`bookmap` 解析 PDF 目录 + 运行页码（本样本识别出 13 章 + 7 附录 = 20 条目），
+> 由地图派生单元、按**书序**重排/重编号/线性先验/难度单调化；**章节未映射 → 中文违规**
+> （`PUT /outline` 422；起草时先确定性回捞、再按教材目录补齐并记问题）；
+> ③ **S3/S4/S5 教材锚定**：单元出稿注入该章**完整正文**，闸门加**第三类校验**——`taught_facts[].text`
+> 与 `basis.quote` 必须**逐字出自教材**；题目不行**丢弃该题**（重试一次）、事实句不行**整单元失败**
+> （`status="uncovered"`，中文告知"教材未覆盖此单元"，**不落盘、不编造**）；
+> ④ **S6 覆盖账本**：`GET /subjects/{sid}/coverage` + 大纲页同源展示（已覆盖节/总节 + 未覆盖清单 +
+> 逐单元来源/状态）；⑤ **S7 扫描版**：入库检测文本层健康度，无文本层 → 起草与采纳**都拒绝**并中文告知；
+> ⑥ **S9 复用**：引文尺子仍是 `content/citations.py`（只加固归一化），闸门/材料存储/生命周期/账本零平行机制。
+>
+> **实测对照（同一学科 `s-f2decfcf`、同一本教材 271,991 字）**：
+> | 检查项 | R37 前（架构侧实测） | R37 后（本批实测） |
+> |---|---|---|
+> | `taught_facts` 命中教材 | **0/4** | **9/9（100%）** |
+> | 各题 `basis.quote` 命中教材 | **0/4** | **5/5（100%）** |
+> | 讲解句含教材逐字片段(≥12字) | 0/16 | **14/26（54%）** |
+> | 讲解字数 | 520 | **1,805（+247%）** |
+> | 大纲 | 14 单元（只有前言/目录） | **46 单元，20/20 章全覆盖、未覆盖清单为空** |
+> 审计工具：`backend/tests/audit_material_binding.py`（**工具、不随 CI**；`--dir/--material` 可复跑归档样本）。
+> 提交链：`713a702`（后端核心）→ `22f4cbc`（11 条造错必报用例）→ `c534eaa`（大纲页覆盖账本/健康告知）→
+> `eac1faf`（书序重排 + 溯源规范标签 + 幂等重新记账 + 审计工具）→ 文档/NOTES 收尾。
+> 回归：pytest **403 passed + 2 skipped / 405 collected**、`content validate` ok 26/55、
+> audit 五学段 27/31/81/59/60、`tsc --noEmit` + `vite build` exit 0、`semantics_stats` 逐位不变。
+> 记录：NOTES **§67**（含 S1–S9 逐条自证、真实样本对照、疑点）；挂账总表 §58 已更新。
+
 > **R35（可答性 S1–S8）已全部落地，R35b 收尾批完成（Euler，2026-09-10 · 待架构侧验收）**：
 > S1–S8 的实现分四次提交落地——`§61`（S1/S2/S5/S6/S7 + A3 例题）→ `§62`（S6/S7 收口）→
 > `§63/§64/§65`（语义自检闸门 → 求值路径单一化 → 题面泄漏清零 + 30 模板补 `expect`/模板级 `basis` + P4 机器校验）
@@ -144,17 +173,25 @@
   ① **每次改动生成器后**必须手动跑一轮全库审计；② **发版前**跑一轮；③ **日常 CI 只跑离线结构性校验**
   （答案可答性单测 + `content validate`）。两者文件名**不带 `test_` 前缀**（pytest 不收集、不随 CI），
   需网络与 LLM_API_KEY。跑法：`$env:MF_ALLOW_LIVE_AI=1; .\.venv\Scripts\python backend/tests/audit_answerability.py`。
+- **R37 教材锚定审计（工具，不是测试）**：`backend/tests/audit_material_binding.py` —— 只读盘上内容，
+  **不调模型**；判定 `taught_facts` / `basis.quote` / 讲解句（整句与"句内含教材逐字片段"两种口径）
+  与教材正文的接地率。跑法：`.\.venv\Scripts\python backend/tests/audit_material_binding.py s-f2decfcf`
+  （或 `--dir <stages 目录> --material <材料文件>` 复跑归档对照样本）。**改动教材注入/出稿链路后应手动跑一轮**。
 - `.env`（仓库根，git 忽略）：LLM_API_KEY 等；`MF_AUTO_EXTEND=1` 控制全自动续关；
-  `LLM_MAX_TOKENS_PER_DAY=0` 不限额。
-- 当前基线（**Euler 于 R35b §66 收尾批复跑确认，2026-09-10**）：pytest **392 passed + 2 skipped**
-  （394 collected，exit 0；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
+  `LLM_MAX_TOKENS_PER_DAY=0` 不限额；**R37 材料注入**：`MF_MATERIAL_INJECT_MAX_CHARS`（0=不限，默认）、
+  `MF_MATERIAL_BATCH_CHARS`（默认 60000，按章/页边界分批）、`MF_MATERIAL_MIN_CHARS_PER_PAGE`（默认 40，
+  扫描版判定）、`MF_MATERIAL_MIN_TEXT_PAGE_RATIO`（默认 0.5）；旧名 `MF_OUTLINE_MATERIAL_MAX_CHARS`
+  仅在**显式设置**时生效（回落 R36 截断口径）。
+- 当前基线（**Euler 于 R37 收尾批复跑确认，2026-09-10**）：pytest **403 passed + 2 skipped**
+  （405 collected，exit 0；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
   均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60）；
-  content validate **ok 25 节点 / 50 练习**；前端 `npx tsc --noEmit` + `vite build` 均通过；
-  git 仓库不含 data/、_drafts。
+  content validate **ok 26 节点 / 55 练习**（含 R37 重建的 `s-f2decfcf.u01`；R35b 时为 25/50——
+  差的 1 节点 4 练习即该学科旧样本，R37 重建后为 1 节点 5 练习）；
+  前端 `npx tsc --noEmit` + `vite build` 均通过；git 仓库不含 data/、_drafts。
   > 注：**pytest 数字不随真实库清空变化**——`backend/tests/conftest.py` 在导入 app 之前就隔离了
   > `MF_DB_PATH`（临时库）与 `MF_CONTENT_ROOT`（会话级内容副本），真实库与测试完全隔离。
   > 历史基线：R30 前 306+2 → R30 325+2 → R33 325+2 → R34-fin 325+2 → R35a 349+2 → R35b-P0 358+2
-  > → §13 373+2 → §14 376+2 → **§66 392+2**。
+  > → §13 373+2 → §14 376+2 → §66 392+2 → **R37 403+2**。
 - 工作目录已改名：`D:\DeepseekHarness\YanHui`（旧名 MathFeynman；执行记录见 docs/09 R32 §3）。
 - **数据库（R33 任务 B 已归一为 `backend/data/yanhui.db`，2026-09-10）**：
   - **清空后现状**（docs/15 §3.1 + NOTES §57.2e/§59.2）：`subjects 1`（math，**enabled=0 停用**）、
