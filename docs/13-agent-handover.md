@@ -190,6 +190,24 @@
 > 记录：NOTES **§68（R38）/ §69（R39）**；融合对照表 §67.4b；挂账 §58-17（本批 7 条待裁）。
 > **下一批入口**：架构侧对 §58-17 七条 + §68.4「总注入上限口径」裁决后，再做 R40 遗留
 > （材料过短条目合并/跳过的记账 + "有书时 count 失效"的 UI 说明）。
+> → 上述"下一批"即 **R42**，**已完成**（见下）。
+
+> **R42（收口批）已完成（Euler，2026-09-11 · 待架构侧 R43 验收）**：
+> **A 滑块 B 改真硬上限**（架构侧 R41 §3-①）：滑块 A 管"每次喂多少"（调小**不丢章节**）、
+> 滑块 B 管"**总共最多喂多少**，超了明说哪些没喂"（跨批累计 → **章/节边界停止** → 逐章中文账目 +
+> `not_injected` + 覆盖账**如实降**）＋**六条造错用例**；
+> **B R40 遗留收口**：过短条目（<200 字）**标跳过/并入 + 中文记账 + 覆盖账可解释（不计入未覆盖缺口）**、
+> 难度被非降钳制抬高 → **账本 + 大纲页徽标可见**、`count` 语义 UI 说明、`basis.quote` 细化到**章内该节**；
+> **C R39 尾巴**：降档 think→fast **逐次记账**、提示词 **user 模板开放编辑**（按字段保存/恢复）、
+> 审计文件**启动时自动按保留期清理且记账**；
+> **D 健壮性**：`ledger.write()` 失败打 **stderr 兜底日志**（仍不抛）、收集器改 **`ContextVar`**
+> （并发/嵌套不串账）、既有 `print` 归口 logging 并**注明豁免**。
+> **收尾实测**：pytest **467 passed + 2 skipped / 469 collected**（开工基线 441+2/443，**+26 用例**）；
+> `content validate` ok 26/55；audit 五学段 **27/31/81/59/60**；`audit_material_binding` **9/9、5/5、19%、54%**；
+> `tsc`/`vite build` exit 0；`content/` 与真实库**未动**。
+> 记录：NOTES **§70**、融合对照表 §67.4c、挂账 §58-16（已闭）/§58-17（本批 6 条待裁）。
+> 提交链：`2061592`（A 后端）→ `d3352c4`（A UI+docs）→ `3bfa8bb`（B）→ `e060c8c`（C+D）。
+> **下一批**：架构侧出 **R43** 验收裁决；其后可做 §58-17 已登记的 6 条（含"回炉总账引用条目"这项本批漏做）。
 
 ## 4. 环境速查（新人必读）
 - 服务：`powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`（前端 5173 / 后端 8000）；
@@ -218,17 +236,19 @@
   `MF_CONTEXT_TOKEN_LIMIT`（默认 120000；"字符≈token"的安全阀上限，超过就自动分批 + 中文说明）；
   两个滑块（单次调用预算 / 总注入上限）按**学科**存 `subjects.meta_json`（前端：学科管理卡 → 材料区）。
   **R39 新增**：`MF_AI_TRACE_DIR`（默认 `.runtime/ai_trace`，审计全文落盘目录）、
-  `MF_AI_TRACE_KEEP_DAYS`（默认 30，保留期；`POST /api/ai-traces/cleanup` 按它清理并记账）。
-- 当前基线（**Euler 于 R38+R39 收尾批复跑确认，2026-09-10**）：pytest **440 passed + 2 skipped**
-  （**442 collected**，exit 0；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
-  均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60，
-  需真模型/未在本批复跑）；**只读**审计 `audit_material_binding.py s-f2decfcf` 复跑＝
-  **9/9、5/5、19%、54%（逐位一致）**；content validate **ok 26 节点 / 55 练习**；
+  `MF_AI_TRACE_KEEP_DAYS`（默认 30，保留期；`POST /api/ai-traces/cleanup` 按它清理并记账；
+  **R42 C3 起后端启动时也会自动清理一次**）。
+  **R42 新增**：`MF_MIN_ENTRY_CHARS`（默认 200；教材**过短条目**阈值——低于它的条目
+  **并入相邻单元**或**标为跳过**，两者都记账 + 覆盖账可解释，**不许静默吞掉**）。
+- 当前基线（**Euler 于 R42 收尾批复跑确认，2026-09-11**）：pytest **467 passed + 2 skipped**
+  （**469 collected**，exit 0；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
+  均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60）；
+  content validate **ok 26 节点 / 55 练习**；
   前端 `npx tsc --noEmit` + `vite build` 均通过；git 仓库不含 data/、_drafts。
   > 注：**pytest 数字不随真实库清空变化**——`backend/tests/conftest.py` 在导入 app 之前就隔离了
   > `MF_DB_PATH`（临时库）与 `MF_CONTENT_ROOT`（会话级内容副本），真实库与测试完全隔离。
   > 历史基线：R30 前 306+2 → R30 325+2 → R33 325+2 → R34-fin 325+2 → R35a 349+2 → R35b-P0 358+2
-  > → §13 373+2 → §14 376+2 → §66 392+2 → R37 403+2 → R40 404+2 → **R38+R39 440+2**。
+  > → §13 373+2 → §14 376+2 → §66 392+2 → R37 403+2 → R40 404+2 → R38+R39 441+2 → **R42 467+2**。
 - 工作目录已改名：`D:\DeepseekHarness\YanHui`（旧名 MathFeynman；执行记录见 docs/09 R32 §3）。
 - **数据库（R33 任务 B 已归一为 `backend/data/yanhui.db`，2026-09-10）**：
   - **清空后现状**（docs/15 §3.1 + NOTES §57.2e/§59.2）：`subjects 1`（math，**enabled=0 停用**）、

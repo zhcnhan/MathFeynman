@@ -2589,7 +2589,7 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     （如 `GET /session/{id}/challenge`）——**未做**，因为那会把挑战题变成"半个默认流程"。
     取舍请架构侧裁定（倾向：保持现状＝规格优先）。
 
-16. **【R37 待架构侧确认】5 条**（详述见 §67.6）：
+5. **【R37 待架构侧确认】5 条**（详述见 §67.6）：
     ① 离线段（无 `LLM_API_KEY`）+ 有教材：仍出稿但覆盖状态如实记"未覆盖（本内容无教材依据）"，
     是否改为**拒绝出稿**？② 难度**非降钳制**的副作用（书序上一个 3 会抬高其后全部单元）；
     ③ 讲解"整句命中教材"仅 19%（转述 + 夹引号，S3 允许），是否要更贴原文；
@@ -2597,17 +2597,35 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     （样本 46 个），`count` 只在无地图时生效——与 docs/14 §2.1 字面略有出入。
     → **①–⑤ 已由 R40 裁决**（`50bdde7`）：①改**拒绝出稿**（**R38 已实现**，见 §68.1 末行）②接受现状但
     **必须显性**（已进账本 + 大纲页）③接受，basis 引文改节级（提升项）④**条目过短须合并/标跳过且必须记账**
-    ⑤确认语义，须在 UI 说明。**④/⑤ 仍待办**（见本条 17-⑦）。
+    ⑤确认语义，须在 UI 说明。→ **④/⑤ 已由 R42 B1/B3 落地**（`3bfa8bb`，见 §70.2）；
+    ③ 已由 R42 B4 落地（basis 细化到**章内该节**）。
+    → **本条（§58-16）全部闭合** ✅（R40 裁决 5 条已全落地）。
 
-17. **【R38/R39 收尾待办 / 请架构侧定夺】（2026-09-10）**：
-    ① 账本是否也给"成功路径"记账（当前只记"异常/偏离"）——§69.7-1；
-    ② 复习降级回炉是否在新总账里再记一条（当前只留 `relearn_logs` 单一权威源）——§69.7-2；
-    ③ 模型调用的"**降档**"（think→fast）是否逐次记账——§69.7-3；
-    ④ 提示词 **user 模板**是否开放编辑（当前只读对照；接线已就绪）——§69.7-4；
-    ⑤ 审计文件**自动**按保留期清理（当前人工触发 + 参数）——§69.7-5；
-    ⑥ **R38 "总注入上限"口径**：事实报告（不丢章节）vs 跨批硬封顶（会丢章节）——**§68.4**；
-    ⑦ **R40 遗留**：材料"条目过短（<200 字）→ 合并进相邻单元或标跳过，且跳过必须记账"
-       与"有地图时 `count` 只在无书时生效"的 **UI 说明**——**尚未落地**（R37 裁决 §2-4/§2-5）。
+16. **【R38/R39/R41 尾巴 · 已由 R42 闭合】（2026-09-10 → 2026-09-11）**：
+    ① 账本是否也给"成功路径"记账 → **R41 §3-① 裁定：不记**（定位＝偏离用户预期；成功路径淹没真信号）。
+    **R42 已按此实现**（降档/丢弃/未纳入才记）；
+    ② 复习降级回炉 → **R41 裁定保持 `relearn_logs` 单源**（在总账页给一条**指向该表的引用条目**）——
+    **未做**（见 §70.6-1，仍挂账）；
+    ③ "降档"逐次记账 → **R42 C1 已落地**（§70.3）；
+    ④ user 模板开放编辑 → **R42 C2 已落地**（§70.3）；
+    ⑤ 审计文件自动保留期清理 → **R42 C3 已落地**（启动时清理 + 记账，§70.3）；
+    ⑥ R38 "总注入上限"口径 → **R41 §3-① 裁定：真硬上限 + 显式记账** → **R42 A 已落地**（§70.1）；
+    ⑦ R40 遗留（过短条目 + count 说明 + 难度抬高显性 + basis 节级）→ **R42 B 已全部落地**（§70.2）。
+    观察项 1/3/4（记账失败兜底日志 / `_CURRENT` 改 ContextVar / 既有 print）→ **R42 D 已落地**（§70.4）。
+    **本批新增挂账见 §58-17**。
+
+17. **【R42 待架构侧确认】（2026-09-11）**：
+    ① **过短条目的"合并"路径**：本批**只实现"标为跳过"**（并入相邻单元需"该节已被某单元引用"才安全，
+    实际几乎不成立）——理由：给未被引用的单元硬加溯源＝伪溯源（R36 D2 红线）。
+    若架构侧希望"即使在章级也合并"，请裁定"合并后的溯源语义"（是把节挂到章级单元上，还是只记 `meta`）；
+    ② **"未纳入注入清单"在无材料时为空**：`not_injected` 只在有材料时出现（无材料 → 空）；
+    ③ **降档记账的粒度**：当前只在 `SessionService._resolve_tier`（会话路径）记账；
+    **outline 起草/单元出稿两条路径不走 tier 决策**（固定 `strategy="fast"`）→ 它们**不产生**降档账目
+    ——若要求"这两条也按档位策略跑"，属功能变更（请裁定）；
+    ④ **`MF_MIN_ENTRY_CHARS` 默认 200** 为拍定值（R40 原文"如 < 阈值如 200 字"）；
+    ⑤ **B4 节级依据的匹配口径**：归一化后"相等或互相包含"（长度 ≥4）＋**行首编号节名**兜底；
+    若教材用非编号节名（如"第一节 恒星"）则匹配不到 → 不给（宁缺勿造）。要不要扩到中文序数节名？
+    ⑥ **审计清理只在启动时跑一次**（无后台定时器）；长跑进程内不会自动再清（可手动 `POST /ai-traces/cleanup`）。
 
 
 ---
@@ -3467,6 +3485,25 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
 | 出稿失败三档 | 复用 R35 既有"重试一次 → 丢弃 → 失败"骨架（本次把"教材"接进同一骨架） | `test_r37_s5_*` |
 | 审计工具 | 复用 `content/citations.py` 尺子 + 既有审计脚本范式（`audit_*` 不带 `test_` 前缀） | `audit_material_binding.py` 工具输出 |
 
+### 67.4c 融合对照表（**R42 行**：新增件 → 复用点 → 断言）
+
+| 新增件 | 复用点（禁新建平行机制） | 断言/用例 |
+|---|---|---|
+| 滑块 B **真硬上限** `_apply_inject_cap/_cap_skip_entries/_note_inject_cap_skips` | **在既有 `materials.draft_materials` 内改**（不新建预算机制/表）；预算仍落 `subjects.meta_json` | `test_r42_a1/a1b/a2/a3/a3b/a4/a5/a6`、`test_r42_a_first_batch_over_cap_*` |
+| `_batch_of` 增 `blocks/material/material_ids` | 复用既有批次结构（只加字段，不加第二套） | `test_r42_a3b_coverage_ledger_explains_where_skipped_chapters_went` |
+| 覆盖账 `not_injected`（三种原因）/`inject_cap`/逐条 `reason_zh` | 复用 `coverage_ledger` 唯一账 + R39 账本 | `test_r42_a3b_*`、`test_r38_b1_*` |
+| 两个滑块 UI 承诺分开 + 未纳入清单就地 + "因总上限未纳入"列 | 复用 `MaterialBudgetPanel`/`OutlinePage` 既有卡片（不新建页面） | `npx tsc --noEmit` + 活体冒烟 |
+| **过短条目**处理 `_absorb_short_entry/_note_short_entries/_min_entry_chars` | 复用 `finalize_candidate` 唯一收尾 + R39 账本；阈值走 `MF_MIN_ENTRY_CHARS` | `test_r42_b1_*`（3 条） |
+| 覆盖账 `skipped_short`（**不计入 uncovered**） | 复用 `coverage_summary`/`coverage_ledger`（只改口径，不新建账） | 同上 + `test_r37_s2_*`（改断言） |
+| **难度抬高显性** `_note_difficulty_raised` + `meta.difficulty_raised` | 复用 `finalize_candidate` 的**同一处**单调化代码（不加第二处钳制） | `test_r42_b2_*`（2 条） |
+| **节级 basis** `_section_level_basis/_section_text/_body_section_headings` | **复用 `content/citations.py`** 同一把尺子 + `bookmap` 结构；`pack` 增字段（不新建引用体系） | `test_r42_b4_*` |
+| **降档记账** `tier.downgrade_of/note_downgrade` | 复用 `SessionService._resolve_tier` **唯一决策出口** + R39 账本（不新建档位机制） | `test_r42_c1_*`（3 条） |
+| **user 模板可编辑** | 复用 `prompt_overrides` 表/`prompt_store`/`prompt_templates`（**不新建第二套**） | `test_r42_c2_*`（2 条）+ `test_r39_all_call_sites_are_editable` |
+| **审计自动清理** | 复用 `ai_trace.cleanup_old` + `main.lifespan`（不新建定时器/第二套清理） | `test_r42_c3_*`（2 条） |
+| **记账失败兜底日志** | 在既有 `ledger.write` 内加一行 stderr（**不改"不抛异常"契约**） | `test_r42_d1_*` |
+| **`_CURRENT` → `ContextVar`** | 同模块替换实现（调用点零改动） | `test_r42_d2_*`（2 条） |
+| **`print` 归口** | `api/session.py::_trace_step` 改标准 logging + 文档豁免（不新建日志系统） | `test_r42_d3_*` |
+
 ### 67.4b 融合对照表（**R38 / R39 行**：新增件 → 复用点 → 断言）
 
 | 新增件 | 复用点（禁新建平行机制） | 断言/用例 |
@@ -3702,6 +3739,102 @@ R38 §0.5 把它定为"**总注入上限**（跨全部批次）"，而 **R37 已
    `edge/trigger` 降档是否逐次记账？会显著增加账本量（倾向：只在用户显式选轻档或边缘带复评失败时记）；
 4. **提示词 `user` 模板本批只读对照**（可编辑的是 `system`）；接线已就绪（`prompt_store.save(user_text=…)`）；
 5. **审计文件清理目前人工触发 + 保留期参数**（无后台定时任务）；若要自动，`main.lifespan` 一行即可。
+   → **✅ 已闭（R42 C3）**：启动时自动按保留期清理且**清理必须记账**（见 §70.3）。
+
+---
+
+## 70. R42 收口批：滑块 B 真硬上限 + R40 遗留 + R39 尾巴 + 健壮性（2026-09-11）
+
+> 规格：**docs/09 R41**（§3 三条裁定 / §5 三条观察项 / §6 R40 五条复核 / §7-⑧ R42 派工）；
+> 工单 `.runtime/EULER_TICKET_R42.md`。**验收批次 = R43**（架构侧独立复跑 + 自写脚本出裁决）。
+> **开工基线（本机复跑，非沿用上一批数字）**：pytest **441 passed + 2 skipped / 443 collected**；
+> `content validate` ok 26/55；roadmap audit 五学段 **27/31/81/59/60**；
+> `audit_material_binding s-f2decfcf` **9/9、5/5、19%、54%**；`semantics_stats`={30,0,30,0}；
+> `tsc --noEmit` exit 0；`vite build` exit 0；git 仅 `?? content/stages|subjects/s-f2decfcf/`（用户未入库学科）。
+
+### 70.1 任务 A · 滑块 B「总注入上限」＝**真硬上限 + 显式记账**（P0，架构侧 R41 §3-①）
+
+**语义分开（本批最重要的一句话）**：
+- **滑块 A（单次调用预算）**：调小 → **只是分更多批，一个章节都不会少学**（`dropped` 恒空、覆盖账不变）；
+- **滑块 B（总注入上限）**：**是真上限** —— 跨批次累计正文注入字符，到顶后**在章/节边界停止**，
+  剩余章节**整条不注入**；但**每一处未注入都有中文账目 + 覆盖账按材料分组显式列出**。
+
+**实现**（全部在既有 `outline/materials.py` 内，不新建预算机制/表）：
+`_apply_inject_cap()`（累计 `len(text)`；首批总是装入——单章是原子单位；`first_batch_over_cap` 时
+明确记账超出多少）/ `_cap_skip_entries()` / `_cap_skips_by_material()` / `_note_inject_cap_skips()`
+（**逐章**一条中文账目："总注入上限 N 字已用完，本章/节未注入（已注入 M 字）——按章/节边界整条停止，
+未在句中截断"）；`_batch_of` 增 `blocks/material/material_ids`（批次保留**逐块来源**，多材料时不丢来源）；
+`budget_view` 增 `promises_zh`（**两个滑块各自的承诺**，界面直接渲染）+ `inject_cap{…skipped_count…}` +
+`last_usage.cap_skipped_*`；`coverage_ledger` **如实降**（因总上限未注入的章节**即便有单元映射也不算覆盖**
+——"没喂给模型"谈不上覆盖）+ `not_injected`（三种原因）+ 逐条 `reason_zh` + `by_material[].cap_skipped*`。
+**`cap <= 0`（默认/不限）时不改变任何行为**（与 R38 逐字一致）。
+
+### 70.2 任务 B · R40 遗留收口（P0/P2）
+
+| # | 事项 | 落地 |
+|---|---|---|
+| **B1** | 过短条目（< 200 字，标题/目录类）**不得静默吞掉** | `MF_MIN_ENTRY_CHARS`（默认 200）；`finalize_candidate`：优先"并入相邻单元"（仅当**已有单元落在该节上**——否则＝硬塞伪溯源），否则**标为跳过**；两种处理**逐条中文记账**；覆盖账 `skipped_short`（**不计入 uncovered 缺口**）+ 逐条 `reason_zh`；**绝不硬塞**（用例锁） |
+| **B2** | 难点"被非降钳制抬高"必须**显性** | 同一处单调化代码内**逐处** `ledger.note(CAT_GENERATION, …)` 中文原因（"难度因**先修单调性被抬高**：2→3（更早单元 u01 已是 3…）——这是钳制的副作用"）+ 单元 `meta.difficulty_raised`（**大纲页单元行徽标可见**）+ 候选顶层 `difficulty_raised[]`；未抬高时清掉残留标记 |
+| **B3** | `count` 语义 UI 说明 | 起草面板：有教材时中文写明"「单元数」只在**没有教材**时生效；有教材时单元数由**书的章节结构**决定" |
+| **B4** | `basis.quote` 从章节级 → **章内该节级** | `_section_level_basis`：节名来源＝① `bookmap` 目录级 `entry.sections`，② 条目正文里**行首编号节名**；`_section_text` 切出"该节正文"→ `_first_quote_sentence` 取该节内**逐字**首句 → `pack.basis_section/basis_quote` → `coverage_ledger().units[].basis_*`；**取不到就不给**（宁缺勿造） |
+
+### 70.3 任务 C · R39 尾巴（架构侧 R41 §3-③④⑤ 逐条裁定）
+
+| # | 事项 | 落地 |
+|---|---|---|
+| **C1** | 降档（think→fast）**逐次记账** | `ai_tier.downgrade_of/note_downgrade`（判据**可判定**：`base==think 且 decision==fast`；成因①单次覆盖②light 关触发③smart 未升级——**保住底线的 light 不算**）；`SessionService._resolve_tier`（**决策链唯一出口**）统一记账，12 处调用点各带 `call_name` |
+| **C2** | **user 模板开放编辑** | 视图增 `raw_user_template/default_raw_user_template/user_required_*`；界面**字段切换**（system/user 各自标"已改"）+ **按字段保存/恢复默认** + 差异行跟随字段；校验对 user 同样生效（缺占位符 → 中文拒存） |
+| **C3** | 审计文件**自动**按保留期清理 | `main.lifespan` 启动时 `ai_trace.cleanup_old()`（`MF_AI_TRACE_KEEP_DAYS` 默认 30 天）；**先记账"已清理哪几条"再删**；失败只 warning |
+
+### 70.4 任务 D · 健壮性（架构侧 R41 §5 观察项 1/3/4）
+
+| # | 事项 | 落地（与要求逐条对齐） |
+|---|---|---|
+| **D1** | `ledger.write()` 吞异常 | **保持不阻塞**（**不抛异常**，返回 None）+ 新增 stderr 兜底 `[ledger] 记账失败: <类型>: <信息>（类别/对象/原因）` |
+| **D2** | `_CURRENT` 并发串账 | 模块级 list → **`contextvars.ContextVar`**（`collector()` token set/reset，支持嵌套且退出还原）；用例：**双线程隔离** + **嵌套还原** |
+| **D3** | 既有 `print` | `api/session.py::_trace_step` 改**标准 logging** + docstring **明确豁免**（"正常步骤轨迹"按 R41 §3-① 口径不进账本）；复核 `backend/app` 其余 print＝启动/CLI 进程日志 + D1 兜底日志 |
+
+### 70.5 回归与验收自证（**收尾复跑，真实数字**）
+
+| 项 | 开工基线（本机复跑） | 收尾实测 | 判 |
+|---|---|---|---|
+| `pytest backend/tests` | 441 + 2 / 443 | **467 passed + 2 skipped / 469 collected**，0 failed / 0 error，exit 0（**+26 用例**：A 9 + B 6 + C/D 11） | ✅ 不降 |
+| `content validate` | ok 26/55 | **ok 26 / 55**（逐位一致；本批未动内容） | ✅ |
+| roadmap audit 五学段 | 27/31/81/59/60 | **27/31/81/59/60**（cycles/prereq_missing/anchors_missing 全 0） | ✅ 逐位一致 |
+| `audit_material_binding s-f2decfcf` | 9/9、5/5、19%、54% | **9/9、5/5、19%、54%** | ✅ 逐位一致 |
+| `semantics_stats()` | {30,0,30,0} | **{templates:30, violations:0, verified:30, unverified:0, l1_subjects:['math']}** | ✅ 逐位一致 |
+| `tsc --noEmit` / `vite build` | exit 0 / exit 0 | **exit 0 / exit 0** | ✅ |
+| `content/` 人工锚点 | — | 未改动（本批只改 `backend/`、`frontend/`、`docs/`；真实库只读） | ✅ 红线 |
+
+**提交链（每子步单独提交，标 R42）**：`2061592`（A 后端）→ `d3352c4`（A UI+docs）→
+`3bfa8bb`（B1–B4）→ `e060c8c`（C+D）。**未与 R38/R39/R41 混提**。
+
+**A 的六条必交造错用例**（`test_r42_slider_b_hard_cap.py`，实际用例名）：
+1. 后段确实未注入 → `test_r42_a1_cap_stops_at_section_boundary_and_later_chapters_absent` +
+   `test_r42_a1b_cap_prefix_is_exact_and_later_chapters_absent`
+2. 每章都有中文账目 → `test_r42_a2_every_skipped_chapter_has_zh_ledger_reason`（**逐章**核对：对象含该章标签、
+   原因含"总注入上限"、全中文、有 impact/remedy；且离开请求后总账仍可查）
+3. 覆盖账如实降 → `test_r42_a3_coverage_and_budget_view_report_the_loss_truthfully` +
+   `test_r42_a3b_coverage_ledger_explains_where_skipped_chapters_went`
+4. 绝不在句中截断 → `test_r42_a4_never_truncates_mid_sentence`（注入批次**逐字等于完整块拼接**；
+   被跳过章节的正文片段**一个都不许泄漏**）
+5. A 调小仍不丢章节 → `test_r42_a5_slider_a_still_never_drops_chapters`
+6. B=0 行为逐字不变 → `test_r42_a6_default_unlimited_is_byte_identical`
+（+ 边界：上限小于单章 → `test_r42_a_first_batch_over_cap_is_reported_not_silent`）
+
+**B1/B2 造错用例**（`test_r42_short_entries_difficulty.py`）：见 §70.2 表；账本中文原因形如
+"条目过短（31 字，疑似标题/目录类），**已跳过（过短），未成为单元**——不作为覆盖缺口统计，
+但在此显式留痕（不静默吞掉）"、"难度因**先修单调性被抬高**：1 → 3（书序上更早的单元 … 已是 3…）"；
+界面可见处＝大纲页单元行徽标 + 覆盖卡「过短条目」可展开清单 + 就地账目卡 + 总账页。
+
+### 70.6 疑点 / 需架构侧确认（已登记 §58-17）
+
+1. **复习降级回炉仍未在新总账给"引用条目"**（R41 裁定要求"在总账页给一条指向 `relearn_logs` 的索引"）——
+   **本批漏做**，如实登记（改动很小：回炉点加一条 `ledger.note(CAT_OTHER, …)` 带 `ref=relearn_logs`）；
+2. **过短条目的"合并"路径实际几乎不触发**（只实现"跳过"）——理由与可选口径见 §58-17-①；
+3. **降档记账只覆盖会话路径**（outline 起草/单元出稿固定 `fast`，不走 tier 决策）——§58-17-③；
+4. `MF_MIN_ENTRY_CHARS=200` 为拍定值；B4 节名匹配口径（含中文序数节名是否要支持）——§58-17-④⑤；
+5. 审计清理**只在启动时跑一次**（无后台定时器）——§58-17-⑥。
 
 
 
