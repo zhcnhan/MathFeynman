@@ -17,12 +17,10 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any, Iterable
 
-# 归一化时剔除的字符：空白 + 常见中英标点/引号/顿号 + 省略号（截断标记，非文本内容）
-_STRIP_CHARS = set(
-    " \t\r\n\u3000"
-    "，。、；：？！“”‘’「」『』（）()《》〈〉【】[]{}\"'`~!@#$%^&*_-+=|\\/<>,.;:?"
-    "\u2026\u22ef.．…"
-)
+from ..content.citations import MIN_QUOTE_CHARS
+from ..content.citations import invalid_reason as _citation_reason
+from ..content.citations import is_valid as _citation_valid
+from ..content.citations import normalize as normalize_quote
 
 # 每个维度"要补什么"的学生视角模板（comment 缺失时兜底；也用于保证追问可执行）
 _GAP_TEMPLATES = {
@@ -37,31 +35,19 @@ EVIDENCE_PENALTY = 0.5
 
 # evidence **最短门槛**（R30 F5）：归一化（去空白/标点/省略号）后 < 6 字视为无效引文——
 # 极短引文（单字/词）能平凡通过"子串包含"校验，等于没有依据（R28 F5 加固建议）。
-MIN_EVIDENCE_CHARS = 6
-
-
-def normalize_quote(text: str) -> str:
-    """归一化文本用于包含校验：剔除空白与标点（保留字母/数字/汉字）。"""
-    return "".join(ch for ch in (text or "") if ch not in _STRIP_CHARS)
+# R36：实现已收敛到 `app.content.citations`（同一把尺子，供大纲材料溯源 / R35 basis 复用）；
+# 此处仅保留历史名字以兼容既有测试与调用方。
+MIN_EVIDENCE_CHARS = MIN_QUOTE_CHARS
 
 
 def quote_valid(quote: str, transcript: str) -> bool:
     """evidence_quote 是否逐字出自本轮文本（归一化子串包含 + 最短长度门槛 R30 F5）。"""
-    q = normalize_quote(quote)
-    if len(q) < MIN_EVIDENCE_CHARS:
-        return False
-    return q in normalize_quote(transcript)
+    return _citation_valid(quote, transcript)
 
 
 def quote_invalid_reason(quote: str, transcript: str, *, where: str = "本轮提交文本") -> str:
     """引文无效的中文原因（区分"过短"与"不在本轮文本中"；面向学生展示）。"""
-    q = normalize_quote(quote)
-    if len(q) < MIN_EVIDENCE_CHARS:
-        return (
-            f"引文过短（归一化后 {len(q)} 字 < {MIN_EVIDENCE_CHARS} 字），"
-            f"不足以作为依据（服务端已降级）"
-        )
-    return f"引文不在{where}中（服务端包含校验未通过，已降级）"
+    return _citation_reason(quote, transcript, where=where)
 
 
 # --------------------------------------------------------------------------
