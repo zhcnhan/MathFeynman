@@ -590,3 +590,36 @@ R12 已有"边缘分 → 下一轮升 think"，但终验当轮无二次确认。
 **建议（待用户裁定）**：终验落边缘带（如 [threshold−0.05, threshold+0.08]）时，用 think 档**复评一次取较高分**，
 或至少向用户提示"本次接近过线、评分有波动"。属体验/公平性优化，不阻塞。
 
+## R29 · 老会话费曼键缺失 → 500（真人阻断热修 · 2026-09-10 · 架构侧）
+
+**问题（架构侧验收探针发现，非欧拉汇报项）**：R27 在 `flow.feynman` 新增 `answers_done` /
+`followup_gap` / `ledger`，费曼分支按 `f["answers_done"]` **直接取值（非 `.get`）**；
+而 R27 之前落库的老会话没有这些键。`_ensure_invariants` 只在 `practice`/`feynman` **整块缺失**时
+才并入 `new_flow()`，且**仅在 `resume()` 调用**（`step()` 不经过）→ 老会话走 `feynman_submit`
+时 `session.py:632 KeyError: 'answers_done'` → 500（前端"会话不可用"）。
+
+**影响（真人阻断）**：用户应用库现存会话 `s-f2decfcf.u01:a7689b7ebf`（state=learning，
+R27 前落库）正是该结构——用户验收 R27 新流程的**第一个动作**（打开该会话提交完整讲解）即 500。
+属"必现、恰好挡在验收路径上"的阻断级缺陷。
+
+**架构侧热修**（`backend/app/service/session.py`）：
+1. 新增模块级 `_backfill_feynman_keys(f)`：按 `new_flow()["feynman"]` **setdefault 回填缺失键**
+   （不覆盖已有值）；
+2. 调用点三处：`step()` 入口（**无副作用**，`step` 是真正的 choke point）、
+   `_act_feynman` 与 `_act_feynman_answer` 入口、`_ensure_invariants`（resume/响应路径）。
+3. 教训留档：本次首修只改了 `_ensure_invariants` → **探针仍复现**（因其只被 `resume()` 调用）；
+   证明"自愈点必须落在 `step()`，不能只在 `resume()`"。
+
+**回归测试**：`backend/tests/test_r27_legacy_session.py`——构造"老结构会话"（剔除新键）→
+`feynman_submit` 200 + 定向追问 + `answers_done=0` + 账本视图下发 → 回填**已落库** →
+`feynman_answer` 200 且 `answers_done=1`。修复前该用例必现 KeyError。
+
+**给 Euler（同类缺陷系统性排查）**：
+- 该类问题 = **flow schema 演进无迁移**。请审计所有"后加且用 `[]` 取值"的 flow 键
+  （含 practice/feynman 子键、ledger 结构、R21 lecture_cache 等），统一收敛为
+  "读会话即深度补齐默认值 + 类型校验"的单一入口（建议 `_ensure_flow_shape(flow)`），
+  并补"老结构会话"参数化用例（缺键/错类型/整块缺失 三种）。
+- 纪律不变：新增 flow 键必须同时提供老会话兼容路径与回归用例。
+
+**文档同步**：本裁决；`docs/13 §3` 已登记该热修；NOTES 由 Euler 追加（§48）。
+

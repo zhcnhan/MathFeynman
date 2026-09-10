@@ -121,6 +121,16 @@ def new_flow() -> dict[str, Any]:
     }
 
 
+def _backfill_feynman_keys(f: dict[str, Any]) -> None:
+    """R29：回填 R27 之前老会话缺失的费曼键（answers_done / ledger / followup_gap …）。
+
+    费曼分支按 ``f["answers_done"]`` 直接取值（非 ``.get``）——老会话缺键会
+    ``KeyError`` → 500（用户看到"会话不可用"）；此处按当前默认结构补齐，不覆盖已有值。
+    """
+    for key, value in new_flow()["feynman"].items():
+        f.setdefault(key, value)
+
+
 def _feynman_reset(f: dict[str, Any]) -> None:
     """R17/R27：费曼阶段完整复位（回炉重学/轮次满防御用）——含账本与补答计数。"""
     f.update(
@@ -254,6 +264,9 @@ class SessionService:
         payload = payload or {}
         sess = self._get_session(db, session_id)
         node = self._node_of(db, sess)
+        # R29：stepping 不经过 resume/_ensure_invariants → 在此回填老会话费曼键（无其它副作用）
+        if isinstance(sess.flow_json, dict) and isinstance(sess.flow_json.get("feynman"), dict):
+            _backfill_feynman_keys(sess.flow_json["feynman"])
         if action == "next":
             return self._act_next(db, sess, node)
         if action == "ask_question":
@@ -520,6 +533,7 @@ class SessionService:
         flow = sess.flow_json
         p = flow["practice"]
         f = flow["feynman"]
+        _backfill_feynman_keys(f)  # R29：老会话（R27 前）缺键自愈
         if not p["passed"]:
             raise SessionError("费曼环节需要先完成练习达标（连续答对 3 题）", code="invalid_state")
         dims = [d.model_dump() for d in node.feynman.rubric.dimensions]
@@ -669,6 +683,7 @@ class SessionService:
         flow = sess.flow_json
         p = flow["practice"]
         f = flow["feynman"]
+        _backfill_feynman_keys(f)  # R29：老会话（R27 前）缺键自愈
         if not p["passed"]:
             raise SessionError("费曼环节需要先完成练习达标（连续答对 3 题）", code="invalid_state")
         dims = [d.model_dump() for d in node.feynman.rubric.dimensions]
@@ -1119,12 +1134,18 @@ class SessionService:
         return loaded.doc
 
     def _ensure_invariants(self, db: Session, sess: models.Session) -> None:
-        """读取时自愈：stage 回退等不变量。"""
+        """读取时自愈：stage 回退等不变量 + R29 老会话费曼键回填。"""
         flow = sess.flow_json or new_flow()
         if "practice" not in flow or "feynman" not in flow:
             base = new_flow()
             base.update(flow)
             flow = base
+        # R29（真人阻断热修）：R27 之前的会话 flow.feynman 无 answers_done / followup_gap / ledger，
+        # 而费曼分支按 f["answers_done"] 取值（非 .get）→ KeyError → 500（"会话不可用"）。
+        # 此处按当前默认结构回填缺失键（不覆盖已有值），老会话可直接续走费曼。
+        fey = flow.get("feynman")
+        if isinstance(fey, dict):
+            _backfill_feynman_keys(fey)
         sess.flow_json = flow
         stage = flow["stage"]
         if stage == STAGE_PRACTICE and flow["practice"]["current"] is None:
