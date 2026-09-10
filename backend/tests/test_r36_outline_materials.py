@@ -199,7 +199,11 @@ def test_d2_bogus_citation_rejected_then_regenerated(app_client, ai_provider):
 
 
 def test_d2_citation_stripped_when_regeneration_also_fails(app_client, ai_provider):
-    """两轮都不成立 → 剔除该引用 + 记问题（不硬塞伪溯源；接口仍 200 不炸）。"""
+    """两轮都不成立 → 剔除该引用 + 记问题（不硬塞伪溯源；接口仍 200 不炸）。
+
+    R37 S2 扩展（2026-09-10）：教材＝真源后，**章节不得因溯源不成立而悄悄消失**——
+    被剔除引用的单元保持"无溯源"（宁缺勿造的口径不变），同时该章由**教材目录**补齐一个单元并记问题。
+    """
     bad = lambda i: [{"title": MAT_TITLE, "section": "这句话不在材料正文里出现过的引文"}]  # noqa: E731
     p = ai_provider([{"units": _units(1, materials_for=bad)},
                      {"units": _units(1, materials_for=bad)}])
@@ -210,8 +214,10 @@ def test_d2_citation_stripped_when_regeneration_also_fails(app_client, ai_provid
         assert r.status_code == 200, r.text
         body = r.json()
         assert len(p.calls) == 2
-        assert body["units"][0]["materials"] == []
+        stripped = [u for u in body["units"] if u["title"] == "第 1 单元"]
+        assert stripped and stripped[0]["materials"] == [], "不得硬塞伪溯源"
         assert any("溯源不成立" in x for x in body["problems"]), body["problems"]
+        assert any("教材目录" in x for x in body["problems"]), body["problems"]
         assert body["ok"] is False  # 有问题必须如实上报（供 UI 提示）
     finally:
         app_client.delete(f"/api/subjects/{sid}?hard=true")

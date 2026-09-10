@@ -476,6 +476,26 @@ def valid_sections(hit: dict) -> set[str]:
     return {x for x in labels if x}
 
 
+def canonical_section(hit: dict, section: str) -> str | None:
+    """把溯源 section **收敛成教材章节地图里的规范标签**（模型爱加方括号/空格 → 此处归一）。
+
+    只在"归一化后等于某个条目/节标签"时收敛（页标签与逐字引文原样保留——它们各有语义）。
+    返回 None = 不是已知标签（调用方再走引文包含校验）。
+    """
+    from ..content import citations
+
+    norm = citations.normalize(section)
+    if not norm:
+        return None
+    for sec in hit.get("sections") or []:
+        if citations.normalize(str(sec.get("label") or "")) == norm:
+            return str(sec.get("label"))
+    for e in (hit.get("structure") or {}).get("entries") or []:
+        if citations.normalize(e.label) == norm:
+            return e.label
+    return None
+
+
 def check_unit_material(ref: dict, index: list[dict]) -> tuple[dict | None, str]:
     """D2（R36）＋ R37 S2：校验单个 ``{title, section}`` 溯源引用 → ``(规范化引用 | None, 中文问题)``。
 
@@ -483,6 +503,7 @@ def check_unit_material(ref: dict, index: list[dict]) -> tuple[dict | None, str]
     （``bookmap`` 的章节地图或 ``material_sections`` 的节名）**或逐字出自其正文的引文**——
     后者复用 ``content.citations`` 的同一把尺子（归一化 + ≥6 字 + 子串包含），
     与 R35 S2 的 basis 引文纪律同源，不另写一份。
+    命中的章/节标签会被**收敛为规范标签**（模型复制来的方括号/空格不落盘）。
     """
     from ..content import citations
 
@@ -495,6 +516,9 @@ def check_unit_material(ref: dict, index: list[dict]) -> tuple[dict | None, str]
         return None, f"材料溯源不成立：该学科引用库里没有名为「{title}」的材料"
     if not section:
         return None, f"材料《{title}》的溯源缺少 section（须给出真实章节名或逐字引文）"
+    canonical = canonical_section(hit, section)
+    if canonical is not None:
+        return {"title": hit["title"], "section": canonical}, ""
     if citations.normalize(section) in valid_sections(hit):
         return {"title": hit["title"], "section": section}, ""
     ok, reason = citations.check(section, hit["body"], where=f"材料《{hit['title']}》正文")
@@ -632,12 +656,48 @@ def _entry_for_section(m: dict, section: str):
     return None
 
 
-def _entry_by_terms(m: dict, unit):
-    """确定性关键词检索：用单元标题/概念标签在章节地图里找最相关的章（分数 0 → None）。"""
+def entry_order(index: list[dict]) -> dict[str, int]:
+    """章节地图条目的**书序**索引（归一化标签/页标签 → 位置）。
+
+    R37 S2 复用点：大纲收尾据此把单元按**书序**排列（分批起草的批间顺序不可信，
+    书的结构才是顺序真源）。返回空 dict = 没有可用的结构。
+    """
     from ..content import citations
 
-    terms = [str(getattr(unit, "title", "") or "")]
-    terms += [str(t) for t in (getattr(unit, "concept_tags", None) or [])]
+    order: dict[str, int] = {}
+    i = 0
+    for m in index:
+        for e in (m.get("structure") or {}).get("entries") or []:
+            for key in [e.label, *e.pages]:
+                norm = citations.normalize(str(key or ""))
+                if norm and norm not in order:
+                    order[norm] = i
+            i += 1
+    return order
+
+
+def unit_order_key(unit, order: dict[str, int], default: int) -> int:
+    """单元在书序中的位置（取它映射到的**最早**条目；没有映射 → ``default``）。"""
+    from ..content import citations
+
+    best = None
+    refs = (unit.materials if hasattr(unit, "materials") else (unit or {}).get("materials")) or []
+    for r in refs:
+        norm = citations.normalize(str((r or {}).get("section") or ""))
+        pos = order.get(norm)
+        if pos is not None and (best is None or pos < best):
+            best = pos
+    return best if best is not None else default
+
+
+def match_entry(m: dict, title: str = "", tags: list[str] | None = None):
+    """确定性关键词检索：用标题/概念标签在章节地图里找最相关的条目（分数 0 → None）。
+
+    R37 复用点：单元出稿的"无溯源回落"与大纲收尾的"溯源被剔除后回捞"共用同一实现。
+    """
+    from ..content import citations
+
+    terms = [str(title or "")] + [str(t) for t in (tags or [])]
     grams: list[str] = []
     for t in terms:
         norm = citations.normalize(t)
@@ -651,6 +711,12 @@ def _entry_by_terms(m: dict, unit):
         if score > best_score:
             best, best_score = e, score
     return best if best_score >= 1 else None
+
+
+def _entry_by_terms(m: dict, unit):
+    """``match_entry`` 的单元适配（保留旧调用点语义）。"""
+    return match_entry(m, getattr(unit, "title", "") or "",
+                       list(getattr(unit, "concept_tags", None) or []))
 
 
 def material_ids_for_titles(db, subject_id: str, titles: list[str]) -> tuple[list[str], list[str]]:
@@ -875,10 +941,14 @@ __all__ = [
     "batch_budget",
     "draft_materials",
     "valid_sections",
+    "canonical_section",
     "check_unit_material",
     "coverage_problems",
     "coverage_summary",
     "coverage_ledger",
+    "match_entry",
+    "entry_order",
+    "unit_order_key",
     "unit_material_pack",
     "material_ids_for_titles",
     "search_candidates",

@@ -150,15 +150,30 @@ def finalize_candidate(subject_id: str, raw_units: list[dict], *, label: str, so
                 materials=kept_refs,
             )
         )
-    # R37 S2：全覆盖——未被任何单元映射的教材条目，用**教材目录**补齐（并记问题）
+    # R37 S2：全覆盖——未被任何单元映射的教材条目，先按标题/标签**回捞**已有单元，
+    # 回捞不到才用**教材目录**补齐（内容取自书的目录，非编造）；两种情况都记问题（不得悄悄丢章节）
     filled: list[str] = []
+    recovered: list[str] = []
     if index:
         mapping = mat._covered_entries(units, index)
         for m in index:
             for entry in (m.get("structure") or {}).get("entries") or []:
                 if mapping.get((m["id"], entry.label)):
                     continue
-                if len(units) >= len(UNIT_LOCAL):
+                target = None
+                for u in units:  # ① 回捞：已有单元与条目确定性匹配 → 补上（服务端校验过的）章节溯源
+                    if u.materials:
+                        continue
+                    hit = mat.match_entry(m, u.title, u.concept_tags)
+                    if hit is not None and hit.label == entry.label:
+                        target = u
+                        break
+                if target is not None:
+                    units[units.index(target)] = target.model_copy(
+                        update={"materials": [{"title": m["title"], "section": entry.label}]})
+                    recovered.append(f"{target.id}←{entry.label}")
+                    continue
+                if len(units) >= len(UNIT_LOCAL):  # ② 目录补齐
                     problems.append(f"教材条目《{entry.label}》无单元映射，且单元数已达上限"
                                     f"（{len(UNIT_LOCAL)}）——请合并过细的节或拆批起草")
                     break
@@ -174,10 +189,35 @@ def finalize_candidate(subject_id: str, raw_units: list[dict], *, label: str, so
                     prereqs=[prev] if prev else [], difficulty=spec["difficulty"],
                     requires_thinking=spec["requires_thinking"], materials=spec["materials"],
                 ))
+                mapping.setdefault((m["id"], entry.label), []).append(spec["id"])
+    if recovered:
+        problems.append("教材覆盖：模型未标注章节依据的单元已按教材章节地图回捞 "
+                        + f"{len(recovered)} 个（{('、'.join(recovered[:6]))}"
+                        + ("…" if len(recovered) > 6 else "") + "）")
     if filled:
         problems.append("教材覆盖：模型未映射到单元的教材条目已按**教材目录**补齐 "
                         + f"{len(filled)} 个（{('、'.join(filled[:6]))}"
                         + ("…" if len(filled) > 6 else "") + "）——内容取自书的目录，非编造")
+    # R37 S2：**书序为主**——单元按教材章节顺序排列；先修线性串联；难度按书序单调化。
+    # 理由：分批起草的批间 `prereqs`（模型按本批局部编号）不可靠；书的结构才是顺序真源
+    # （规格原文："单元的顺序/prereqs 以书的顺序为主"）。规范化决定记在 notes 里（不是问题）。
+    notes: list[str] = []
+    if index and mat.entry_order(index):
+        order = mat.entry_order(index)
+        units.sort(key=lambda u: mat.unit_order_key(u, order, len(order)))
+        # 重排后重新编号（id 必须跟列表序一致＝书序），再线性串联先修 + 难度单调化
+        units = [u.model_copy(update={"id": f"{subject_id}.u{i:02d}"})
+                 for i, u in enumerate(units, start=1)]
+        rebuilt: list[OutlineUnit] = []
+        for u in units:
+            prev = rebuilt[-1].id if rebuilt else ""
+            diff = u.difficulty if not rebuilt else max(u.difficulty, rebuilt[-1].difficulty)
+            rebuilt.append(u.model_copy(update={
+                "prereqs": [prev] if prev else [], "difficulty": diff}))
+        units = rebuilt
+        notes.append("教材结构：单元已按**书序**重排并重新编号、线性串联先修、难度按书序单调化"
+                     "（分批起草的跨章 prereqs 不可靠；R37 S2「顺序以书序为主」）")
+
     cand = OutlineDoc(subject=subject_id, label=label, status="draft", source=source, units=units)
     prob = validate_outline_doc(cand)
     referenced = {r["title"] for u in units for r in u.materials}
@@ -191,6 +231,7 @@ def finalize_candidate(subject_id: str, raw_units: list[dict], *, label: str, so
         "source_materials": source_materials,                   # R36 D3：候选即给出将记录的依据材料
         "units": [u.model_dump(mode="json") for u in units],
         "problems": problems + prob,
+        "notes": notes,                                         # R37 S2：已做的规范化决定（非问题）
         "coverage": mat.coverage_summary(units, index) if index else None,
         "ok": not (problems or prob),
     }

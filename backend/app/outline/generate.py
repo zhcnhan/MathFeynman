@@ -468,9 +468,6 @@ def generate_unit_content(
     if unit is None:
         raise OutlineError(f"单元不存在: {unit_id}")
     lib = load_library()
-    if not force and unit.id in {n.id for n in lib.nodes}:
-        return {"status": "exists", "node_id": unit.id, "path": "", "subject": subject_id,
-                "unit": unit_id, "note": "内容已在库（懒生成幂等）"}
     from ..config import get_settings
 
     # R37：教材注入包（单元 → 教材章/节完整正文 + 全材料正文作为锚定原文）
@@ -479,6 +476,21 @@ def generate_unit_content(
     pack = material_pack if material_pack is not None else mat.unit_material_pack(db, subject_id, unit)
     binding = str(pack.get("binding_text") or "")
     has_material = bool(binding)
+    if not force and unit.id in {n.id for n in lib.nodes}:
+        # 幂等：内容已在库。R37——顺带**重新记账**（覆盖状态可能因大纲/材料变化而过期，且不调模型）
+        coverage = None
+        if has_material:
+            try:
+                live = lib.by_id[unit.id].doc
+                rep = answerability.gate_node(live, drop=False, material=binding)
+                coverage = _coverage_of(rep, pack, has_material=True)
+                _record_coverage(db, subject_id, unit.id, coverage)
+            except Exception:  # 记账失败不改"已在库"结论
+                coverage = None
+        return {"status": "exists", "node_id": unit.id, "path": "", "subject": subject_id,
+                "unit": unit_id, "coverage": coverage,
+                "note": "内容已在库（懒生成幂等）"
+                        + (f"；覆盖状态：{coverage['status']}" if coverage else "")}
     if has_material and not pack.get("covered"):
         note = ("教材未覆盖此单元：" + str(pack.get("note") or "教材中未检索到与本节相关的内容")
                 + "。按 R37 S6，系统不编造内容——请调整单元与教材章节的对应关系，"

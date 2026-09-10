@@ -193,14 +193,28 @@ def put_outline(subject_id: str, body: PutOutlineBody, db: Session = Depends(get
             raise _err(422, "validation_error",
                        "大纲引用的材料不存在于该学科引用库：" + "、".join(sorted(set(missing)))
                        + "。请先在「学科管理 · 材料」中导入/上传该材料，或移除该单元的溯源引用。")
-        # R37 S7：材料是扫描版/未提取到文字 → 不许采纳"没读到书"的大纲
+        # R37 S7：材料是扫描版/未提取到文字 → 不许采纳"没读到书"的大纲（先于溯源逐条校验）
         for m in mat.list_materials(db, subject_id):
             h = m.get("text_health") or {}
             if h.get("checked") and not h.get("healthy"):
                 raise _err(422, "validation_error",
                            f"无法采纳大纲：材料《{m['title']}》没有可用的文本层。{h.get('note', '')}")
+        # R37 S2：溯源逐条服务端校验并**收敛为教材章节地图的规范标签**（不信客户端自报的文本）
+        index = mat._material_index(db, subject_id)
+        if index:
+            normalized_units = []
+            for u in units:
+                refs = []
+                for r in (u.materials or []):
+                    kept, why = mat.check_unit_material(r, index)
+                    if kept is None:
+                        raise _err(422, "validation_error",
+                                   f"单元 {u.id} 的材料溯源不成立：{why}")
+                    refs.append(kept)
+                normalized_units.append(u.model_copy(update={"materials": refs}))
+            units = normalized_units
         # R37 S2：教材全覆盖——地图条目未映射 → 违规（不得悄悄丢章节）
-        cov = mat.coverage_problems(units, mat._material_index(db, subject_id))
+        cov = mat.coverage_problems(units, index)
         if cov:
             raise _err(422, "validation_error", "；".join(cov))
         doc = outline_store.add_outline(
