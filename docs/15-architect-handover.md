@@ -53,6 +53,21 @@
 
 ## 5. 环境速查
 - 服务 scripts\dev.ps1（前端 5173/后端 8000）；日志 .runtime\backend.err.log。
+
+### 5.1 工作区清理（用户指令 · 2026-09-10 由架构侧直办）
+- **删除（可再生）**：各 `__pycache__`（8 个目录）、`backend\.pytest_cache`、
+  `frontend\node_modules\.vite`、`frontend\dist`（vite dev 下无用）、`.runtime` 的日志与 `pids.txt`、
+  `resume\`（用户个人简历 2 文件）、`content\stages` 下 5 个**空**主题目录。
+- **归档而非删除**：`.runtime` 与 `_dsh-local` 的**留档类**文件（历次工单 R27/R30/R32/R33、R27/R30 证据
+  xml/txt、五学段蓝图起草数据、`使用说明.md` 等 53 个 / 378.9 KB）→
+  `D:\DeepseekHarness\_backups\project-scratch-archive-20260910-162747\`。
+  `_dsh-local` 仅保留**在用的启动器**（`start-dsh.cmd`/`.ps1`、`stop-dsh.cmd`/`.ps1`、`使用说明.md`）。
+- **明确保留**：`backend\yanhui_backend.egg-info\`（用户指定保留，editable 安装元数据）；
+  `content\subjects\s-14e1e9d1|s-3f9fbc5f`（空，属"学科移除可恢复"的生命周期痕迹，非垃圾）。
+- **清理后复核**：`content validate` **ok 26/54**；audit 五学段 **27/31/81/59/60** 且错误项全 0；
+  用户数据 **26/3/31/2/113** 不变；服务 8000/5173 均 200。
+- 体积效果：frontend 93.6 → 67.8 MB，backend 3.5 → 1.2 MB。**运行必需项（`.venv` 146 MB、
+  `frontend\node_modules` 68 MB）与备份区均未动。**
 - .env：LLM_API_KEY / MF_AUTO_EXTEND / LLM_MAX_TOKENS_PER_DAY；git 三端镜像 git-mirror（GitHub↔Gitee，
   仓库 zhcnhan/颜回（YanHui） 与 gengzisama/颜回（YanHui））。
 - **备份政策（用户 2026-09-10 定，长期有效）**：
