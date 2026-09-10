@@ -143,13 +143,24 @@ def test_r46_b4_periodic_thread_daemon_runs_and_stops_cleanly(trace_dir, monkeyp
 
 def test_r46_b5_app_shutdown_stops_cleanup_and_does_not_hang():
     """**必交③**：应用关闭**不挂起**——TestClient 正常退出（本用例不超时即证据），
-    且 lifespan 把定时清理句柄**启动并在关闭时停掉**；手动入口仍在。"""
+    且 lifespan 把定时清理句柄**启动并在关闭时停掉**；手动入口仍在。
+
+    注：全量套件里可能另有 TestClient 实例（conftest 的会话级 `app_client`）也持有自己的
+    定时线程，故这里断的是"**本次启动的线程不再多留一个**"，而不是"全局一个都没有"。
+    """
+    import threading
+
+    def _cleanup_threads() -> set:
+        return {t for t in threading.enumerate() if t.name == "yanhui-ai-trace-cleanup"}
+
+    before = _cleanup_threads()
     with TestClient(app) as c:
         assert c.get("/api/health").json()["ok"] is True
         handle = getattr(app.state, "ai_trace_cleanup", None)
         assert handle is not None, "lifespan 必须启动定时清理"
         assert handle.running() is True
         assert handle.thread is not None and handle.thread.daemon is True
+        assert handle.thread in _cleanup_threads()
         # 手动入口保留（body 可省）
         manual = c.post("/api/ai-traces/cleanup", json={})
         assert manual.status_code == 200, manual.text
@@ -159,5 +170,5 @@ def test_r46_b5_app_shutdown_stops_cleanup_and_does_not_hang():
     # with 退出 ＝ lifespan shutdown：线程必须已停，且进程不挂
     assert handle.running() is False, "关闭时必须干净退出（线程已停）"
     assert handle.thread is None
-    assert not [t for t in __import__("threading").enumerate()
-                if t.name == "yanhui-ai-trace-cleanup" and t.is_alive()]
+    assert handle.thread not in _cleanup_threads()
+    assert _cleanup_threads() <= before, "本次启动的定时线程必须已回收（不得多留）"

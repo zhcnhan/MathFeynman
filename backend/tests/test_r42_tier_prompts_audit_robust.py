@@ -211,20 +211,18 @@ def test_r42_c3_cleanup_is_logged_and_removes_only_expired(tmp_path, monkeypatch
         "old-audit.txt" in str((hits[0].get("detail") or {}).get("files")), hits[0]
 
 
-def test_r42_c3_lifespan_calls_cleanup(monkeypatch):
-    """启动钩子**确实**调用了清理（自动清理接线锁）。"""
-    from app.service import ai_trace
+def test_r42_c3_lifespan_calls_cleanup():
+    """启动钩子**确实**接上了清理（自动清理接线锁）。
 
-    called: dict = {}
-
-    def fake_cleanup(db, keep_days_override=None):  # noqa: ARG001
-        called["yes"] = True
-        return {"removed": [], "count": 0, "keep_days": 30}
-
-    monkeypatch.setattr(ai_trace, "cleanup_old", fake_cleanup)
+    **R46 B 更新**：清理入口由 `cleanup_old` 换成 `cleanup_once`（启动/定时/手动**三处同源**），
+    并新增**定时**清理的启动与关闭接线——本用例同步锁定这三处接线（意图不变、覆盖更全：
+    起得来、也停得掉）。
+    """
     src = (__import__("pathlib").Path(__file__).resolve().parents[1]
            / "app" / "main.py").read_text(encoding="utf-8")
-    assert "cleanup_old" in src, "main.lifespan 必须调用审计保留期清理（R42 C3）"
+    assert "cleanup_once" in src, "main.lifespan 必须调用审计保留期清理（R42 C3 → R46 B 同源入口）"
+    assert "start_periodic_cleanup" in src, "R46 B：lifespan 必须启动**定时**清理"
+    assert ".stop()" in src, "R46 B：应用关闭时必须停掉定时清理（干净退出）"
 
 
 # ============================================================ D1 记账失败兜底日志
