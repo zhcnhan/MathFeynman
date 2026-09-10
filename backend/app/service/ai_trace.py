@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -70,6 +71,55 @@ def _preview(text: str, *, chars: int = PREVIEW_CHARS) -> str:
     return t[:chars] + f"\n…（预览截断，共 {len(t)} 字，完整内容见审计文件）"
 
 
+# ---------------------------------------------------------------------------
+# R44 A：审计全文文件名**防碰撞**（同秒同调用点不得覆盖）
+# ---------------------------------------------------------------------------
+# 缺陷（R43 架构侧独立复现）：旧实现用 `abs(hash((call_name, at)))` 当唯一后缀——
+# 同一秒内同一调用点 hash 完全相同 → 同名 → `write_text` **静默覆盖**，
+# 前几次调用的全文永久丢失（违反 R39 §1「一切显性」/§3「展开即完整」）。
+#
+# 修法（三层，全部不依赖 hash() 做唯一性）：
+#   ① **进程内同秒序号**：`(stamp, call_name)` → 序号（`-02`、`-03`…），首次落盘不加后缀；
+#   ② **落盘冲突兜底**：文件名已被占用（另一进程写的、或人为预置）→ **换名**（附中文说明）；
+#   ③ **原子独占写入**：`open("x")` —— 即使 ①② 都没预见，也**绝不会覆盖**已有文件。
+# 三者任一触发 → `ledger.note(...)` 记一条中文账目（**绝不再出现静默覆盖**）。
+# 文件名仍保持 `<时间>-<调用点>[-序号].txt` 的可读形状（用户靠它肉眼找）。
+_SEQ_LOCK = threading.Lock()
+_SEQ_BY_KEY: dict[tuple[str, str], int] = {}
+_MAX_NAME_TRIES = 200
+
+
+def _next_name(entry_dir: Path, stamp: str, call_name: str) -> tuple[Path, str, str]:
+    """返回 ``(path, base_name, 冲突说明)``；冲突说明非空＝发生过换名（需记账）。
+
+    - 首次（该秒该调用点第 1 次）→ ``<stamp>-<call_name>.txt``（最可读）；
+    - 同秒第 n 次 → ``<stamp>-<call_name>-02.txt``、``-03``…（序号单调，不覆盖）；
+    - 目标名已被占用（跨进程/预置文件）→ 序号继续自增**换名**，并在冲突说明里写明原因。
+    """
+    with _SEQ_LOCK:
+        key = (stamp, call_name)
+        seq = _SEQ_BY_KEY.get(key, 0)
+        base = f"{stamp}-{call_name}"
+        first = f"{base}.txt"
+        if seq == 0 and not (entry_dir / first).exists():
+            _SEQ_BY_KEY[key] = 1
+            return entry_dir / first, base, ""
+        why = ""
+        if seq == 0:
+            why = f"目标文件名已被占用（{first}，可能是另一进程写的或人为预置），已换名以免覆盖"
+        n = max(1, seq)
+        while n <= _MAX_NAME_TRIES:
+            name = f"{base}-{n + 1:02d}.txt"
+            if not (entry_dir / name).exists():
+                _SEQ_BY_KEY[key] = n + 1
+                return entry_dir / name, base, (why or "")
+            n += 1
+        # 极端兜底：序号用尽（200 次同秒同名）→ 仍换名并说明
+        _SEQ_BY_KEY[key] = n + 1
+        name = f"{base}-{n + 1:04d}.txt"
+        return entry_dir / name, base, (why or f"同秒同名次数过多（>{_MAX_NAME_TRIES}），已换名")
+
+
 def _write_file(*, call_name: str, subject_id: str, unit_id: str, at: str,
                 model: str, tier: str, retries: int, outcome: str,
                 latency_ms: int, prompt_tokens: int, completion_tokens: int,
@@ -78,8 +128,7 @@ def _write_file(*, call_name: str, subject_id: str, unit_id: str, at: str,
     d = trace_dir()
     d.mkdir(parents=True, exist_ok=True)
     stamp = at.replace(":", "").replace("-", "").replace("+0000", "Z")
-    name = f"{stamp}-{call_name}-{abs(hash((call_name, at))) % 1000000:06d}.txt"
-    path = d / name
+    name_hint = f"{stamp}-{call_name}"
     body = (
         "==== 提示词监听 / AI 对话审计（R39 §3）====\n"
         f"时间：{at}\n调用点：{call_name}\n学科：{subject_id or '（无）'}\n单元：{unit_id or '（无）'}\n"
@@ -93,8 +142,32 @@ def _write_file(*, call_name: str, subject_id: str, unit_id: str, at: str,
         "\n==== AI 返回的完整内容（原始，未解析） ====\n" + redact(raw) + "\n"
         "\n==== 解析/校验结果 ====\n" + redact(parse_result) + "\n"
     )
-    path.write_text(body, encoding="utf-8")
-    return str(path), len(body)
+    # ① 取候选名（同秒序号）+ ② 冲突换名；③ 再以 `x` 原子独占创建，彻底杜绝覆盖
+    path, base_name, collision = _next_name(d, stamp, call_name)
+    for _ in range(_MAX_NAME_TRIES):
+        try:
+            with open(path, "x", encoding="utf-8", newline="") as fh:
+                fh.write(body)
+            if path.name != f"{base_name}.txt":
+                # 换了名（同秒多次 / 目标被占用）→ **必须显式记账**（不许静默）
+                ledger.note(
+                    ledger.CAT_OTHER, f"AI 对话审计文件（{call_name}）",
+                    (collision + "；" if collision else
+                     "同一秒内对同一调用点多次记录：") +
+                    f"已改名为 `{path.name}`（原拟 `{base_name}.txt`），"
+                    "以确保每次调用的完整 prompt/response **各自独立留存、不被覆盖**",
+                    impact=ledger.SCOPE_THIS_RUN, remedy=ledger.REMEDY_YES,
+                    subject_id=subject_id, unit_id=unit_id,
+                    detail={"kind": "trace_name_renamed", "base_name": f"{base_name}.txt",
+                            "final_name": path.name, "collision": collision or ""},
+                )
+            return str(path), len(body)
+        except FileExistsError:
+            # 竞态：候选名刚好被占用（另一进程/线程）→ 换下一个序号再试
+            collision = collision or (
+                f"目标文件名已被占用（{path.name}，可能是另一进程写的或人为预置），已换名以免覆盖")
+            path, base_name, _ = _next_name(d, stamp, call_name)
+    raise OSError(f"审计文件名连续 {_MAX_NAME_TRIES} 次全部被占用，放弃写盘（已记账）")
 
 
 def write_trace(*, call_name: str, system: str, user: str, raw: str = "",
