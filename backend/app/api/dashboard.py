@@ -74,7 +74,24 @@ def get_dashboard(db: Session = Depends(get_db)) -> dict:
     stats = {k: sum(1 for n in visible if states.get(n) == k) for k in stat_keys}
     stats["reviewing"] = sum(1 for n in visible if states.get(n) == "reviewing")
     # 断点清单（捡拾=诊断，MVP 不做全流程，docs/08 §1）→ 空
+    # L1（R36 §3）：预置学科生命周期状态**由本响应直接给出**——前端不再为看一个布尔值去拉
+    # 全量学科列表（`/subjects` 默认隐藏已移除者，会导致"停用"被误判为"启用"，横幅永不显示）。
+    preset = (
+        db.query(models.Subject)
+        .filter(models.Subject.kind == "preset")
+        .order_by(models.Subject.id)
+        .first()
+    )
     return {
+        "preset_subject": (
+            None
+            if preset is None
+            else {
+                "id": preset.id,
+                "label": preset.label or preset.id,
+                "enabled": bool(preset.enabled),
+            }
+        ),
         "recommended_node": (
             {
                 "id": rec_node.id,

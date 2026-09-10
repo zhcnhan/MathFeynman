@@ -114,6 +114,32 @@ class TestDisabledMathHidden:
             assert app_client.get("/api/subjects/math").status_code == 200
             assert self._math_visible(app_client)
 
+    def test_dashboard_exposes_preset_subject_lifecycle(self, app_client):
+        """L1（R36 §3）：仪表盘**直出**预置学科生命周期状态——停用时 `enabled=false`，
+        前端据此渲染中文横幅。
+
+        反例锁定（旧缺陷成因）：不能再让前端从 `/subjects` 反推——该端点默认隐藏已移除者，
+        停用时列表为空、`find("math")` 得 undefined，回退 true → 横幅永不显示。
+        """
+        d = app_client.get("/api/dashboard")
+        assert d.status_code == 200
+        assert d.json()["preset_subject"] == {"id": "math", "label": "数学", "enabled": True}
+
+        assert app_client.delete("/api/subjects/math").status_code == 204
+        try:
+            # 旧推断逻辑的失效现场：默认列表里**没有 math**（这正是缺陷根源）
+            ids = [s["id"] for s in app_client.get("/api/subjects").json()["subjects"]]
+            assert "math" not in ids
+            # 但 dashboard 仍然如实给出停用态（新口径）
+            preset = app_client.get("/api/dashboard").json()["preset_subject"]
+            assert preset is not None
+            assert preset["enabled"] is False
+            assert preset["id"] == "math" and preset["label"] == "数学"
+        finally:
+            assert app_client.post("/api/subjects/math/enable").status_code == 200
+            preset = app_client.get("/api/dashboard").json()["preset_subject"]
+            assert preset is not None and preset["enabled"] is True
+
     def test_math_due_review_row_hidden_when_disabled(self, app_client):
         """停用期间即使残留到期行，复习队列按 subject.enabled 隐藏（视觉层兜底）。"""
         assert app_client.delete("/api/subjects/math").status_code == 204

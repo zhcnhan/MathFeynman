@@ -23,7 +23,6 @@ export default function Dashboard() {
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [campaign, setCampaign] = useState<CampaignData | null>(null);
   const [sx, setSx] = useState<SelfExtendStatus | null>(null);
-  const [mathEnabled, setMathEnabled] = useState<boolean | null>(null);
   const [sxBusy, setSxBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -41,14 +40,11 @@ export default function Dashboard() {
       api.get<DashboardData>("/dashboard"),
       api.get<CampaignData>("/campaign"),
       api.get<SelfExtendStatus>("/selfextend/status"),
-      api.get<{ subjects: { id: string; enabled: boolean }[] }>("/subjects"),
     ])
-      .then(([d, c, s, subs]) => {
+      .then(([d, c, s]) => {
         setDash(d);
         setCampaign(c);
         setSx(s);
-        const math = subs.subjects.find((x) => x.id === "math");
-        setMathEnabled(math ? math.enabled : true);
       })
       .catch((e) => setError((e as Error).message));
   }, []);
@@ -89,12 +85,14 @@ export default function Dashboard() {
   if (error) return <div className="card error">无法连接后端：{error}</div>;
   if (!dash || !campaign) return <div className="card">加载中…</div>;
   const s = dash.stats;
+  // L1（R36 §3）：停用横幅以 dashboard 直出的预置学科状态为准（不再从 /subjects 反推）
+  const presetOff = Boolean(dash.preset_subject && !dash.preset_subject.enabled);
   return (
     <div className="dashboard">
       <h1>仪表盘</h1>
-      {mathEnabled === false && (
+      {presetOff && (
         <div className="banner warn">
-          预置学科（数学）已停用：其学习内容与进度暂不可见（关卡地图同步隐藏，引擎仍拒绝越级学习）。
+          预置学科（{dash.preset_subject?.label ?? ""}）已停用：其学习内容与进度暂不可见（关卡地图同步隐藏，引擎仍拒绝越级学习）。
           请前往「学科列表 → 已移除」重新启用后继续；其它学科不受影响。
         </div>
       )}

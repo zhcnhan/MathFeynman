@@ -193,6 +193,9 @@ export interface DueReviewItem {
 }
 
 export interface DashboardData {
+  /** L1（R36 §3）：预置学科（当前=math）生命周期状态；无预置学科时为 null。
+   *  停用态由后端直出，前端不再从 `/subjects`（默认不含已移除者）反推。 */
+  preset_subject: { id: string; label: string; enabled: boolean } | null;
   recommended_node: DashboardRecommended | null;
   due_reviews: DueReviewItem[];
   breakpoints: unknown[];
