@@ -1075,3 +1075,37 @@ R36 交 Euler（工单 `.runtime/EULER_TICKET_R36.md`），与 R35 **合批执�
 **R35a 的作业对象重新指定**：行星科学已硬删，改用**用户即将新建的 PDF 学科**做端到端靶子
 （`content/stages/` 不得回灌已删内容）。
 
+### 5. R36 任务 L 验收（2026-09-10 · 架构侧独立复跑）
+
+**结论：L 批通过，放行 D/P。**
+
+| 项 | 架构侧实测 | Euler |
+|---|---|---|
+| pytest | **326 passed + 2 skipped，114.8s，exit 0**（= 基线 325+2，+1 为新用例） | 一致 |
+| `tsc --noEmit` | exit 0 | 一致 |
+| 活体 `/api/dashboard` | `preset_subject = {"id":"math","label":"数学","enabled":false}` | 一致 |
+| 库态 | `nodes=25`、`enabled=0` **为空**（`s-r34walk` 已清）、`edges=28`、`user_nodes=0`、 `ai_logs=38`（走查 4 行已清）、`integrity ok` | 一致 |
+| 备份 | `_backups\yanhui-r36-before-clean-20260910-172524\` 三件套在 | 一致 |
+
+**L1 代码审查**：后端按 `kind=="preset"` 查（**不硬编码 math**，符合通用性第 10 条）、
+停用态**如实下发**（不加启用过滤）；前端改 `presetOff` 驱动、**去掉第 4 个请求**、label 取自响应。
+**采纳方案②正确**：横幅问的是"预置学科生命周期状态"，用 `/subjects`（契约=启用中的学科）反推属**契约误用**
+——这正是缺陷根因，直出后该类"推断失配"风险结构性消失。**并要求把旧缺陷成因写进断言**（已做）。
+
+### 6. 疑点裁决：`user_nodes=25` 是**引擎语义，不是残留**（Euler 发现，架构侧复核确认）
+
+**核实**：`service/library.py::sync_content` 末尾对每个 user 调 `recompute_states`
+（`progress.py:85-88`），后者对**图中每个节点** `db.add(UserNode(..., state=AVAILABLE|LOCKED))`。
+故后端**每次启动**都会为全部 enabled 节点建默认行 → `user_nodes=0` 只是**清完那一瞬**的瞬态。
+
+**裁决：接受现状，不改引擎。** 理由：① `docs/03 §4`/`docs/06 §3` 本就把 `user_nodes` 定义为
+"按节点维护状态"的**物化表**，启动重算是**幂等**的；② 读路径（`state_map`）已能按需计算，
+改成"按需建行"属**引擎语义变更**，收益（省 25 行）与代价（写路径分支、聚合口径、回归面）不成比例；
+③ 它**不污染真实数据**（全 `LOCKED`、无 `mastered`），也不影响任何显示（dashboard/graph 仍空）。
+
+**但记两条纪律**：
+- **验收目标更正**：L2 的目标**不是** `user_nodes=0`（不可持久），而是
+  **"无走查产物"** = `enabled=0` 的 `s-r34walk.*` 为 0、走查 `ai_logs` 已清、计数与 R34-fin 基线可比。
+  已同步进 R36 工单，**后续批次勿再把 `user_nodes=0` 当验收项**。
+- **不许**为凑"0"而反复清库（那是与引擎语义对抗）；若将来真要按需建行，**另开裁决**。
+
