@@ -208,7 +208,11 @@ def delete_material(db, subject_id: str, material_id: str) -> bool:
 
 
 def materials_summaries(db, subject_id: str, *, limit_chars: int = 220) -> list[dict]:
-    """引用材料摘要（生成单元时注入 AI 起草上下文；可追溯 title/source/url）。"""
+    """**R36 遗留口径**（每份材料正文前 ``limit_chars`` 字摘要）——R37 起**不再用于注入**。
+
+    保留仅为兼容既有调用/演示（材料列表摘要）；教材注入一律走 ``draft_materials``/``unit_material_pack``
+    的**完整正文**路径（R37 S1：不用"前 N 字"糊弄）。
+    """
     out = []
     for e in list_materials(db, subject_id):
         body = e.get("body", "")
@@ -327,12 +331,6 @@ def _material_index(db, subject_id: str) -> list[dict]:
             "structure": structure, "text_health": health,
         })
     return out
-
-
-def _block_header(m: dict) -> str:
-    head = f"### 材料《{m['title']}》（{m['source'] or '本地'}"
-    head += f"，{m['url']}" if m["url"] else ""
-    return head + "）"
 
 
 def _full_blocks(index: list[dict]) -> list[dict]:
