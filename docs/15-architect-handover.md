@@ -28,7 +28,8 @@
   包描述 + README 立心）+ 代码内文案/注释清理（14 文件未提交工作树，零逻辑变更）+ 工作目录改名
   `MathFeynman` → `YanHui`。执行记录见 docs/09 R32 §3；流程纪律见 R32 §5。
 - 基线（**R32 架构侧独立复跑**）：pytest **325 passed + 2 skipped**（327 collected，exit 0）；audit
-  五学段全绿（27/31/81/59/60）；content validate 26/54；`npx tsc --noEmit` 通过；git 工作树待随本批提交。
+  五学段全绿（27/31/81/59/60）；content validate 26/54；`npx tsc --noEmit` 通过；R32 工作树已提交
+  （收尾提交 `4604fcf`），R33 复跑与此**逐位一致**（NOTES §52/§56）。
 - **进行中/待办（最重要）**：
   a) **R33 小批（Euler 已执行完毕，2026-09-10 · 待架构侧验收）**：文档/配置一致性收尾——
      docs/02 目录树首行改为 `YanHui/` 并按实测补齐目录、docs/15 §7B 标记完成、旧名残留全仓复核；
