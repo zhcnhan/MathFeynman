@@ -234,6 +234,9 @@ def test_r27_path3_budgets_exhausted_relearn(client):
     assert j2["payload"]["gap_filled"] is False
     assert j2["payload"]["next_action"] == "submit"
     assert j2["payload"]["answers_done"] == 1
+    # R30 F4：补答未补上 → 文案必须说清"再交一次完整讲解后才会针对该缺口再问"
+    assert "再交一次完整讲解" in j2["payload"]["message"]
+    assert j2["payload"]["followup_question"] is None, "补答后追问被清空（须再交完整稿换取新追问）"
     # 终验②（整合稿完全跑题）→ 仍 <0.7 → 缺口保留、可再补答一次
     j3 = _step(client, sid, "feynman_submit", transcript=BAD)
     assert j3["payload"]["verdict"] == "fail"

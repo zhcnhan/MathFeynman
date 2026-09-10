@@ -831,7 +831,7 @@ class SessionService:
         if filled:
             note = f"✅ 缺口已补上：{gap.get('description') or gap_key} {threshold_msg}。接着请把整段讲解整合重讲一遍——通过仍需完整稿达标。"
         else:
-            note = f"❌ 这次还没答到位：{gap.get('description') or gap_key} {threshold_msg}。缺口保留在账本里（稍后可再追一次）。"
+            note = f"❌ 这次还没答到位：{gap.get('description') or gap_key} {threshold_msg}。缺口保留在账本里——**再交一次完整讲解后，会针对该缺口再问**。"
         db.flush()
         return self._response(
             db,
