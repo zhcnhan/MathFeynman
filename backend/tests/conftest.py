@@ -53,6 +53,12 @@ _tmp_dir = tempfile.gettempdir()
 _db_file = os.path.join(_tmp_dir, f"mf_pytest_{uuid.uuid4().hex}.db")
 os.environ["MF_DB_PATH"] = _db_file
 
+# **R46 B：审计全文目录也隔离**——后端 lifespan 会在启动时按保留期清理审计文件
+# （R42 C3，R46 B 起还会定时清理）；若仍指向仓库真实 `.runtime/ai_trace`，
+# 跑一次测试就会**写进/清理真实审计文件**（此前实测确实如此：真实目录被测试写入）。
+# 测试一律落临时目录，真实审计文件只在真人使用/显式手动清理时变动。
+os.environ["MF_AI_TRACE_DIR"] = os.path.join(_tmp_dir, f"mf_ai_trace_{uuid.uuid4().hex}")
+
 # 内容根隔离（R13/A3）：整套测试在真实 content/ 的**临时副本**上运行——
 # 流水线/自续测试对 stages/_drafts 的写入与任何中断残留只落在临时副本，
 # 绝不污染仓库内容（此前中断测试残留 auto 文件导致图谱校验失败）。

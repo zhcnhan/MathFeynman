@@ -67,18 +67,33 @@ async def lifespan(app: FastAPI):
             )
         except Exception as e:  # 内容库异常不阻塞启动（可后续 POST /content/validate 排查）
             logger.warning("内容库同步失败（服务仍可启动）: %s", e)
-    # **R42 C3：审计全文文件按保留期自动清理**（架构侧 R41 §3-⑤ 裁决）——
-    # 清理**必须记账**（"已清理哪几条"），不得静默删；失败不阻塞启动。
+    # **R42 C3 + R46 B：审计全文文件按保留期自动清理**（架构侧 R41 §3-⑤ 裁决 / R45 §3-1 延伸）——
+    # **启动清一次 + 之后每 N 小时清一次**（N 见 `ai_trace.clean_interval_hours()`，默认 6 小时）；
+    # 清理**必须记账**（"已清理哪几条"），不得静默删；一切失败只 warning（不退服务、不阻塞主流程）。
+    cleanup_handle = None
     try:
         from .service import ai_trace
 
-        cleaned = ai_trace.cleanup_old(None)
+        cleaned = ai_trace.cleanup_once("启动")
         if cleaned.get("count"):
             logger.info("审计保留期清理完成: 删除 %s 个文件（保留期 %s 天，已记入总账）",
                         cleaned["count"], cleaned.get("keep_days"))
+        cleanup_handle = ai_trace.start_periodic_cleanup()
+        logger.info("审计定时清理已启动：每 %s 小时一次（守护线程，关闭时干净退出）",
+                    ai_trace.clean_interval_hours())
     except Exception as e:
-        logger.warning("审计保留期清理失败（服务仍可启动）: %s", e)
-    yield
+        logger.warning("审计保留期清理启动失败（服务仍可启动）: %s", e)
+    app.state.ai_trace_cleanup = cleanup_handle
+    try:
+        yield
+    finally:
+        # **R46 B：应用关闭时干净退出**（守护线程 + 显式 stop；即便 stop 失败也不会挂住进程）
+        if cleanup_handle is not None:
+            try:
+                cleanup_handle.stop()
+                logger.info("审计定时清理已停止（干净退出）")
+            except Exception as e:
+                logger.warning("审计定时清理停止异常（不影响退出）: %s", e)
 
 
 app = FastAPI(title="YanHui", version="0.1.0", lifespan=lifespan)

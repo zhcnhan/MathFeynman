@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import logging
 import re
 import threading
 from datetime import datetime, timedelta, timezone
@@ -466,8 +467,105 @@ def cleanup_old(db, *, keep_days_override: int | None = None) -> dict:
     return {"removed": removed, "count": len(removed), "keep_days": days}
 
 
+# ---------------------------------------------------------------------------
+# R46 B：保留期清理**定时化**（启动清一次 + 之后每 N 小时清一次）
+# ---------------------------------------------------------------------------
+# 为什么 6 小时：保留期是**天**级（默认 30 天），清理成本只是一次目录 glob；
+# 6 小时（≈每天 4 次）能把"过期后最长滞留"压到 6 小时以内（相对 30 天可忽略），
+# 又不至于频繁唤醒。可用 `MF_AI_TRACE_CLEAN_INTERVAL_HOURS` 覆盖；非法/<=0 → 回默认
+# （**不许**用配置把清理静默关掉；真要不清理请调大保留期）。
+DEFAULT_CLEAN_INTERVAL_HOURS = 6.0
+
+logger = logging.getLogger("yanhui.ai_trace")
+
+
+def clean_interval_hours() -> float:
+    import os
+
+    raw = (os.getenv("MF_AI_TRACE_CLEAN_INTERVAL_HOURS") or "").strip()
+    try:
+        v = float(raw) if raw else DEFAULT_CLEAN_INTERVAL_HOURS
+    except Exception:
+        return DEFAULT_CLEAN_INTERVAL_HOURS
+    return v if v > 0 else DEFAULT_CLEAN_INTERVAL_HOURS
+
+
+def cleanup_once(reason: str = "定时") -> dict:
+    """跑一次保留期清理：启动 / 定时 / 手动三处**共用同一实现**（不新建第二套清理）。
+
+    异常一律**只 warning**（不清就下次再清），**绝不抛**——审计清理不得影响主流程。
+    """
+    try:
+        out = cleanup_old(None)
+        if out.get("count"):
+            logger.info("审计保留期清理（%s）: 删除 %s 个文件（保留期 %s 天，已记入总账）",
+                        reason, out["count"], out.get("keep_days"))
+        return out
+    except Exception as e:
+        logger.warning("审计保留期清理失败（%s，不影响主流程，下次再清）: %s", reason, e)
+        return {"removed": [], "count": 0, "keep_days": keep_days(), "error": str(e)}
+
+
+class PeriodicCleanup:
+    """**R46 B**：把保留期清理挂到一个**守护线程**上（每 ``interval_seconds`` 跑一次）。
+
+    - **不阻塞主流程**：清理在后台线程里跑，异常只 warning；
+    - **关闭时干净退出**：``stop()`` 置停止事件 + ``join(timeout)``，可重复调用（幂等）；
+    - **进程兜底**：线程是 ``daemon``——即使调用方忘了 ``stop()``，也**不会**挂住进程退出。
+    """
+
+    def __init__(self, interval_seconds: float):
+        self.interval = max(0.01, float(interval_seconds))
+        self.runs = 0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> "PeriodicCleanup":
+        if self._thread is not None and self._thread.is_alive():
+            return self  # 幂等：已在跑就不起第二个
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._loop, name="yanhui-ai-trace-cleanup", daemon=True)
+        self._thread.start()
+        return self
+
+    def _loop(self) -> None:
+        # `Event.wait` 可被 stop() 立刻唤醒 → 关闭时不用等满一个周期
+        while not self._stop.wait(self.interval):
+            cleanup_once("定时")
+            self.runs += 1
+
+    def running(self) -> bool:
+        return bool(self._thread is not None and self._thread.is_alive())
+
+    @property
+    def thread(self) -> threading.Thread | None:
+        return self._thread
+
+    def stop(self, *, timeout: float = 2.0) -> bool:
+        """停止并等待退出；返回**本次是否真的停了**（已在停/未启动 → False，幂等）。"""
+        th = self._thread
+        if th is None:
+            return False
+        self._stop.set()
+        if th.is_alive():
+            th.join(timeout=max(0.0, float(timeout)))
+        stopped = not th.is_alive()
+        if stopped:
+            self._thread = None
+        return stopped
+
+
+def start_periodic_cleanup(*, interval_seconds: float | None = None) -> PeriodicCleanup:
+    """启动定时清理（默认间隔＝``clean_interval_hours()``）并返回句柄（调用方负责 ``stop()``）。"""
+    secs = (float(interval_seconds) if interval_seconds is not None
+            else clean_interval_hours() * 3600.0)
+    return PeriodicCleanup(secs).start()
+
+
 __all__ = [
     "OUTCOME_ADOPTED", "OUTCOME_DEGRADED", "OUTCOME_DROPPED", "OUTCOME_FAILED",
     "OUTCOME_LABELS_ZH", "trace_dir", "keep_days", "redact", "write_trace",
-    "query", "get_detail", "cleanup_old",
+    "query", "get_detail", "cleanup_old", "cleanup_once", "PeriodicCleanup",
+    "start_periodic_cleanup", "clean_interval_hours", "DEFAULT_CLEAN_INTERVAL_HOURS",
 ]
