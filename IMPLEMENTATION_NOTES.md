@@ -2132,9 +2132,10 @@ sessions 3 / attempts 31 / subjects 2 / concepts 113）。根因＝`.env` 的 `M
   分类见 §53；`.env:14` 的 `MF_DB_PATH=backend/data/mathfeynman.db` 是唯一"把旧路径当当前路径用"的
   本地配置（任务 B 处理）。
 - 服务实况：`backend/data/` 现有 `mathfeynman.db`(327680B) + `-wal`(70072B) + `-shm`(32768B)
-  （＋历史 `mathfeynman.db.bak-20260908-220309`）；**8000 端口被 PID 19852 占用**，
-  而 `.runtime/pids.txt` 记录的是 9084 / 2944（**与当前进程不符**）→ `scripts\stop.ps1` 停不掉它，
-  任务 B 需按端口定位进程停止（已记录，见 §54）。
+  （＋历史 `mathfeynman.db.bak-20260908-220309`）；8000 的**监听者**是 PID 19852，而 `.runtime/pids.txt`
+  记录的是 9084 / 2944 —— 二者不同**属正常**：`dev.ps1` 记的是它 `Start-Process` 出来的**父进程**
+  （uvicorn 父 / cmd.exe 包装），真正 listen 的是**子进程**；实测 `stop.ps1` 杀父后子进程随之退出、
+  端口立即释放（见 §54 B1）。
 
 ## 53. R33 任务 A：文档小尾巴（docs/02 目录树 + 旧名残留复核 · 2026-09-10）
 
@@ -2210,10 +2211,13 @@ sessions 3 / attempts 31 / subjects 2 / concepts 113）。根因＝`.env` 的 `M
 
 ### B1 · 停服（第 1 步）
 
-- 停服前实况：8000 由 `python -m uvicorn app.main:app`（PID **19852**）监听；`.runtime/pids.txt`
-  记录的 9084 / 2944 与实况**不符**（`scripts\stop.ps1` 只能杀掉记录值）→ 已补"按端口定位 PID"停服。
-- 停服后复核：8000 / 5173 **均无监听**，无残留 uvicorn 进程；停服后删/改名才可能成功
-  （SQLite 打开时不带 FILE_SHARE_DELETE，占用时 `Rename-Item` 会失败）。
+- 停服前实况：8000 的**监听者**是 `python -m uvicorn app.main:app` PID **19852**（子进程）；
+  `.runtime/pids.txt` 记录 9084 / 2944（**父进程**，`dev.ps1` 写的是 `Start-Process` 返回的父 PID）。
+  两者不同**属正常**，不是记录失效。
+- 实测：`scripts\stop.ps1` 杀掉记录的父进程后，**子进程 19852 随之退出**，8000 / 5173 随即无监听、
+  无残留 uvicorn → 停服成功（另按端口定位复核了一遍，此时已无可杀对象）。
+- 纪律：停服一律**以端口复核**（8000/5173 无监听才算停干净）；改名/迁移前也必须确认进程真退出——
+  SQLite 打开时不带 `FILE_SHARE_DELETE`，被占用时 `Rename-Item` 会失败（本次未遇到）。
 
 ### B2 · 备份（第 2 步，改名之前）
 
@@ -2371,6 +2375,9 @@ sessions 3 / attempts 31 / subjects 2 / concepts 113）。根因＝`.env` 的 `M
    concepts **113 → 113** / reviews **0 → 0**（**逐位一致，零损失**）；
    页面/接口冒烟：8000 与 5173 均监听，`/api/health`、`/api/dashboard`、`/api/subjects`、
    `/api/selfextend/status`、`/api/campaign`、前端 `/` **全部 200、无 500、无白屏**；
+   另测**前端同源路径**（浏览器实际走的链路）：`http://127.0.0.1:5173/api/health` → 200（vite 代理到后端）、
+   `http://127.0.0.1:5173/src/main.tsx` → 200（模块可转译）、首页返回 `<!doctype html lang="zh-CN">` +
+   vite HMR client → **具备渲染条件**（真机视觉走查仍归 §55 C 组，用户动作）；
    **异常与回滚记录**：无异常，未触发回滚；唯一插曲＝进程环境变量导致误建空库（已 move 出留存，见 §54 B4）。
 6. **任务 C**：可勾选真人验收清单见 **§55**（C0 前置 + C1–C5 五组，用户动作）。
 7. **git**：本批提交均标注 `R33` —— `51c6a62`（NOTES §52 + docs/02）、`b90c160`（NOTES §53/§54 + docs/15）、
