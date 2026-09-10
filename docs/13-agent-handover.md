@@ -69,6 +69,16 @@
 > ③ **发现 1 处显示层缺陷**：仪表盘"数学已停用"横幅**不显示**（NOTES §58-6，一行可修，待裁决）；
 > ④ 口径登记：**auto 内容随生成即入版控**（NOTES §57.3，未写自动提交逻辑）。
 > 记录：NOTES **§57**（本批）+ **§58「待架构裁决 / 未决」= 挂账总表，续接先读**。
+>
+> **R36 任务 L 已完成（Euler，2026-09-10）**：
+> ① **L1 修仪表盘停用横幅**（提交 `1c121f3`）——采纳架构侧倾向的**方案②**：`GET /api/dashboard`
+> 直出 `preset_subject{id,label,enabled}`，前端不再从 `/subjects`（默认隐藏已移除者）反推；
+> 新回归用例双向锁定，pytest 由 325+2 → **326+2**（328 collected）。活体验证：math 停用时
+> `presetOff=true` → **中文横幅会显示**；vite dev 已在服务新源码。
+> ② **L2 清现场**——先备份（`_backups\yanhui-r36-before-clean-20260910-172524\`，SHA256 自证）后清理：
+> `nodes 28→25`（3 行走查残影永久清除）、`ai_logs 42→38`（仅清走查那 4 次调用）、`user_nodes→0`；
+> **登记**：`user_nodes` 会随后端启动被 `sync_content` 重建（引擎语义，非残留）。
+> 详见 NOTES **§59**。
 > 提交链：443efb0（后端账本/双提交）→ bfd5bea（UI）→ a3dbddc（协议）→ 65282e9/8927a20（R28 裁决）
 > → fe9902d（R29 热修 + 回归用例）→ b1c1b05（R30 规格）
 > → **4f7990b（F6）→ 23fc603（F5）→ 49e5149（F4）→ f66af5f（R29 引申 flow 自愈）→ f8c856d（F2 行尾）**。
@@ -117,12 +127,14 @@
   R30 前基线为 306+2（R30 批 +19 = F6 7 / F5 2 / flow 自愈 10）。
 - 工作目录已改名：`D:\DeepseekHarness\YanHui`（旧名 MathFeynman；执行记录见 docs/09 R32 §3）。
 - **数据库（R33 任务 B 已归一为 `backend/data/yanhui.db`，2026-09-10）**：
-  - **清空后现状**（docs/15 §3.1 + NOTES §57.2e）：`subjects 1`（math，**enabled=0 停用**）、
-    `nodes 28`（25 启用 + 3 行 R34-fin 走查残影 `enabled=0`）、`edges 28`、`concepts 83`、
-    `user_nodes 25`（默认 `locked`，R34-fin 走查副产物）、
-    `sessions/attempts/reviews/feedback/relearn_logs/user_concepts` **全 0**；
-    清空前整份归档在 `_backups\yanhui-before-wipe-20260910-170347\`；迁移前旧库备份在
-    `_backups\yanhui-db-20260910-160212\`（含 SHA256 核对记录）。
+  - **清空后现状**（docs/15 §3.1 + NOTES §57.2e/§59.2）：`subjects 1`（math，**enabled=0 停用**）、
+    `nodes 25`（走查残影 3 行已于 R36 L2 清除）、`edges 28`、`concepts 83`、
+    `user_nodes 0`（**瞬态**：后端启动时 `sync_content→recompute_states` 会为全部 25 个内容节点
+    重建默认 `locked` 行，属引擎既有语义，非走查残留——见 NOTES §59.2）、
+    `sessions/attempts/reviews/feedback/relearn_logs/user_concepts` **全 0**、`ai_logs 38`；
+    清空前整份归档在 `_backups\yanhui-before-wipe-20260910-170347\`；R36 L2 清理前的库备份在
+    `_backups\yanhui-r36-before-clean-20260910-172524\`（含 SHA256）；R33 迁移前旧库备份在
+    `_backups\yanhui-db-20260910-160212\`。
   - ⚠️ **启动后端前先确认环境里没有旧值**：`load_dotenv()` 默认**不覆盖**已存在的环境变量，
     若终端继承了 `MF_DB_PATH=backend/data/mathfeynman.db`（旧 DSH 进程的残留），应用会**静默新建空库**——
     排查与处置见 NOTES §54 B4/B7。**`dev.ps1` 已显式定值 + 读回校验（`17646f8`），仍建议换新终端启动。**

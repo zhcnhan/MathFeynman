@@ -2543,13 +2543,93 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
 5. **`.runtime/EULER_TICKET_R34.md` 已作废、不要执行**：其两项已由架构侧直办——
    `dev.ps1` 库路径确定性（`17646f8`）、`.gitignore` 转 UTF-8（`17646f8`）、
    `stop.ps1` 进程树（`e55c8b3`）、启动器加固（`4a032d2`）。
-6. **【本批新发现】仪表盘"数学已停用"横幅不显示**（§57.2b）：`DashboardPage.tsx:44/50-51` 用
-   默认（不含已移除）的学科列表推断 `mathEnabled`，`find` 失配后回退 `true` → 中文停用提示不渲染。
-   **一行可修**（改取 `/subjects?include_removed=1`）；属显示层缺陷，不影响 API/判定。
-   本批按"零逻辑改动"只登记、未修。
-7. **【本批新发现】走查在真实库的痕迹是否清理**（§57.2e）：3 行 `nodes(enabled=0)` 残影
-   （`s-r34walk.u01–u03`）+ 25 行 `user_nodes` 默认状态行。二者均不影响 dashboard/graph 显示，
-   但偏离 docs/15 §3.1 记录的"其余全 0"基线。**本批未擅自改库**，等指令（清理 SQL 见 §57.2e）。
+6. ~~**【R34-fin 发现】仪表盘"数学已停用"横幅不显示**（§57.2b）~~ → **✅ 已闭（R36 L1，2026-09-10）**：
+   采纳架构侧倾向方案②——`GET /api/dashboard` 直出 `preset_subject{id,label,enabled}`，前端不再从
+   `/subjects` 反推。改动与证据见 **§59.1**（含回归用例）。
+7. ~~**【R34-fin 发现】走查在真实库的痕迹是否清理**（§57.2e）~~ → **✅ 已闭（R36 L2，2026-09-10）**：
+   已备份后清理：3 行 `nodes(enabled=0)` + 4 行走查 `ai_logs` **永久清除**；`user_nodes` 清为 0，
+   但**每次后端启动会由 `sync_content` 重建**（引擎既有语义，非走查残留）→ 详见 **§59.2**。
 8. **R35 审计脚本要入库**（`docs/09 R35 §5` / 工单 §5 要求"审计脚本必须入库长期保留"）：
    架构侧现存于 `_backups\r35-audit-20260910-170300\`；入库时机与路径待定（R35b 批一并做）。
+
+---
+
+## 59. R36 任务 L（先行 · 清现场 · 2026-09-10）
+
+### 59.1 L1 · 仪表盘停用横幅不显示 → **方案②（dashboard 直出）**，已修
+
+**方案选择与理由**（架构侧给了二选一）——**采纳方案②**：`GET /api/dashboard` 直接下发
+`preset_subject: {id, label, enabled} | null`：
+
+- **语义正确**：横幅问的是"**预置学科的生命周期状态**"，而 `/subjects` 的契约是"**列出启用中的学科**"
+  （默认隐藏已移除者）。用后者推断前者属于**契约误用**——这也是缺陷根因。直出后不再有"推断"，
+  也就没有 `find` 失配回退的风险。
+- **少一次请求**：仪表盘首屏由 4 个并发请求降为 3 个（`/dashboard` 已聚合引擎状态，无需再拉全量学科）。
+- **通用**：按 `kind == "preset"` 查（非硬编码 `math`），未来多预置学科时语义不变；无预置学科 → `null`。
+- 未选方案①（`/subjects?include_removed=1`）的原因：一行能修，但把"生命周期状态"塞进列表响应里靠前端筛，
+  语义仍然绕，且不解决"为看一个布尔值拉全量列表"。
+
+**改动清单**（提交 `1c121f3`）
+| 文件 | 改动 |
+|---|---|
+| `backend/app/api/dashboard.py` | 响应新增 `preset_subject`（`kind=="preset"` 首行；`enabled` 如实、**不加启用过滤**） |
+| `frontend/src/api.ts` | `DashboardData` 增字段与注释（说明"不得从 `/subjects` 反推"） |
+| `frontend/src/pages/DashboardPage.tsx` | 删 `mathEnabled` state 与第 4 个请求；`presetOff = Boolean(preset_subject && !preset_subject.enabled)`；横幅文案用 `preset_subject.label` |
+| `backend/tests/test_subject_visibility.py` | **新增用例** `test_dashboard_exposes_preset_subject_lifecycle`（1 条） |
+| `docs/06-api.md`、`docs/07-ui.md` | 契约与 UI 口径同步（含"不得改用 `/subjects` 反推"的告警） |
+
+**证据**
+- 回归：pytest **328 collected / 326 passed + 2 skipped / 0 failed，exit 0**（基线 325+2 → **+1 = 新用例**；
+  留档 `.runtime/r36L_pytest.xml`）；`npx tsc --noEmit` exit 0。
+- 新用例双向锁定：math 启用 → `{id:math,label:数学,enabled:True}`；停用 → `enabled:False` 且
+  **默认 `/subjects` 列表里确实没有 `math`**（把旧缺陷的成因写进断言，防回归）。
+- **活体（真实库，math 仍停用）**：`GET /api/dashboard` → `preset_subject = {id:'math', label:'数学',
+  enabled:False}` → 前端新逻辑 `presetOff = True` → **中文横幅会显示**；
+  vite dev 已服务新源码（转译产物含 `presetOff`/`preset_subject`、**不含** `mathEnabled`）。
+- "**启用时不出现**"：由上述用例在 hermetic 环境覆盖；**未**在用户真实库上开关 math（保护现场，
+  用户接下来要测建新学科）。
+
+### 59.2 L2 · 真实库走查痕迹清理（先备份 → 核对 → 再清理）
+
+**备份**：`D:\DeepseekHarness\_backups\yanhui-r36-before-clean-20260910-172524\`（三件套 + **SHA256 自证**）：
+
+| 文件 | 字节 | SHA256（前 16 位） | 源/副本一致 |
+|---|---|---|---|
+| `yanhui.db` | 327680 | `820efc7218a15784…` | ✅ |
+| `yanhui.db-wal` | 1128912 | `7f0e8e1532b8b4e9…` | ✅ |
+| `yanhui.db-shm` | 32768 | `2134080933b2fc58…` | ✅ |
+
+副本 `integrity_check=ok`、计数与源一致 → **备份核对 PASS 后才动库**。清理脚本留档
+`.runtime/r36_db_l2.py`（backup / clean / count 三模式，可复跑审计）。
+
+**计数对照**
+
+| 项 | 清理前 | 清理后 | 重启后（观察） | 二次清理后（**最终交付**） |
+|---|---|---|---|---|
+| `nodes` | 28 | **25** | 25 | **25** |
+| `nodes(enabled=1)` | 25 | 25 | 25 | **25** |
+| `s-r34walk` 残影行 | 3 | **0** | 0 | **0** |
+| `edges` | 28 | 28 | 28 | **28** |
+| `user_nodes` | 25 | **0** | 25（见下） | **0** |
+| `ai_logs` | 42 | **38** | 38 | **38** |
+| `concepts` / `subjects` / `users` | 83 / 1 / 1 | 不变 | 不变 | **83 / 1 / 1** |
+| `sessions`/`attempts`/`reviews`/`feedback`/`relearn_logs`/`user_concepts` | 全 0 | 全 0 | 全 0 | **全 0** |
+| `integrity_check` | ok | ok | ok | **ok** |
+
+- **删除内容**：① 3 行 `nodes`（`s-r34walk.u01–u03`，`enabled=0`，走查产物，**永久清除**）；
+  ② 25 行 `user_nodes`；③ **4 行走查 `ai_logs`（id 39–42 = `outline_draft` ×1 + `unit_content_draft` ×3，
+  本会话走查所产生）**。
+  **`ai_logs` 取舍说明**：可留可清（工单授权自定）→ 选择**清掉走查那 4 行、保留此前 38 行真实历史**
+  （后者是用户真实使用与 R35 审计的调用记录，属可观测性/成本审计凭据，不该动）。清理掉的 4 行内容
+  已在 §57.2d 留档（调用点 + 时间 + 结果），信息不丢失。
+- **⚠️ 重要发现（`user_nodes` 不是"走查残留"）**：清理后首次启动后端，`user_nodes` **立刻回到 25**
+  —— `main.py` lifespan → `sync_content()` → `recompute_states()`（`service/library.py:96-99`、
+  `service/progress.py:85-88`）会为**全部 enabled 内容节点**建立默认状态行（本库＝25 个 math 节点，
+  全 `locked`）。故 `user_nodes=0` 是**瞬态**：任何后端重启或内容生成都会重建。
+  - 读接口（`/dashboard`、`/graph`、`/campaign`、`/subjects`、`/selfextend/status`）**不会**重建
+    （`state_map` 只读、不写行）——实测 5 个端点访问后 `user_nodes` 仍为 0。
+  - 处置：**按工单目标把最终交付态清成 0**（二次清理，只删启动重建的那 25 行），并如实登记其瞬态性；
+    若要求"永久 0"，需把 `recompute_states` 改成**按需建行**（引擎语义变更，超出 R36 授权，未做）。
+- 现场复核：`subjects = [('math','数学','preset',0)]`（math 仍停用）；`content/stages` 25 个 `.md`、
+  `content/subjects` 仅 `math/`；服务 8000/5173 均 200；`git status` 干净。
 
