@@ -1,67 +1,28 @@
-"""content.l1_math：**math preset 的 L1 验算插件**（R35 §12 第二层）。
+"""content.l1_math：**math preset 的 L1 验算插件**（R35 §12/§13）。
 
 职责（只有这一层与学科相关）：
-- **独立验算**：用 sympy 按内容声明的 `semantics.expect` 独立计算标准答案，与模板 `answer_expr`
-  **符号比对**（`simplify(expect - answer_expr) == 0`）；不一致 → 拒绝入库。
-- **条件强制**：`semantics.requires` 里每一条"题面陈述的条件"都必须被 `constraint` 保证——
-  在参数取值域上穷举（有上限）找出**反例**（constraint 成立但 requires 不成立）→ 拒绝入库。
+1. **独立验算**：按内容声明的 `semantics.expect` 独立计算标准答案；
+2. **必须校验"实际求值路径"**（§13 裁决 2）：`templates.eval_answer_expr(answer_expr)` 的结果
+   与 L1 独立验算结果**必须一致** —— 这正是漏过 s23 的缺口（当时两侧都走 L1 的函数表，
+   而判题实际走的是另一套、把 `gcd` 静默当 1）；
+3. **`expect` 不得自证**（§13 裁决 3）：`semantics.expect` 与 `answer_expr` **文本相同 → 违规**；
+4. **条件强制**：`requires` 必须被 `constraint` 保证（穷举反例）；
+5. **未声明 expect → 违规**（§13 裁决 4，数学模板必须可独立验算）。
 
-注册方式：导入本模块即向 `content.verify` 注册（`register_l1("math", …)`）；
-**没有任何 `if subject == "math"` 分支**——解析一律走注册表。
+求值/函数表统一来自 `content.exprs`（**单一实现**，与判题路径同一份）。
+注册方式：导入本模块即向 `content.verify` 注册（`register_l1("math", …)`）；**无学科分支**。
 """
 from __future__ import annotations
 
-import re
 from itertools import product
 from typing import Any
 
-import sympy as sp
-
+from . import exprs
 from .schemas import ExerciseDoc, TemplateDoc
 from .templates import eval_answer_expr
-from .verify import L1Verifier, register_l1
+from .verify import NO_EXPECT_PROBLEM, L1Verifier, register_l1
 
-# 允许在 expect/requires 里使用的符号（学科自有的数学函数；不给外部求值能力）
-_LOCALS: dict[str, Any] = {
-    "lcm": sp.lcm, "gcd": sp.gcd, "Abs": sp.Abs, "Min": sp.Min, "Max": sp.Max,
-    "floor": sp.floor, "ceiling": sp.ceiling, "sqrt": sp.sqrt, "Rational": sp.Rational,
-}
-_MAX_COMBOS = 5000   # requires 反例穷举上限（超限则退化为按声明区间抽样）
-
-
-_NAME_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b")
-
-
-def _sympify(expr: str) -> sp.Expr:
-    return sp.sympify(str(expr), locals=_LOCALS, evaluate=False)
-
-
-def _bind_text(expr_txt: str, params: dict[str, Any]) -> str:
-    """把参数**代入表达式文本**（数字字面量）——这样 `lcm(a,b)` 变成 `lcm(6,9)` 才会被真正求值；
-    否则 sympy 会把 `lcm(a,b)` 当"一般符号"化简成 `a*b`（默认互质），独立验算退化成抄答案。
-    """
-    def repl(m: "re.Match[str]") -> str:
-        name = m.group(1)
-        if name in params and name not in _LOCALS:
-            v = params[name]
-            return f"({v})" if isinstance(v, (int, float)) else str(v)
-        return name
-
-    return _NAME_RE.sub(repl, str(expr_txt))
-
-
-def _param_values(expr_txt: str, params: dict[str, Any]) -> sp.Expr:
-    """把表达式在给定参数上求值：先文本代入、再 sympy 求值/化简。"""
-    return sp.simplify(_sympify(_bind_text(expr_txt, params)))
-
-
-def _holds(expr_txt: str, params: dict[str, Any]) -> bool | None:
-    """求值一个布尔条件；无法判定返回 None。"""
-    try:
-        val = _param_values(expr_txt, params)
-        return bool(val)
-    except Exception:
-        return None
+_MAX_COMBOS = 5000   # requires 反例穷举上限（超限则退化为按 seed 抽样）
 
 
 def _iter_combos(tpl: TemplateDoc):
@@ -84,7 +45,7 @@ def _iter_combos(tpl: TemplateDoc):
 
 
 class MathSympyVerifier:
-    """math preset 的 L1 验算器（sympy 独立验算 + constraint 蕴含检查）。"""
+    """math preset 的 L1 验算器（独立验算 + 实际路径比对 + constraint 蕴含检查）。"""
 
     name = "math-sympy"
 
@@ -92,21 +53,55 @@ class MathSympyVerifier:
                answer: str, semantics: dict) -> tuple[list[str], list[str]]:
         problems: list[str] = []
         findings: list[str] = []
+        answer_expr = str(tpl.answer_expr or "").strip()
         expect = str((semantics or {}).get("expect") or "").strip()
-        if not expect:
-            findings.append("未声明 semantics.expect：L1 无法独立验算标准答案（须声明「答案的独立算式」）")
-        else:
-            try:
-                e_expect = _param_values(expect, params)
-                e_answer = _param_values(tpl.answer_expr or "0", params)
-                if sp.simplify(e_expect - e_answer) != 0:
-                    problems.append(
-                        f"答案与独立验算不一致：声明 expect={expect!r} 实算 {sp.sstr(e_expect)}，"
-                        f"而 answer_expr={tpl.answer_expr!r} 给出 {sp.sstr(e_answer)}"
-                        f"（params={params}）")
-            except Exception as e:  # 表达式不可解析 → 无法验算（如实计入 findings）
-                findings.append(f"expect/answer_expr 无法解析比对：{type(e).__name__}: {e}")
+        same_text = bool(expect and answer_expr) and expect.replace(" ", "") == answer_expr.replace(" ", "")
 
+        # §13 裁决 3：expect 不得是 answer_expr 的复制（否则等于没验）
+        if same_text:
+            problems.append(
+                f"semantics.expect 与 answer_expr 文本完全相同（{expect!r}）——等于自证，"
+                "必须写成**独立表述**（如 lcm(a, b) / gcd(a, b) / a*b/100）")
+        # §13 裁决 4：数学模板必须能独立验算（未声明 expect = 违规，不再只是 finding）
+        if not expect:
+            problems.append(NO_EXPECT_PROBLEM)
+
+        if expect and not same_text:
+            try:
+                e_expect = exprs.eval_number(expect, params)
+            except exprs.ExprError as e:
+                problems.append(f"expect 无法求值：{e}")
+                e_expect = None
+            if e_expect is not None:
+                try:
+                    e_answer = exprs.eval_number(answer_expr, params)
+                except exprs.ExprError as e:
+                    problems.append(f"answer_expr 无法求值：{e}")
+                    e_answer = None
+                if e_answer is not None and abs(e_expect - e_answer) > 1e-9:
+                    problems.append(
+                        f"答案与独立验算不一致：expect={expect!r} 实算 {e_expect}，"
+                        f"answer_expr={answer_expr!r} 给出 {e_answer}（params={params}）")
+
+        # §13 裁决 2：**判题实际求值路径**必须与独立验算一致（这条才防住 s23 那一类）
+        if answer_expr:
+            try:
+                actual_text = eval_answer_expr(answer_expr, params)
+                actual_val = exprs.eval_number(actual_text)
+            except Exception as e:  # 判题路径解析失败 → 用户会碰到坏题，必须报
+                problems.append(f"判题求值路径无法解析 answer_expr（{answer_expr!r}）：{e}")
+                actual_val = None
+            if actual_val is not None and expect and not same_text:
+                try:
+                    e_expect = exprs.eval_number(expect, params)
+                except exprs.ExprError:
+                    e_expect = None
+                if e_expect is not None and abs(e_expect - actual_val) > 1e-9:
+                    problems.append(
+                        f"判题实际求值与独立验算不一致：判题路径给出 {actual_text}，独立验算为 {e_expect}"
+                        f"（params={params}，answer_expr={answer_expr!r}）")
+
+        # 条件强制（题面不得说出未被 constraint 保证的话）
         reqs = [str(r) for r in ((semantics or {}).get("requires") or []) if str(r).strip()]
         for req in reqs:
             bad = self._counterexample(tpl, req)
@@ -119,21 +114,12 @@ class MathSympyVerifier:
     @staticmethod
     def _counterexample(tpl: TemplateDoc, req: str) -> dict[str, Any] | None:
         """找出"constraint 成立但 requires 不成立"的参数组合（穷举，有上限）。"""
-        found: dict[str, Any] | None = None
-        any_combo = False
         for combo in _iter_combos(tpl):
-            any_combo = True
-            if tpl.constraint:
-                ok_c = _holds(str(tpl.constraint), combo)
-                if ok_c is not True:
-                    continue
-            ok_r = _holds(req, combo)
-            if ok_r is False:
-                found = combo
-                break
-        if not any_combo:
-            return None   # 无法穷举（参数空间过大/非法）→ 交由穷举外的抽样自行暴露
-        return found
+            if tpl.constraint and exprs.holds(str(tpl.constraint), combo) is not True:
+                continue
+            if exprs.holds(req, combo) is False:
+                return combo
+        return None
 
 
 register_l1("math", MathSympyVerifier())

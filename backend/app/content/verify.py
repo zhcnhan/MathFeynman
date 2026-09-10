@@ -29,6 +29,12 @@ from .templates import render_exercise
 
 PRIMARY_LEVEL = "primary"
 
+# §13 裁决 4：数学模板必须能独立验算（未声明 expect = **违规**，不再只是 finding）
+NO_EXPECT_PROBLEM = ("未声明 semantics.expect：本模板的答案**无法独立验算**"
+                     "（数学模板必须声明「答案的独立算式」；不得让 answer_expr 自证）")
+# 非数学学科：如实分界（不判违规，但必须**显式标注**并计入护栏统计）
+NO_L1_MARKER = "本模板无独立验算（该学科未注册 L1 验算插件——如实分界，仅通用层+可答性+护栏）"
+
 # 题面"条件性表述"的关键词（**仅用于体检时的结构性提示**：说了条件却没声明 semantics → 无法验证；
 # 绝不用于自动判定对错——判定只认内容声明的 domain/expect/requires）
 CONDITION_HINTS = ("其中", "倍数", "余数", "商", "按", "还剩", "剩下", "至少", "不超过", "最多", "不少于",
@@ -45,6 +51,8 @@ class TemplateVerdict:
     seeds_checked: int = 0
     domain: dict = field(default_factory=dict)
     l1: str | None = None
+    l1_available: bool = False          # §13 裁决 4：非数学学科必须**显式标注**"无独立验算"
+    verified: bool = False              # 是否真的被独立验算过（有 L1 且声明了 expect）
     problems: list[str] = field(default_factory=list)
     findings: list[str] = field(default_factory=list)
     samples: list[dict] = field(default_factory=list)
@@ -53,6 +61,7 @@ class TemplateVerdict:
         return {
             "node_id": self.node_id, "ex_id": self.ex_id, "ok": self.ok,
             "seeds_checked": self.seeds_checked, "domain": self.domain, "l1": self.l1,
+            "l1_available": self.l1_available, "verified": self.verified,
             "problems": self.problems, "findings": self.findings, "samples": self.samples[:3],
         }
 
@@ -120,22 +129,19 @@ def effective_domain(doc: NodeDoc, tpl: TemplateDoc) -> tuple[dict, bool]:
 
 
 def _as_number(text: str) -> float | None:
-    """答案文本 → 数值（支持 3/5、-8、55/2、0.3 等；非数值返回 None）。"""
+    """答案文本 → 数值（支持 3/5、-8、55/2、0.3 等；非数值返回 None）。走统一求值实现。"""
+    from . import exprs
+
     s = (text or "").strip()
     if not s:
         return None
     try:
-        import sympy as sp
-
-        val = sp.sympify(s.replace(" ", ""), evaluate=True)
-        if getattr(val, "is_number", False):
-            return float(val)
+        return exprs.eval_number(s)
     except Exception:
-        pass
-    try:
-        return float(s)
-    except Exception:
-        return None
+        try:
+            return float(s)
+        except Exception:
+            return None
 
 
 def check_domain_rule(answer: str, domain: dict) -> list[str]:
@@ -169,16 +175,21 @@ def check_template(node_id: str, doc: NodeDoc, ex: ExerciseDoc, *, seeds: int = 
     domain, declared = effective_domain(doc, tpl)
     verdict.domain = domain
     semantics = tpl.semantics if isinstance(tpl.semantics, dict) else {}
+    verifier = l1_for(subject)
+    verdict.l1_available = verifier is not None
+    verdict.verified = bool(verifier is not None and str(semantics.get("expect") or "").strip())
 
+    if verifier is None:
+        # §13 裁决 4 后半：非数学学科**显式标注**"无独立验算"（如实分界，计入护栏统计）
+        verdict.findings.append(NO_L1_MARKER)
     if not semantics:
         verdict.findings.append(
             "未声明 semantics（domain/expect）→ 通用层无谓词可验、L1 无独立算式可比（须显式声明，不猜）")
     if not declared and doc.level == PRIMARY_LEVEL:
-        verdict.findings.append("未显式声明 domain：当前按小学学段政策取 nonneg+integer（建议声明固化）")
+        verdict.findings.append("未显式声明 domain：当前按小学学段政策取 nonneg（建议声明固化）")
     if not semantics.get("requires") and any(h in (tpl.prompt or "") for h in CONDITION_HINTS):
         verdict.findings.append("题面含条件性表述但未声明 requires → 无法验证「题面是否说出了未被 constraint 保证的话」")
 
-    verifier = l1_for(subject)
     for seed in range(seeds):
         r = render_exercise(node_id, ex, seed)
         if r.broken:
@@ -214,9 +225,34 @@ def gate_errors(doc: NodeDoc, *, seeds: int = 8) -> list[str]:
     return errs
 
 
+def library_stats() -> dict:
+    """全库模板题的**验证覆盖率统计**（供护栏/审计消费；§13 裁决 4 要求"计入护栏统计"）。
+
+    返回 {templates, violations, verified, unverified, l1_subjects}：
+    - `verified` = 有 L1 且声明了 expect（真被独立验算过）；
+    - `unverified` = 其余（含"无 L1 学科的如实分界"与"未声明 expect"）。
+    """
+    from .loader import load_library
+
+    templates = violations = verified = unverified = 0
+    subjects: set[str] = set()
+    for loaded in load_library().nodes:
+        for v in check_node(loaded.doc, seeds=4):
+            templates += 1
+            violations += 1 if v.problems else 0
+            verified += 1 if v.verified and not v.problems else 0
+            unverified += 1 if not v.verified else 0
+            if v.l1_available:
+                subjects.add(subject_of(v.node_id))
+    return {"templates": templates, "violations": violations, "verified": verified,
+            "unverified": unverified, "l1_subjects": sorted(subjects)}
+
+
 __all__ = [
     "PRIMARY_LEVEL",
     "CONDITION_HINTS",
+    "NO_EXPECT_PROBLEM",
+    "NO_L1_MARKER",
     "TemplateVerdict",
     "L1Verifier",
     "register_l1",
@@ -227,4 +263,5 @@ __all__ = [
     "check_template",
     "check_node",
     "gate_errors",
+    "library_stats",
 ]

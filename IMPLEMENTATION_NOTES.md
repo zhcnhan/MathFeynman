@@ -2971,3 +2971,77 @@ seed=3: 求 5 和 7 的最小公倍数，其中 7 是 5 的倍数。   -> 模板
 | 生成端拒绝 | 既有 `pipeline.generate_entry` 重试+入库链路（validate_semantics 独立函数） | 用例 10 + `validate` 体检输出 |
 | 出稿纪律 | `ai/drafting` prompt（schema 三处同改） | 重生成 5 节点全过闸门（真模型实测） |
 
+---
+
+## 64. R35b · §13：求值路径单一化 + 闸门补三条硬规则 + s23 修复（2026-09-10）
+
+> 架构侧在收下闸门后**复现出闸门漏网**：`primary.s23/ex2`「化简比 {m}:{n} 后前项与后项之和」——
+> 判题给出 36（`m/1 + n/1`），正确答案 9。**三重套娃**：判题求值器不认识 `gcd` → sympy 把未知函数
+> **静默当 1**；L1 那套认识 gcd → 算出 9；**闸门两侧都走 L1** → 用正确的尺子量了自己两遍。
+
+### 64.1 求值路径单一化（§13 裁决 1，根治）
+
+- 新增 **`app/content/exprs.py`**：**唯一函数表 `MATH_LOCALS`**（lcm/gcd/abs/min/max/floor/ceiling/sqrt/…）
+  + 唯一 `parse/eval_expr/eval_text/eval_number/holds`。**逐词白名单校验**：出现既非参数名、又非支持函数的
+  名字 → **抛中文 `ExprError`**（绝不静默当 1）。
+  - 实测留档：`sympify("lcm(a,b)")` 会把 `lcm` 当一般符号化简成 `a*b`（sympy 默认互质）；
+    `sympify(..., strict=True)` 又会连纯算术文本一起拒——故采用"**先代入参数文本 + 逐词白名单**"的方案；
+  - `templates.eval_answer_expr` **改为委托 `exprs`**（判题路径与验算路径**同一份实现**，消灭并行机制）；
+  - `l1_math` 的私有 `_LOCALS`/`_param_values`/`_sympify` **删除**，全部改用 `exprs`。
+- **效果**：`m/gcd(m,n) + n/gcd(m,n)` + {m:16,n:20} → 判题路径现在给 **9**（此前 36）✓。
+
+### 64.2 闸门补三条硬规则（§13 裁决 2/3/4）
+
+| 规则 | 实现 | 用例 |
+|---|---|---|
+| **校验"实际求值路径"** | `l1_math` 里新增：`templates.eval_answer_expr(answer_expr)` 的结果必须与 L1 独立验算一致；不一致 → **违规** | `test_gate_compares_actual_judging_path_with_independent_expect` |
+| **`expect` 不得自证** | `expect` 与 `answer_expr` **文本相同 → 违规**（等于没验） | `test_gate_rejects_expect_that_is_copy_of_answer_expr` |
+| **未声明 expect 即违规（数学）** | `NO_EXPECT_PROBLEM` 由 finding 升为 **problem** | `test_math_template_without_expect_is_violation` |
+| **非数学学科如实分界** | `NO_L1_MARKER` 显式标注"本模板无独立验算"；`TemplateVerdict.l1_available/verified` 落档；`verify.library_stats()` + **`guardrails.semantics_stats()`**（护栏口径委托同一实现） | `test_non_math_subject_is_marked_unverified_and_counted` |
+| **未知函数不再静默当 1** | `test_unified_eval_path_unknown_function_is_chinese_error_not_one` | 中文报错含"未知名" |
+
+**必修项**：`pipeline.stub_drafter` 的模板题同步声明 `semantics`（否则测试里"unlock_until 生成"被新闸门拒绝，
+54 条用例连锁失败——实测踩到并修复）。
+
+### 64.3 s23 修复与影响面重扫
+
+- **影响面扫描（§13 裁决 5）**：全库 `answer_expr` 的"未知名"扫描 → **0 条**（gcd/lcm 已进唯一函数表，
+  这一类判题错算被**结构性地**堵死）；架构侧口径"仅 s23 两题"一致。
+- **s23 重生成** ✓（1 稿过新闸门）；同时重生成此前"expect 自证"的 `s02/s12/s04`（各 1–2 稿通过；
+  `s02`/`s04` 首两稿因模型照抄 `a+b`/`a/b` 被闸门**拒绝** → 强化 prompt 给出"一步运算也要换等价写法"
+  示例（`a+b`→`b + a`、`a/b`→`Rational(a, b)`…）后通过）。**"自证"清零** ✓。
+
+### 64.4 体检工具修复（§13 裁决 6）
+
+- 控制台标记改**纯 ASCII**（`[BAD]/[WARN]/[OK]`），不再用 emoji（Windows GBK 控制台崩溃）；
+- 汇总行**分列**：`违规 N（无 expect x / expect 自证 y / 其它 z）；已独立验算并通过 V；其余 = 未验算或未声明
+  （不得读作「全库已验证」）`——**违规数不再被 finding 稀释**；
+- 新增 `unknown_names` 列（§13 影响面扫描，常驻）。
+
+### 64.5 当前库状态（诚实口径）与遗留清单
+
+`guardrails.semantics_stats()` = **`{templates: 30, violations: 21, verified: 9, unverified: 21}`**：
+
+- **violations 21 = 全部"未声明 expect"**（12 个历史节点：`middle.0102`×3、`middle.0201`、`middle.0202`、
+  `primary.0101`×2、`0102/0103/0104`、`primary.s01`×2、`s03/s09/s10/s11/s13/s22` 等）；
+  其中 `middle.*` 与 `primary.0101–0104` 是**人工锚点**（不该用重生成覆盖）→ **建议处置**：
+  由内容侧追加 `semantics`（`expect` 用**独立写法**，如 `Rational(c - b, a)`）+ `domain`，本批**未动人工锚点**；
+  auto 节点可按需重生成（生成器 prompt 已就位）。
+- `verified 9`＝被独立验算并通过的模板（＝刚修的 5 节点的全部模板 + 1）。
+- **行为影响**：新生成内容**必须**带 expect 才能入库（硬闸门）；历史内容仍可加载（不阻塞），
+  但其"未验算"状态**在体检/护栏口径里如实可见**。
+
+### 64.6 回归与提交
+
+| 项 | 实测 |
+|---|---|
+| `pytest backend/tests` | **375 collected / 373 passed + 2 skipped / 0 failed / 0 error，exit 0**（+5 用例） |
+| `content validate` | **ok 25 节点 / 50 练习** |
+| roadmap audit | **27/31/81/59/60**，错误项 0 |
+| `npx tsc --noEmit` | exit 0 |
+
+新增/改动：`content/exprs.py`（新）、`content/l1_math.py`（重写）、`content/verify.py`、`content/templates.py`、
+`content/pipeline.py`（stub 声明 semantics + 闸门入口）、`content/cli.py`、`ai/drafting.py`（出稿纪律）、
+`service/guardrails.py`（`semantics_stats`）、`tests/audit_template_semantics.py`、`tests/test_r35_semantics_gate.py`（15 条）、
+5 个节点重生成。
+

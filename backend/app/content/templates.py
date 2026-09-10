@@ -107,17 +107,13 @@ def _substitute(tpl: str, params: dict[str, Any]) -> str:
 def eval_answer_expr(expr_txt: str, params: dict[str, Any]) -> str:
     """answer_expr 语义（docs/04 §2 样例）：参数名作为符号的表达式，代入取值后化简。
 
-    如 answer_expr "(c - b) / a" + params {a:2,b:12,c:10} → "-1"。
+    R35 §13 裁决 1：**统一走 `content.exprs`**（唯一函数表 + `strict=True`）——
+    禁止再用"只认参数名的 locals"解析（那会把未知函数静默当 1：`gcd(16,20)` → `1`，
+    算出 36 而不是 9，见 s23 事故）。无法解析 → **中文错误**，不吞。
     """
-    syms = {k: sp.Symbol(k) for k in params}
-    try:
-        expr = sp.sympify(expr_txt, locals=syms)
-    except (sp.SympifyError, SyntaxError, ValueError) as e:
-        raise ValueError(f"answer_expr 无法解析 {expr_txt!r}: {e}") from e
-    if params:
-        expr = expr.subs({sp.Symbol(k): v for k, v in params.items()})
-    expr = sp.simplify(expr)
-    return sp.sstr(expr)
+    from . import exprs
+
+    return exprs.eval_text(expr_txt, params)
 
 
 # --------------------------------------------------------------------------

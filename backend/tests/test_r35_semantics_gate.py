@@ -74,10 +74,10 @@ def test_gate_rejects_condition_not_enforced_by_constraint():
     v = check_template("primary.s98", doc, ex, seeds=2)
     assert v.ok is False
     assert any("未被 constraint 保证" in p for p in v.problems), v.problems
-    # 补上 constraint 后 → 通过（同一算式，只是条件被强制）
+    # 补上 constraint 后 → 通过（同一算式，只是条件被强制；expect 用**另一种写法**避免"自证"）
     tpl2 = _tpl("求 {a} 和 {b} 的最大公因数（其中 {b} 是 {a} 的倍数）。",
                 constraint="b % a == 0", answer_expr="gcd(a, b)",
-                semantics={"expect": "gcd(a, b)", "requires": ["b % a == 0"], "domain": {"nonneg": True}})
+                semantics={"expect": "gcd(b, a)", "requires": ["b % a == 0"], "domain": {"nonneg": True}})
     doc2, ex2 = _doc("primary.s98", tpl2)
     v2 = check_template("primary.s98", doc2, ex2, seeds=2)
     assert v2.ok is True, v2.problems
@@ -146,7 +146,9 @@ def test_primary_policy_adds_nonneg_but_not_integer():
     tpl = T(prompt="同分母加法：{a}/{d} + {b}/{d} = ？（用 a/b 形式输入，如 3/5）",
             params={"d": {"range": [3, 10], "exclude": []}, "a": {"range": [1, 4], "exclude": []},
                     "b": {"range": [1, 4], "exclude": []}},
-            constraint="a + b < d", answer_expr="(a + b) / d")
+            constraint="a + b < d", answer_expr="(a + b) / d",
+            # §13：数学模板必须能独立验算（expect 用 Rational 独立表述，避免"自证"）
+            semantics={"expect": "Rational(a + b, d)"})
     doc, ex = _doc("primary.s95", tpl)
     dom, declared = effective_domain(doc, tpl)
     assert dom.get("nonneg") is True and "integer" not in dom and declared is False
@@ -170,6 +172,71 @@ def test_subject_namespace_and_registry():
     register_l1("s-noop", _Noop())
     assert l1_for("s-noop").name == "noop"
     assert l1_for("s-unknown") is None
+
+
+# ---------- §13：求值路径单一化 + 实际路径比对 + expect 不自证 ----------
+
+def test_unified_eval_path_unknown_function_is_chinese_error_not_one():
+    """§13：判题求值路径**不再把未知函数静默当 1**（s23 事故根因），且报错为中文。"""
+    from app.content import exprs
+    from app.content.templates import eval_answer_expr
+
+    # gcd 现在**在唯一函数表里**：判题路径必须算出 9（此前会算成 36 = 16/1 + 20/1）
+    assert eval_answer_expr("m / gcd(m, n) + n / gcd(m, n)", {"m": 16, "n": 20}) == "9"
+    assert exprs.eval_number("lcm(a, b)", {"a": 6, "b": 9}) == 18.0
+    with pytest.raises(exprs.ExprError) as ei:
+        exprs.eval_expr("foo(1, 2)")
+    assert "未知名" in str(ei.value) and "foo" in str(ei.value)
+
+
+def test_gate_compares_actual_judging_path_with_independent_expect():
+    """§13 裁决 2：闸门必须校验**判题实际求值路径**（这条才防住 s23 那一类）。
+
+    构造：判题路径与独立验算不一致（answer_expr 少乘 1 项、expect 独立表述）→ 违规。
+    """
+    tpl = _tpl("求 {a} 与 {b} 的最大公因数与最小公倍数之积。",
+               answer_expr="a*b/gcd(a, b)",                      # 判题路径（LCM 形式）
+               semantics={"expect": "a * b / gcd(a, b) + 1",     # 独立表述但故意错 1
+                          "domain": {"nonneg": True, "integer": True}})
+    doc, ex = _doc("primary.s93", tpl)
+    v = check_template("primary.s93", doc, ex, seeds=2)
+    assert v.ok is False
+    assert any("不一致" in p for p in v.problems), v.problems
+
+
+def test_gate_rejects_expect_that_is_copy_of_answer_expr():
+    """§13 裁决 3：expect 与 answer_expr 文本相同 → 违规（等于自证，没验）。"""
+    tpl = _tpl("求 {a} 和 {b} 的最小公倍数。", answer_expr="lcm(a, b)",
+               semantics={"expect": "lcm(a, b)", "domain": {"nonneg": True, "integer": True}})
+    doc, ex = _doc("primary.s92", tpl)
+    v = check_template("primary.s92", doc, ex, seeds=2)
+    assert v.ok is False
+    assert any("文本完全相同" in p for p in v.problems), v.problems
+
+
+def test_math_template_without_expect_is_violation():
+    """§13 裁决 4：数学模板未声明 expect 且无独立验算 → **违规**（不再只是 finding）。"""
+    tpl = _tpl("计算 {a} + {b}。", answer_expr="a+b")
+    doc, ex = _doc("primary.s91", tpl)
+    v = check_template("primary.s91", doc, ex, seeds=2)
+    assert v.ok is False
+    assert any("未声明 semantics.expect" in p for p in v.problems), v.problems
+
+
+def test_non_math_subject_is_marked_unverified_and_counted():
+    """§13 裁决 4 后半：非数学学科**显式标注"无独立验算"**并计入护栏统计（如实分界）。"""
+    from app.content.verify import NO_L1_MARKER, library_stats
+    from app.service import guardrails
+
+    tpl = _tpl("把 {a} 箱货发给 {b} 个客户，平均每个客户几箱？", answer_expr="a/b",
+               semantics={"domain": {"nonneg": True, "integer": True}})
+    doc, ex = _doc("s-plain.u01", tpl, level="第一章")
+    v = check_template("s-plain.u01", doc, ex, seeds=2)
+    assert v.l1_available is False and v.verified is False
+    assert any(NO_L1_MARKER in f for f in v.findings), v.findings
+    stats = library_stats()
+    assert {"templates", "violations", "verified", "unverified"} <= set(stats)
+    assert guardrails.semantics_stats() == stats      # 护栏口径委托同一实现
 
 
 def test_pipeline_gate_entry_rejects_bad_template_md():

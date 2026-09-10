@@ -28,6 +28,15 @@ CONDITION_HINTS = ("其中", "倍数", "余数", "商", "按", "还剩", "剩下
 TWO_QUANTITY_HINTS = ("商和余数", "和余数", "和、", "以及", "分别")
 
 
+def _unknown_names(answer_expr: str, params: dict) -> list[str]:
+    """answer_expr 里出现的**既不是参数也不是已支持函数**的名字（R35 §13：这类名字会被静默当 1）。"""
+    from app.content.exprs import MATH_LOCALS
+
+    allowed = set(MATH_LOCALS) | set((params or {}).keys())
+    return sorted({m.group(1) for m in re.finditer(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", str(answer_expr or ""))
+                   if m.group(1) not in allowed})
+
+
 def _hints(prompt: str, declared_domain: dict, declared_requires: list) -> list[str]:
     out: list[str] = []
     if any(h in prompt for h in CONDITION_HINTS) and not declared_requires:
@@ -74,6 +83,8 @@ def main() -> int:
                 "node": doc.id, "ex": ex.id, "level": doc.level,
                 "prompt": tpl.prompt, "answer_expr": tpl.answer_expr, "constraint": tpl.constraint,
                 "semantics": semantics, "domain_effective": v.domain, "l1": v.l1,
+                "verified": v.verified, "l1_available": v.l1_available,
+                "unknown_names": _unknown_names(tpl.answer_expr, tpl.params),
                 "problems": v.problems, "findings": v.findings,
                 "hints": _hints(tpl.prompt, declared_domain, declared_requires),
                 "leaks": sorted(set(leaks)),
@@ -81,15 +92,20 @@ def main() -> int:
             })
 
     n_bad = sum(1 for r in rows if r["problems"])
-    print(f"模板题共 {len(rows)} 条；闸门违规 {n_bad} 条")
+    n_no_expect = sum(1 for r in rows if any("未声明 semantics.expect" in p for p in r["problems"]))
+    n_self = sum(1 for r in rows if any("文本完全相同" in p for p in r["problems"]))
+    n_verified = sum(1 for r in rows if r.get("verified") and not r["problems"])
+    print(f"模板题共 {len(rows)} 条；**违规 {n_bad} 条**"
+          f"（无 expect {n_no_expect} / expect 自证 {n_self} / 其它 {n_bad - n_no_expect - n_self}）；"
+          f"已独立验算并通过 {n_verified} 条；其余 = 未验算或未声明（**不得读作「全库已验证」**）")
     print("=" * 100)
     for r in rows:
-        flag = "❌ 违规" if r["problems"] else ("⚠️ 未声明" if r["findings"] else "✅ 通过")
+        flag = "[BAD] 违规" if r["problems"] else ("[WARN] 未验算" if not r.get("verified") else "[OK] 已验算")
         print(f"{flag} {r['node']}/{r['ex']}  [{r['prompt']}]")
         print(f"      answer_expr={r['answer_expr']!r} constraint={r['constraint']!r} "
               f"semantics={'有' if r['semantics'] else '无'} l1={r['l1']}")
         for p in r["problems"][:3]:
-            print(f"      × {p[:170]}")
+            print(f"      x {p[:170]}")
         for h in r["hints"][:3]:
             print(f"      ? {h[:150]}")
         for lk in r["leaks"][:2]:

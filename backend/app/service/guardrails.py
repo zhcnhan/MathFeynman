@@ -80,10 +80,21 @@ def should_force_draft(db: Session, level: str, topic: str) -> bool:
     return topic_problem_stats(db, level, topic)["tripped"]
 
 
+def semantics_stats() -> dict:
+    """§13 裁决 4：**模板独立验算覆盖率**进护栏口径（无 L1 的学科如实计数，不假装验证过）。
+
+    委托 `content.verify.library_stats()`（口径唯一，不在本模块重算）。
+    """
+    from ..content.verify import library_stats
+
+    return library_stats()
+
+
 __all__ = [
     "TRIP_RATIO",
     "MIN_PROBLEM_NODES",
     "MIN_DENOM",
     "topic_problem_stats",
     "should_force_draft",
+    "semantics_stats",
 ]

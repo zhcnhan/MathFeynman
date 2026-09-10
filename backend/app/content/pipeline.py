@@ -102,6 +102,8 @@ def stub_drafter(entry: RoadmapEntry, errors: list[str] | None = None) -> str:
             },
             constraint=None,
             answer_expr="a + b",
+            # R35 §12/§13：模板必须**独立验算**（expect 用不同写法，避免"自证"）+ 领域谓词
+            semantics={"expect": "b + a", "domain": {"nonneg": True, "integer": True}},
         ),
         check=CheckDoc(mode="numeric_value", tolerance=None),
         interactive=["workbench"],
