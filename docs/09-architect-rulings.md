@@ -1188,3 +1188,49 @@ Euler 用**真模型**跑「建临时学科 → 上传材料 → 起草 → 采�
 **验收即一致性自检**：实现完成后，出一张"**融合对照表**"（每条新增件 → 复用点 → 一句断言/用例），
 **任一新增件找不到复用点，必须说明为什么必须新建**（默认答案是"不新建"）。
 
+### 11. R35a（生成端接入）验收裁决（2026-09-10）
+
+**结论：机制部分通过；证据部分按 Euler 自述"待跑"，据实分开记 —— 证据产出后另裁。**
+
+架构侧独立复跑（不采信汇报）：pytest **349 passed + 2 skipped，118.5s，exit 0**
+（343→351 collected，**+8 新用例，既有 343 条未改**）、`content validate` **ok 25/48**、
+audit **27/31/81/59/60**、`tsc --noEmit` exit 0；提交链 `f9e68c8 → 8b0fe8a → 947ccb3` 吻合；
+**探针污染已清干净**（`content/subjects` 仅 math、`git ls-files` 无 `r35probe`、库内 0 行、integrity ok）。
+
+**代码审查**：`content/answerability.py`（186 行）接口清晰——`clean_facts`（**事实句必须逐字出自讲解**，
+复用 `content/citations.py` 同一把尺子）/ `clean_derivable`（前提须为已声明事实 id + 非空规则）/
+`check_basis`（**推理题须 ≥2 前提 + rule、且落在本单元 `derivable` 内**）/ `gate_node`（**逐条丢弃 +
+中文原因**，不整份失败）。**删掉了硬编码的三条 socratic 模板套话**——正是审计判死的那三条 ✅。
+**R36 §8 接线纪律已遵守**（`CALL_UNIT_CONTENT` 输出 schema 同步声明新字段 + 往返用例）。
+
+**对 Euler 三条疑点的裁决**
+
+1. **`taught_facts` 是否要落 `concepts` 表（融合红线①）** → **不加 `concepts.facts_json`；
+   `taught_facts` 保持节点本地**。理由：`concepts` 是**概念注册表**、`user_concepts` 是**掌握证据**，
+   把"事实句"灌进掌握证据表**会污染等价判定**（Euler 的直觉正确）。
+   **真正满足红线①的做法**：给 `TaughtFact` 加**可选 `concept_id`**（指向既有 `concepts` 注册表做**归一化**
+   ——数学那 83 条标签正是干这个的），于是"**讲过的概念**"与"**出题考的概念**"共用同一套归一化 id，
+   而"**这句事实**"仍只在节点内。若将来需要跨学科复用事实，再按 `outline` 概念层映射扩展，**留到那时**。
+   **同时补一条（R35b）**：把本单元的 `taught_facts[].concept_id` 与 `concepts` 注册表**校验一致**
+   （不得引用未注册概念）。
+2. **数学/roadmap 参数化模板题的 `basis` 口径** → 采用 **(a)+(c)**：
+   - **(a) 模板级 `basis`**：模板题的"已述事实" = 该节点讲解里**支撑该模板的那条规则句**（引文即规则句）；
+     参数化生成**不产生新知识**，故**不解到每道渲染题**；`check` 校验"模板 `basis.quote` 逐字出自本节点讲解"。
+   - **(c) 数学路径降优先级**：math preset 已受 R18 总序 + `roadmap.pipeline.validate_candidate`（sympy 验算）
+     治理，**本批验收不要求打通**；R35b 做到"**模板级 `basis`**"即可，不必逐题。
+   - **(b) 豁免**：**仅用于**"模板渲染确实不引入语义步"的已证明情形，**默认不用**。
+3. **`audit_answerability.py` 是否需要 CI 门槛** → **不随常规 CI 跑**：它与 `test_live_ai`/`test_phase_c_live`
+   同属**真模型冒烟**（需网络、费 token、非确定性），必须 `MF_ALLOW_LIVE_AI=1` 手动触发。
+   **手动门槛（写进 docs/13 §4）**：① R35b 每次**改动生成器后**必须手动跑一轮全库审计；
+   ② 上线/发版前跑；③ 日常 CI 只跑**离线结构性校验**（新增的 `answerability` 单测 + `content validate`）。
+   文件名不带 `test_` 前缀（不被 pytest 收集）是**正确**的，请在文件 docstring 里写明"这是工具不是测试"。
+
+**关于 math 难度倒置 15 vs 12（口径澄清已确认）**：Euler 的 15 = 12 同文件内 + **3 条跨学段边**
+（`college.c16←high.h47`、`college.c44←high.h06`、`ai.a11←college.c20`）；校验器只比对同文件内前置 →
+**只漏检、不误拒**，非缺陷。**R36 §9① 的豁免裁决不变**；3 条跨学段项补入数据治理清单。
+
+**纪律记功**：Euler **主动自曝**探针污染真实内容库并立规（"调试脚本必须同时隔离 `MF_CONTENT_ROOT`
+与 `MF_DB_PATH`；提交前查 `content/` 产物"）——**这是正确行为，记一笔**。补充要求：**任何"写 content/ 或
+真实库"的脚本，除非是授权的生成流水线（`outline/generate.py` / `content/pipeline.py`），一律用临时根 +
+临时库运行**。
+
