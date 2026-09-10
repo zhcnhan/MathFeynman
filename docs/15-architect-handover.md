@@ -208,3 +208,51 @@
   阻断启动器"探 `bin.js` 存在性"的发现路径），并以启动器自身算法验证唯一解析到 0.1.5。
   纪律见 R32 §5：**改工作目录名 / 切 DSH 版本 / 升级 DSH 三件事禁止同一时间窗叠加，且先备份 `.dsh`。**
 
+### #2 · 2026-09-10 20:52 起 · 颜回（续接 · 第三棒）
+- **交接来源**：用户直接投喂《架构师交接-下一个我》（无附带指令）→ 按 §0/§2 自主开工。
+- **基线复核（架构侧独立复跑，不采信汇报）**，检定点 `50bdde7`（= R40 验收提交）：
+  | 项 | 期望 | 实测 | 判 |
+  |---|---|---|---|
+  | `pytest backend/tests` | 404 passed + 2 skipped / 406 | **404 passed + 2 skipped / 406 collected，0 failed / 0 error，exit 0** | ✅ 逐位一致 |
+  | `content validate` | ok 26/55 | **ok=True nodes=26 exercises=55**，exit 0 | ✅ |
+  | roadmap audit 五学段 | 27/31/81/59/60 | **27/31/81/59/60，ok=True；cycles / prereq_missing / anchors_missing 全 0** | ✅ |
+  | `npx tsc --noEmit` | exit 0 | **exit 0** | ✅ |
+  | `guardrails.semantics_stats()` | {30,0,30,0,['math']} | **{templates:30, violations:0, verified:30, unverified:0, l1_subjects:['math']}** | ✅ |
+  | git | 干净（除用户新学科未入库） | **仅 `?? content/stages/s-f2decfcf/`、`?? content/subjects/s-f2decfcf/`** | ✅ |
+- **现场判定：Euler 正在并行开工 R39（未提交，进行中）**。20:52 首次 `git status` 时工作树**只有**
+  两个 `??`（未入库的用户新学科）；20:59 复看时已出现 **R39 的实现文件**：
+  `service/ledger.py`(257 行, 20:55)、`service/ai_trace.py`(337 行, 20:59)、`service/prompt_store.py`
+  (181 行, 20:58)、`ai/prompt_templates.py`(594 行, 20:58)，改动 `models.py`(+71)/`db.py`(+21)/
+  `ai/prompts.py`/`ai/provider.py`(+172)/`service/ai_sink.py`。**文件 mtime 20:55–20:59 与我复跑基线
+  同一分钟** → 属**边写边测**的进行中状态，**不是可验收的完成态**。
+- ⚠️ **本任自己的假阳性（必须记住）**：我曾据 20:52 那份 `git status` 快照断言"R38/R39 代码层尚未开工"，
+  并已写进本节——**是错的**。根因：**把一次时间点快照当成稳态结论，且未在断言前二次确认**。
+  与交接 §5"验收时先怀疑自己的检查口径"同源。**教训：对"某功能不存在"的断言，必须现场复跑
+  `glob`/`grep` + 看 mtime，并假定并行协作者随时在改盘。**
+- ~~**R38 状态**：`MF_MATERIAL_BATCH_CHARS`/`MF_MATERIAL_INJECT_MAX_CHARS` 仍只在 `config.py`（env 级），
+  `subjects.meta_json` 与前端**尚无可控滑块**（A1/A5 未见落地）→ **R38 未开工或刚起步，待 Euler 回报**。~~
+  → **已被推翻**：`f8f7ac9` 落地了两个滑块 + 多材料合并，并**顺带闭合 R40 §2-1**（见下方结项）。
+- ~~**R40 遗留一条（重点追踪项）仍未实现**：`outline/generate.py:631` 离线路径**仍出稿**~~ →
+  **已修正**：`f8f7ac9` 已改为**拒绝出稿**（我实测 422 + 中文 + 记账）。
+- **【本节上文的"R38 未开工 / R39 进行中"是当时快照，已作废】**：该判断在写入后数分钟内即被事实推翻。
+  最终状态见下方"#2 结项"。
+- **本次未改动任何实现代码**（架构侧只做验证与文档）；交付：本节 + 基线留档 `.runtime/r41_baseline.xml`。
+
+#### #2 结项 · R38 + R39 已验收（同一棒内完成）
+
+- **提交**：`f8f7ac9`（R38）+ `8439fd8`（R39）。**裁决：双双通过** → **docs/09 R41**（含 §3 疑点裁决、
+  §4 纪律事故留档、§5 观察项、§6 R40 五条遗留复核、§7 下一批建议）。
+- **我的独立复跑**：pytest **441 + 2 / 443，exit 0**；content **26/55**；audit **27/31/81/59/60 错误项 0**；
+  `tsc` exit 0；`semantics_stats` 逐位一致；`git diff 50bdde7 8439fd8 -- content/` **为空**（锚点红线守住）。
+- **我另写的两个独立验证脚本（不复用 Euler 用例）**：`.runtime/verify_r41.py`（R38 · **18/18**）、
+  `.runtime/verify_r41_r39.py`（R39 · **24/24**）。关键实证：滑块 A 60000→300 批次 1→4 且内容逐字不变；
+  离线+有教材真拒绝出稿；删必填占位符中文 422 且不落库；改提示词后审计全文里确实是新版；
+  12 万字 prompt 接口给全文而列表只给预览；上游回显的密钥在落盘文件中已遮蔽。
+- **纪律事故（本任自己犯的，已复原，留档）**：在**并行活动的仓库**上做 `git stash` + `checkout --detach`
+  + `checkout -f`，**丢了自己的工作树改动**（docs/15 本轮记录）→ 从 stash 悬空提交 `4ae98628` 已恢复，
+  并全量复跑确认仓库完好。**新增红线：禁止在 Euler 正在工作的活动工作树里做 stash/checkout/reset**；
+  数不同提交的设备数请用 `git show <rev>:<file>` 或 `git worktree add` 到隔离目录。
+- **同时记下本任第二次假阳性**：据一份时间点 `git status` 快照断言"R38/R39 未开工"，
+  数分钟后被推翻。**对"不存在"的断言，断言前必须现场复跑 `glob`/`grep` + 看 mtime。**
+- **下一批 = R42**（建议见 docs/09 R41 §7）：滑块 B 真硬上限 + R40 遗留的"过短条目/难度显性"两项高危。
+
