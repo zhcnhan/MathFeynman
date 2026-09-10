@@ -9,6 +9,8 @@
   b. 答疑 fast 回复 out_of_scope → 同题自动 think 重生成。
 - 用户覆盖（最高优先）：model_mode light 关触发但保 college/ai think 底线；deep 全 think；
   单次 payload.think_deep true/false/null 覆盖该次。
+- R30 F6（另行一条，不改上面决策链）：完整稿本轮综合分落**复评边缘带**
+  （``feynman_recheck_band``，−0.05/+0.08）且本轮非 think → 以 think 复评一次取高分。
 """
 from __future__ import annotations
 
@@ -24,6 +26,12 @@ THINK_LEVELS = BASE_THINK_LEVELS
 # 费曼边缘区间宽度（docs/09 R12 a）
 FEYNMAN_EDGE_LOW = 0.15
 FEYNMAN_EDGE_HIGH = 0.10
+
+# R30 F6：费曼完整稿（首讲/终验）**边缘带复评**区间宽度（门槛 ± 常量）。
+# 含义：本轮综合分离及格线太近 → 同一篇讲解可能"这次过、下次不过"（阈值抖动，
+# R28 F6 实测同一稿 0.863 / 0.73）→ 用 think 档复评一次、取较高分（成本见 R30 §F6.5）。
+FEYNMAN_RECHECK_LOW = 0.05
+FEYNMAN_RECHECK_HIGH = 0.08
 
 
 @dataclass(frozen=True)
@@ -80,6 +88,15 @@ def feynman_edge(combined: float, threshold: float) -> bool:
     return _is_edge(combined, threshold)
 
 
+def feynman_recheck_band(combined: float, threshold: float) -> bool:
+    """R30 F6：本轮综合分是否落在**复评边缘带** ``[threshold−0.05, threshold+0.08]``。
+
+    与 R12 的"下轮升 think"边缘区间（−0.15/+0.10）刻意分开：R12 决定**下一轮**档位，
+    本函数决定**本轮已出分**是否需要用 think 档再评一次取高分（防阈值抖动）。
+    """
+    return threshold - FEYNMAN_RECHECK_LOW <= combined <= threshold + FEYNMAN_RECHECK_HIGH
+
+
 def feynman_round_should_think(current_round: int) -> bool:
     """费曼轮次 ≥2 → think（触发 a 的一部分，由 resolve extra_think 承载）。"""
     return current_round >= 2
@@ -92,6 +109,7 @@ __all__ = [
     "resolve",
     "base_strategy",
     "feynman_edge",
+    "feynman_recheck_band",
     "feynman_round_should_think",
     "is_think_level",
     "THINK_LEVELS",

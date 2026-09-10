@@ -108,12 +108,14 @@ def candidate_acknowledged(ledger: dict[str, Any]) -> list[dict]:
     return out
 
 
-def merge_card(
-    ledger: dict[str, Any], card: list[dict], *, round_no: int, transcript: str, apply_penalty: bool = True
+def clean_card(
+    card: list[dict], *, transcript: str, apply_penalty: bool = True
 ) -> tuple[list[dict], bool]:
-    """把一轮评分卡并入账本（维度取 max），并做 evidence 包含校验。
+    """净化评分卡：evidence 包含校验 + 降级，**不并入账本**（R30 F6 复评取卡复用）。
 
-    返回 (净化后的 card, any_penalty)。card 内每条附加 ``evidence_valid``（校验结论）。
+    返回 ``(净化后的 card, any_penalty)``；每行附加 ``evidence_valid``（校验结论），
+    无效时再附 ``evidence_reason``。与 :func:`merge_card` 同源，保证"边缘带复评"两轮卡
+    的口径（分数是否降级）完全一致。
     """
     clean: list[dict] = []
     penalty = False
@@ -137,23 +139,55 @@ def merge_card(
         }
         if not valid:
             row["evidence_reason"] = "引文不在本轮提交文本中（服务端包含校验未通过，已降级）"
+        clean.append(row)
+    return clean, penalty
+
+
+def card_combined(card: list[dict]) -> float:
+    """单轮评分卡的加权综合分 = Σ(w·score)/Σw（R30 F6：两次评分卡比较取高用）。"""
+    total_w = sum(float(item.get("weight") or 0.0) for item in (card or []))
+    if total_w <= 0:
+        return 0.0
+    weighted = sum(
+        float(item.get("weight") or 0.0) * float(item.get("score") or 0.0) for item in (card or [])
+    )
+    return weighted / total_w
+
+
+def merge_clean_card(ledger: dict[str, Any], clean: list[dict], *, round_no: int) -> None:
+    """把**已净化**的评分卡并入账本（维度取 max）；净化见 :func:`clean_card`。
+
+    R30 F6：边缘带复评需先比较两次卡、再只并入"采用那一次"，故并入动作与净化拆开
+    （避免对同一张卡二次降级）。
+    """
+    for row in clean or []:
         entry = ledger["dims"].setdefault(
-            key,
-            {"key": key, "best": 0.0, "latest": 0.0, "weight": row["weight"],
+            row["key"],
+            {"key": row["key"], "best": 0.0, "latest": 0.0, "weight": row["weight"],
              "evidence_quote": "", "comment": "", "updated_round": 0},
         )
         entry["weight"] = row["weight"]
         entry["latest"] = row["score"]
         if row["score"] >= float(entry.get("best") or 0.0):
             entry["best"] = row["score"]
-            entry["evidence_quote"] = quote
+            entry["evidence_quote"] = row["evidence_quote"]
             entry["comment"] = row["comment"]
             entry["updated_round"] = round_no
-            entry["evidence_valid"] = valid
-        clean.append(row)
+            entry["evidence_valid"] = row["evidence_valid"]
     if clean:
         ledger["rounds"].append({"round": round_no, "dims": clean})
         ledger["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def merge_card(
+    ledger: dict[str, Any], card: list[dict], *, round_no: int, transcript: str, apply_penalty: bool = True
+) -> tuple[list[dict], bool]:
+    """把一轮评分卡并入账本（维度取 max），并做 evidence 包含校验。
+
+    返回 (净化后的 card, any_penalty)。card 内每条附加 ``evidence_valid``（校验结论）。
+    """
+    clean, penalty = clean_card(card, transcript=transcript, apply_penalty=apply_penalty)
+    merge_clean_card(ledger, clean, round_no=round_no)
     return clean, penalty
 
 
@@ -332,6 +366,9 @@ __all__ = [
     "empty_ledger",
     "normalize_ledger",
     "candidate_acknowledged",
+    "clean_card",
+    "card_combined",
+    "merge_clean_card",
     "merge_card",
     "update_dimension",
     "combined",

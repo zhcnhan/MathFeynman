@@ -528,7 +528,9 @@ class SessionService:
           治"新增回答被旧文锚定、两轮逐字同分"）；
         - ``previously_acknowledged`` = 账本已认可内容摘要（没重抄已认可点不扣分）；
         - evidence 包含校验：引文不在本轮文本 → 该维度降级并标记（防"没读新内容还打分"）；
-        - 账本取历轮最高分 → 实时综合分；**只有完整稿 ≥ threshold 才 pass**（补答不能单独过关）。
+        - 账本取历轮最高分 → 实时综合分；**只有完整稿 ≥ threshold 才 pass**（补答不能单独过关）；
+        - R30 F6：本轮综合分落**边缘带**（threshold −0.05/+0.08）且本轮非 think → 以 think
+          复评一次，取两次较高者并入账本（防"同一篇讲解这次过、下次不过"的阈值抖动）。
         """
         flow = sess.flow_json
         p = flow["practice"]
@@ -596,9 +598,49 @@ class SessionService:
         round_no = eval_rounds + 1
         f["rounds_done"] = round_no
         f["last_transcript"] = text
-        card, evidence_penalty = fl.merge_card(
-            ledger, self._card_of(node, out.dimension_scores), round_no=round_no, transcript=text
-        )
+        # ---- R30 F6：边缘带复评（本轮综合分接近门槛且本轮非 think → think 复评一次取高分） ----
+        # 判定与比较都在**净化后的本轮评分卡**上做（evidence 校验/降级口径与入账一致）。
+        first_card, first_penalty = fl.clean_card(self._card_of(node, out.dimension_scores), transcript=text)
+        first_combined = round(fl.card_combined(first_card), 3)
+        card, evidence_penalty = first_card, first_penalty
+        adopted_strategy, adopted_reason = decision.strategy, decision.reason
+        taken = "first"
+        recheck: dict[str, Any] = {
+            "used": False,
+            "first_combined": first_combined,
+            "second_combined": None,
+            "taken": taken,
+        }
+        # 触发三条件（R30 §F6.2）：落边缘带 + 本轮档位非 think + 本轮尚未复评过。
+        # "尚未复评过"由结构保证：本分支在单次完整稿提交内只走一次，且复评结果并入账本后
+        # rounds_done 递增 → 同一轮不可能再次触发（无循环、每轮最多 1 次额外 heavy 调用）。
+        if decision.strategy != ai_tier.THINK and ai_tier.feynman_recheck_band(first_combined, threshold):
+            recheck["used"] = True
+            try:
+                out2 = self.gateway.feynman_evaluate(ctx, strategy=ai_tier.THINK)
+            except AiCallError:
+                # R30 §F6.4：复评失败保留首次结果，不因复评失败而失败（不 500、不换档位）
+                events.append(
+                    {"type": "feynman_edge_recheck", "first": first_combined, "second": None, "taken": taken}
+                )
+            else:
+                second_card, second_penalty = fl.clean_card(
+                    self._card_of(node, out2.dimension_scores), transcript=text
+                )
+                second_combined = round(fl.card_combined(second_card), 3)
+                recheck["second_combined"] = second_combined
+                if second_combined > first_combined:
+                    card, evidence_penalty = second_card, second_penalty
+                    out = out2  # recommend_action / confidence 同取采用的这一次
+                    adopted_strategy, adopted_reason = ai_tier.THINK, "edge_recheck=think"
+                    taken = "second"
+                recheck["taken"] = taken
+                events.append(
+                    {"type": "feynman_edge_recheck", "first": first_combined, "second": second_combined, "taken": taken}
+                )
+        f["last_strategy"] = adopted_strategy
+        # 以"采用那一次"的卡并入账本（维度仍取 max）；首轮判分卡已净化，禁止二次降级
+        fl.merge_clean_card(ledger, card, round_no=round_no)
         f["last_scores"].append(card)
         f["last_combined"] = round(fl.combined(ledger), 3)  # 实时综合分 = 账本 max 合成
         fl.extract_gaps(ledger, card, threshold, round_no=round_no)  # 未达标维度 → 缺口清单
@@ -610,11 +652,13 @@ class SessionService:
             meta={
                 "dims": card,
                 "recommend_action": out.recommend_action,
-                "strategy": decision.strategy,          # R12：评分所用档位（评分卡标注）
+                "strategy": adopted_strategy,           # R12/R30：**实际采用**那次的档位（评分卡标注）
+                "strategy_reason": adopted_reason,
                 "confidence": getattr(out, "confidence", None),
                 "evidence_penalty": evidence_penalty,
                 "ledger_combined": f["last_combined"],
                 "eval_rounds_done": round_no,
+                "recheck": recheck,                     # R30 F6：两次评分卡与采用结论
             },
         )
         if passed:
@@ -627,13 +671,13 @@ class SessionService:
                     "verdict": "pass",
                     "dimension_scores": card,
                     "evidence_penalty": evidence_penalty,
-                    "strategy": decision.strategy,
-                    "strategy_reason": decision.reason,
+                    "strategy": adopted_strategy,
+                    "strategy_reason": adopted_reason,
                 },
             )
-        # 未过：命中边缘区间 → 下轮升 think（R12 触发 a）
+        # 未过：命中边缘区间 → 下轮升 think（R12 触发 a；R30 已用 think 复评过则不必再标）
         if (
-            decision.strategy == ai_tier.FAST
+            adopted_strategy == ai_tier.FAST
             and self._model_mode(db) == "smart"
             and ai_tier.feynman_edge(f["last_combined"], threshold)
         ):
@@ -667,8 +711,8 @@ class SessionService:
                 "evidence_penalty": evidence_penalty,
                 "next_action": "answer",
                 "degraded": q_degraded,
-                "strategy": decision.strategy,  # R12：评分卡标注本次所用档位
-                "strategy_reason": decision.reason,
+                "strategy": adopted_strategy,  # R12/R30：**实际采用**那次评分的档位
+                "strategy_reason": adopted_reason,
             },
         )
 

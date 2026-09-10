@@ -118,8 +118,14 @@
   `false` 时该维度分数已降级（×0.5），并带 `evidence_reason`。
 - **通过判定**：只有完整稿（`feynman_submit`）评分 ≥ threshold 才 pass → mastery；
   补答只涨账本与展示进度，不能单独过关（R27 §5）。
+- **边缘带复评（R30 F6）**：完整稿单轮综合分落 `[threshold−0.05, threshold+0.08]`（0.7 → [0.65,0.78]）
+  且本轮档位非 think → 以 think 档**复评一次**，取两次综合分较高者为本轮结果（每次提交最多 1 次额外
+  heavy 调用；复评失败保留首次、不 500）。两次分与采用结论写入 `attempts.meta.recheck =
+  {used, first_combined, second_combined, taken}`；响应 `strategy` / `strategy_reason` 为**实际采用**那次
+  （复评被采用时 `strategy_reason="edge_recheck=think"`）。
 - 事件：`feynman_followup`（定向追问，带 `target_gap`）、`feynman_gap_filled` /
-  `feynman_gap_open`、`feynman_evidence_flagged`、`feynman_relearn`（额度尽/3 次未过回炉）。
+  `feynman_gap_open`、`feynman_evidence_flagged`、`feynman_relearn`（额度尽/3 次未过回炉）、
+  `feynman_edge_recheck`（`{first, second, taken}`；复评失败时 `second=null`）。
 
 ### 2.1 流式协议（R12-b，SSE 可选）
 
