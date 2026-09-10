@@ -253,9 +253,13 @@ def draft_outline(
     - 无教材 → 一切照旧，不报错（S2/§2"无材料时退回现状，并显式标注本内容无教材依据"；
       启发式候选本身即"无教材依据"，由调用方/UI 标注）；
     - 教材是扫描版/未提取到文字（S7）→ **拒绝起草**并中文告知（不得静默生成"没读到书的大纲"）。
+
+    R39 §1 铁则：AI 失败降级启发式、溯源驳回重生成、无 key 离线出稿**全部记账**
+    （响应里带 ``ledger`` 就地可见，总账页可见）。
     """
     from ..config import get_settings
     from ..outline.store import get_outline
+    from ..service import ledger
 
     label = ""
     doc = get_outline(subject_id)
@@ -276,20 +280,45 @@ def draft_outline(
         raise OutlineError(  # S7：不得静默生成"没读到书"的大纲
             "无法起草大纲：" + "；".join(b["note"] for b in blocked if b.get("note"))
             or "该学科的材料未通过文本层健康度检查（疑似扫描/图片版），请先 OCR 或改用文本版。")
-    usage = {
+    usage = dict(mat_pack.get("usage") or {})
+    usage.update({
         "count": int(mat_pack.get("count") or 0),
         "used_chars": int(mat_pack.get("used_chars") or 0),
         "dropped": list(mat_pack.get("dropped") or []),
         "truncated": bool(mat_pack.get("truncated")),
-        "batches": len(batches),
+        "batches": int(mat_pack.get("batch_count") or len(batches)),
         "inject_max_chars": int(mat_pack.get("inject_max_chars") or 0),
+        "batch_chars": int(mat_pack.get("batch_chars") or 0),
+        "budget": dict(mat_pack.get("budget") or {}),
         "blocked": blocked,
-    }
+    })
     if not settings.llm_api_key:
+        if index:
+            # **R40 裁决 §2-1（改为拒绝出稿）**：有教材但无可用模型 → 只能启发式出稿，产出必然
+            # **无教材依据**（那正是 R37 要消灭的东西）。故**明确中文说明 + 不落盘**，并由 R39 铁则记账。
+            reason = ("未配置模型（LLM_API_KEY 为空），无法依据教材生成大纲："
+                      f"本学科有 {len(index)} 份引用材料，离线启发式只能产出**没有教材依据**的内容。"
+                      "请在 .env 配置 LLM_API_KEY 后重新起草。")
+            ledger.note(
+                ledger.CAT_MODEL_CALL, "大纲起草",
+                reason + "（按 R40 裁决 §2-1：有教材且无可用模型 → **拒绝出稿**，不落盘）",
+                impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
+                detail={"kind": "offline_refused_with_material", "material_count": len(index)},
+            )
+            raise OutlineError(reason)
+        # 无教材：退化为"仅按 brief 起草"（如实标注无教材依据），机制保持可跑通
         raw = heuristic_draft(subject_id, label, brief=brief, count=count, group_hint=group_hint)
         out = finalize_candidate(subject_id, raw, label=label, source="heuristic")
         out["material_usage"] = usage
         out["no_material_grounding"] = True
+        ledger.note(
+            ledger.CAT_MODEL_CALL, "大纲起草",
+            "未配置模型（LLM_API_KEY 为空），本次大纲由离线启发式骨架产出，没有读教材——"
+            "配置模型后重新起草即可得到教材锚定的大纲",
+            impact=ledger.SCOPE_THIS_RUN, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
+            detail={"kind": "offline_draft", "batches": usage["batches"]},
+        )
+        out["ledger"] = ledger.current().to_list() if ledger.current() else []
         return out
     try:
         raw = _ai_units_all_batches(
@@ -300,6 +329,12 @@ def draft_outline(
         # R37 S2 的覆盖缺口走"按教材目录补齐 + 记问题"（不重复调用模型：书的结构本身就是答案）
         rejected = [p for p in out["problems"] if "溯源" in p]
         if index and rejected:
+            ledger.note(
+                ledger.CAT_GENERATION, "大纲起草·材料溯源",
+                f"首次候选有 {len(rejected)} 条材料溯源不成立，已把中文原因回灌并**驳回重生成一次**",
+                impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_RETRY, subject_id=subject_id,
+                detail={"rejected": rejected[:5]},
+            )
             raw2 = _ai_units_all_batches(
                 subject_id, label, brief=brief, count=count, group_hint=group_hint,
                 settings=settings, mat_pack=mat_pack, batches=batches, errors=rejected[:5])
@@ -308,17 +343,33 @@ def draft_outline(
             out2["problems"] = out2["problems"] + (
                 ["材料溯源：首次候选引用不成立，已按驳回重生成一次"
                  + ("（重生成后仍有 %d 条不成立，已剔除该引用）" % len(still) if still else "")])
+            if still:
+                ledger.note(
+                    ledger.CAT_GENERATION, "大纲起草·材料溯源",
+                    f"驳回重生成后仍有 {len(still)} 条材料溯源不成立，**已剔除该引用**"
+                    "（宁缺勿造：不保留编造的溯源）",
+                    impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_RETRY, subject_id=subject_id,
+                    detail={"still": still[:5]},
+                )
             out = out2
         out["material_usage"] = usage
+        out["ledger"] = ledger.current().to_list() if ledger.current() else []
         return out
     except OutlineError:
         raise
-    except Exception as e:  # AI 失败 → 降级启发式（离线可用优先；provider 侧已审计 ai_logs）
+    except Exception as e:  # AI 失败 → 降级启发式（离线可用优先）
+        ledger.note(
+            ledger.CAT_MODEL_CALL, "大纲起草",
+            f"AI 起草失败，本次已**降级为离线启发式骨架**（内容无教材锚定）：{e}",
+            impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_RETRY, subject_id=subject_id,
+            detail={"error": str(e)[:300], "kind": "ai_draft_failed"},
+        )
         raw = heuristic_draft(subject_id, label, brief=brief, count=count, group_hint=group_hint)
         out = finalize_candidate(subject_id, raw, label=label, source="heuristic")
         out["problems"] = out["problems"] + [f"AI 起草失败已降级启发式: {e}"]
         out["material_usage"] = usage
         out["no_material_grounding"] = True
+        out["ledger"] = ledger.current().to_list() if ledger.current() else []
         return out
 
 
@@ -378,8 +429,12 @@ def _ai_draft_units(
     P2/P3/P4（R36）写在 system prompt 里（机器校验见 R35 的 taught_facts/derivable 与 P4）；
     D2 的 ``materials: [{title, section}]`` 亦为硬性输出要求，服务端再校验。
     R37 S2/S8：注入**整本书的章节地图** + 本批章节的**完整正文**，要求单元＝书的目录派生。
+    R39 §2：system/user 模板都取自**可编辑的提示词注册表**（``ai.prompt_templates``）——
+    用户在设置里改了大纲起草提示词，下一次起草**立即生效**（审计页可对照）。
     """
     from ..ai.calls import CALL_OUTLINE_DRAFT
+    from ..ai import prompt_runtime
+    from ..ai.prompt_templates import _MATERIAL_DISCIPLINE
     from ..ai.provider import OpenAICompatibleProvider
     from ..service.ai_sink import make_ai_log_sink
 
@@ -390,62 +445,42 @@ def _ai_draft_units(
         model_light=settings.llm_model_light,
         log_sink=make_ai_log_sink(),
     )
-    sys = (
-        "你是课程大纲设计专家。请为学习者起草一门新学科的**知识点单元级**大纲。"
-        "输出 JSON：{\"units\":[{...}]}，unit 字段：title(单元标题), objectives(1-3 条学习目标), "
-        "concept_tags(2-4 个简洁规范的**概念标签**——命名稳定、可跨大纲复用，禁长句), "
-        "group(分组名，先到先得), prereqs(引用更早单元的编号如 \"u01\"；根单元留空；只能引用更早单元), "
-        "difficulty(1-3), requires_thinking(是否需要深度思考模型，布尔), "
-        "materials(该单元依据的引用材料，形如 [{\"title\":\"材料标题\",\"section\":\"章节名或逐字引文\"}]；"
-        "无依据则给空数组 [])。"
-        "要求：单元粒度到「单个知识点可独立学习」；单元间依赖严谨、无环。"
-        "**由易到难（R36 P1/P3）**：单元顺序必须构成一条由易到难的学习路径——"
-        "先修单元的 difficulty **不得高于**后继单元；group 用于表达「章/阶段」层次，组内同样先易后难。"
-        "**零基础起点（R36 P2）**：第一个单元（prereqs 为空）必须能被**完全零基础**者学会，"
-        "不得假定任何前置概念或课外常识（零基础假设：没教过的一律认为学习者不会）。"
-        "**难度只能靠已教事实累积（R36 P4）**：后续单元可以更难，但加难只能建立在**前面单元已经讲过**的内容上，"
-        "不得默认学习者已知道尚未讲过的概念。"
+    sys, user, version = prompt_runtime.render_pair(
+        "outline_draft",
+        system_vars={"material_discipline": _MATERIAL_DISCIPLINE if material_text else ""},
+        user_vars={
+            "label": label, "subject_id": subject_id, "brief": brief or "入门到进阶",
+            "group_hint": group_hint or "不指定（你来定）",
+            "chapter_map_block": (
+                "\n===== 教材章节地图（整本书的结构；覆盖校验的尺子）=====\n" + chapter_map + "\n"
+                if chapter_map else ""),
+            "entries_block": (
+                "\n===== 本次必须覆盖的条目标签 =====\n"
+                + "、".join(f"[{e}]" for e in entries)
+                + f"\n请为上述 {len(entries)} 个条目各派生至少 1 个单元"
+                  "（小条目可合并，但 materials 必须列出全部被合并标签）；"
+                  "本批第一个单元的 prereqs 留空（跨批先修由服务端按书序串联）。\n"
+                if entries else
+                f"\n请起草 {max(1, min(count, 30))} 个单元"
+                f"（编号 u01…u{max(1, min(count, 30)):02d}）。\n"),
+            "batch_note": batch_note or "",
+            "material_block": (
+                "\n===== 教材章节正文（**完整正文**，逐字引用它来写目标与溯源）=====\n"
+                + material_text + "\n===== 教材正文结束 =====\n"
+                if material_text else ""),
+            "errors_block": (
+                "\n\n[上一轮输出未通过服务端校验] 校验错误：\n"
+                + "\n".join(f"- {e}" for e in errors[:5])
+                + "\n请修正后重新输出完整 JSON（不要解释）。"
+                if errors else ""),
+        },
+        subject_id=subject_id,
     )
-    if material_text:
-        sys += (
-            "**必须读教材（R37 S2/S3，教材＝权威真源）**：下面是用户为该学科导入的**教材章节正文**。"
-            "你起草的大纲就是**这本书的目录**：单元顺序＝书的顺序，单元内容＝该章节讲的东西；"
-            "**不得引入教材之外的知识点**（教材没写的，不要写进目标/标签）。"
-            "每个单元必须标注 `materials` 溯源：title **只能**取下方给出的材料标题；"
-            "section **必须逐字复制**下方章节地图里的**条目标签**（方括号 `[...]` 里的文字，如 "
-            "\"[第3章 太阳加热与能量传输]\"）——这是服务端覆盖校验的钥匙，改一个字都会被判未映射；"
-            "无依据就留空数组 []——宁缺勿造，编造的溯源会被服务端驳回。"
-            "**合并**：相邻的小节/附录可以合并进一个单元，但 `materials` 必须把**被合并条目的标签全部列出**；"
-            "**拆分**：一个章太大时可以拆成多个单元，每个单元都标注同一个章标签，"
-            "并在 `objectives` 里写清「拆自该章的哪部分」。"
-        )
-    user = (
-        f"学科名：{label}（id={subject_id}）\n用户学这门课的目标/背景：{brief or '入门到进阶'}\n"
-        f"分组方向：{group_hint or '不指定（你来定）'}\n"
-    )
-    if chapter_map:
-        user += "\n===== 教材章节地图（整本书的结构；覆盖校验的尺子）=====\n" + chapter_map + "\n"
-    if entries:
-        user += ("\n===== 本次必须覆盖的条目标签 =====\n"
-                 + "、".join(f"[{e}]" for e in entries)
-                 + f"\n请为上述 {len(entries)} 个条目各派生至少 1 个单元"
-                   "（小条目可合并，但 materials 必须列出全部被合并标签）；"
-                   "本批第一个单元的 prereqs 留空（跨批先修由服务端按书序串联）。\n")
-    else:
-        user += (f"\n请起草 {max(1, min(count, 30))} 个单元"
-                 f"（编号 u01…u{max(1, min(count, 30)):02d}）。\n")
-    user += batch_note
-    if material_text:
-        user += ("\n===== 教材章节正文（**完整正文**，逐字引用它来写目标与溯源）=====\n"
-                 + material_text + "\n===== 教材正文结束 =====\n")
-    if errors:
-        user += ("\n\n[上一轮输出未通过服务端校验] 校验错误：\n"
-                 + "\n".join(f"- {e}" for e in errors[:5])
-                 + "\n请修正后重新输出完整 JSON（不要解释）。")
     outcome = provider.chat_json(
         CALL_OUTLINE_DRAFT,
         [{"role": "system", "content": sys}, {"role": "user", "content": user}],
         strategy="fast",
+        audit={"subject_id": subject_id, "unit_id": "", "prompt_versions": version},
     )
     return list(outcome.parsed.get("units") or [])
 

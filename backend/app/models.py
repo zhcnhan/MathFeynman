@@ -180,6 +180,13 @@ class Review(Base):
 
 
 class AiLog(Base):
+    """AI 调用元数据（docs/05 §6）＋ **R39 §3 提示词监听 / AI 对话审计**。
+
+    R39 起本表是"每次调用一条"的**审计索引**：全文（渲染后 system/user + 原始返回 +
+    解析结果）落文件 ``.runtime/ai_trace/<时间>-<调用点>-<id>.txt``，本表只存
+    **路径 + 预览 + 字符数**（防库爆；界面展开即完整——用户明确不要流式）。
+    """
+
     __tablename__ = "ai_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -192,6 +199,67 @@ class AiLog(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # --- R39 §3：审计扩字段（旧库由 db._migrate_columns 幂等补列）---
+    subject_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    unit_id: Mapped[str] = mapped_column(String(64), default="")
+    retries: Mapped[int] = mapped_column(Integer, default=0)
+    # 最终结局：adopted 采纳 / degraded 降级 / dropped 丢弃 / failed 失败
+    outcome: Mapped[str] = mapped_column(String(16), default="adopted")
+    # 本次生成用的**提示词版本**（"哪次生成用的哪版提示词"，R39 §2 可回溯）
+    prompt_versions: Mapped[str] = mapped_column(Text, default="")
+    trace_path: Mapped[str] = mapped_column(Text, default="")
+    trace_chars: Mapped[int] = mapped_column(Integer, default=0)
+    system_preview: Mapped[str] = mapped_column(Text, default="")
+    user_preview: Mapped[str] = mapped_column(Text, default="")
+    response_preview: Mapped[str] = mapped_column(Text, default="")
+    parse_result: Mapped[str] = mapped_column(Text, default="")
+
+
+class ContentLedger(Base):
+    """**「一切显性」账本**（docs/09 R39 §1）：所有丢弃/截断/跳过/降级/失败/重试的唯一落库点。
+
+    写入必须经 ``service.ledger``（禁止各处自行 print / 只在 prompt 尾部提一句）。
+    """
+
+    __tablename__ = "content_ledger"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    subject_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    unit_id: Mapped[str] = mapped_column(String(64), default="")
+    category: Mapped[str] = mapped_column(String(24), default="other", index=True)
+    object: Mapped[str] = mapped_column(Text, default="")       # 对象（材料/单元/题号…）
+    reason: Mapped[str] = mapped_column(Text, default="")       # 原因（中文）
+    impact: Mapped[str] = mapped_column(Text, default="")       # 影响面
+    remedy: Mapped[str] = mapped_column(Text, default="")       # 可否补救
+    detail_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PromptOverride(Base):
+    """**提示词改动**（docs/09 R39 §2）：新数据建表正当——**不塞** ``subjects.meta_json``。
+
+    ``call_name`` = 调用点（= ``ai.calls.CALLS`` 的键）；库里没有行 = **用默认**（删行即恢复默认）。
+    ``system_text`` / ``user_text`` 各自为空串 = 该字段仍用默认（可只改一半——
+    "改了一条 → 生成确实用了新版"能逐字段对照）。
+    """
+
+    __tablename__ = "prompt_overrides"
+
+    call_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    system_text: Mapped[str] = mapped_column(Text, default="")
+    user_text: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class AppSetting(Base):
+    """运行时应用设置（键值）。R39 §3：调试模式开关（**不靠开关决定"要不要留证据"**，
+    开关只决定界面入口是否出现）。"""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class RelearnLog(Base):
@@ -241,5 +309,8 @@ __all__ = [
     "AiLog",
     "RelearnLog",
     "Feedback",
+    "ContentLedger",
+    "PromptOverride",
+    "AppSetting",
     "utcnow",
 ]

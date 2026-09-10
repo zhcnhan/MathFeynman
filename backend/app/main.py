@@ -18,10 +18,13 @@ from .api import (
     feedback,
     graph,
     history,
+    ledger_api,
     profile,
+    prompts_api,
     review,
     selfextend,
     session as session_api,
+    settings_api,
     subjects,
 )
 from .api.errors_zh import (
@@ -189,4 +192,8 @@ api.include_router(selfextend.router)
 api.include_router(feedback.router)
 api.include_router(content_admin.router)
 api.include_router(subjects.router)
+# R39：一切显性（总账）+ 提示词可改 + AI 对话审计/调试模式
+api.include_router(ledger_api.router)
+api.include_router(prompts_api.router)
+api.include_router(settings_api.router)
 app.include_router(api)

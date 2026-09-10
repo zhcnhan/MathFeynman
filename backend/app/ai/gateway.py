@@ -8,10 +8,12 @@
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Protocol
 
 from ..content import citations
+from .prompts import context_parts
 from .calls import (
     AiCallError,
     AnswerQuestionIn,
@@ -48,9 +50,31 @@ from .calls import (
     VariantOut,
 )
 from .provider import LogSink, OpenAICompatibleProvider
-from .prompts import context_block, task_json
+from .prompts import context_block, context_parts, task_json
 
 MIN_FEYNMAN_CHARS = 20  # docs/05 §5：口述 <20 字直接判敷衍，不进评分
+
+
+def _js(value: object) -> str:
+    """审计/prompt 里注入的结构化取值（JSON 文本；None → "null"）。"""
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return str(value)
+
+
+def _subject_of_node(node_id: str) -> str:
+    """内容节点 → 所属学科 id（R39 §3：审计要能按学科筛）；查不到 → 空串（不阻塞）。"""
+    if not node_id:
+        return ""
+    try:
+        from ..db import SessionLocal
+        from ..service import outline_gate
+
+        with SessionLocal() as db:
+            return str(outline_gate.subject_of_node(db, node_id) or "")
+    except Exception:
+        return ""
 
 # ---- R27：离线启发式评分常量（仅无 key/降级兜底；真模型可用时不得抢占，docs/09 R4/R27） ----
 BASE_SCORES = {"correctness": 0.30, "own_words": 0.25, "evidence": 0.10, "self_correction": 0.15}
@@ -396,235 +420,276 @@ class OpenAICompatibleGateway:
     def __init__(self, provider: OpenAICompatibleProvider):
         self._p = provider
 
-    # ---- prompt 装配通用 ----
-    def _system(self, ctx, extra_bans: list[str] | None = None) -> str:
-        return context_block(
-            level=ctx.level if hasattr(ctx, "level") else "",
-            explanation_body=getattr(ctx, "explanation_body", ""),
-            worked_examples=getattr(ctx, "worked_examples", []) or [],
-            whitelist=list(getattr(ctx, "whitelist", []) or []),
-            core_concepts=list(getattr(ctx, "core_concepts", []) or []),
-            style=getattr(ctx, "profile_style_block", ""),
-            extra_bans=extra_bans,
+    # ---- prompt 装配（R39 §2：模板可在程序内修改；改动后**下一次调用即生效**） ----
+    def _texts(self, call_name: str, *, subject_id: str = "", unit_id: str = "") -> tuple[str, str, str]:
+        """取生效模板 ``(system_template, user_template, 版本标签)``（唯一入口见 prompt_runtime）。"""
+        from . import prompt_runtime
+
+        rt = prompt_runtime.PromptRuntime(call_name, subject_id=subject_id, unit_id=unit_id)
+        return rt.system_template, rt.user_template, rt.version
+
+    def _render(self, call_name: str, *, context_vars: dict | None = None,
+                task_vars: dict | None = None, subject_id: str = "",
+                unit_id: str = "", material_discipline: bool = False) -> tuple[str, str, str]:
+        """渲染 ``(system, user, 版本标签)``；渲染失败 → 记账 + 回退默认模板。"""
+        from . import prompt_templates as reg
+
+        spec = reg.PROMPTS[call_name]
+        sys_t, usr_t, tag = self._texts(call_name, subject_id=subject_id, unit_id=unit_id)
+        cv = dict(context_vars or {})
+        # 教材纪律占位符：只有"这次真的有教材"时才注入（无教材时置空，逐字等于旧行为）
+        cv.setdefault("material_discipline", reg._MATERIAL_DISCIPLINE if material_discipline else "")
+        tv = dict(task_vars or {})
+        try:
+            sys_final = reg.render(sys_t, **cv) if sys_t else ""
+            usr_final = reg.render(usr_t, **tv) if usr_t else ""
+            if reg.is_material_disciplined(sys_t) and not material_discipline:
+                pass  # 无教材：占位符已置空
+            return sys_final, usr_final, tag
+        except reg.PromptError as e:
+            from ..service import ledger
+
+            ledger.note(
+                ledger.CAT_OTHER, f"提示词（{call_name}）",
+                f"提示词渲染失败，本次已回退默认模板：{e}",
+                impact=ledger.SCOPE_THIS_RUN, remedy=ledger.REMEDY_YES,
+                subject_id=subject_id, unit_id=unit_id,
+                detail={"call_name": call_name, "error": str(e)[:200]},
+            )
+            dv = reg.default_vars(spec)
+            dv.update({k: str(v) for k, v in cv.items()})
+            dv.update({k: str(v) for k, v in tv.items()})
+            return (reg.render(spec.system, **dv) if spec.system else "",
+                    reg.render(spec.user, **dv) if spec.user else "",
+                    f"fallback-default:{call_name}")
+
+    def _call_json(self, call, sys_text: str, usr_text: str, *, strategy: str | None,
+                   prompt_versions: str, subject_id: str = "", unit_id: str = ""):
+        """统一出口：把渲染后的 prompt 交给 provider，并带上审计元数据（R39 §3）。"""
+        subj = subject_id or _subject_of_node(unit_id)
+        return self._p.chat_json(
+            call,
+            [{"role": "system", "content": sys_text}, {"role": "user", "content": usr_text}],
+            strategy=strategy,
+            audit={"subject_id": subj, "unit_id": unit_id,
+                   "prompt_versions": prompt_versions},
         )
 
     # ---- 调用点 1：讲解 ----
     def explain_node(self, ctx: ExplainIn, *, strategy: str | None = None) -> ExplainOut:
-        system = self._system(ctx)
         facts = list(getattr(ctx, "taught_facts", []) or [])
         fact_hint = ""
         if facts:
             fact_hint = ("本单元已声明事实（可引用其 id）："
                          + "；".join(f"{f.get('id')}={str(f.get('text'))[:40]}" for f in facts[:8]))
-        user = task_json(
-            task="基于讲解稿为本节点写一份适合该生（考虑风格块）的演绎讲解（lecture_md，Markdown+LaTeX）。"
-            "给出 1-3 个'引导确认/提问'出口（asked_to_confirm），**每条都必须能被一个只读过本讲解的"
-            "零基础学生答出来**（复述讲解里写过的话，或由 ≥2 条讲解事实经明确规则推出）；"
-            "并为每条给出 asks_basis（与 asked_to_confirm **按下标对齐**）："
-            '{"fact_ids":["上面事实 id（若有）"],"quote":"讲解原文里逐字出现的一句依据"}；'
-            "引文必须 ≥6 字且**逐字**取自讲解（不得改写）；**没有依据就不要出这条**（宁缺勿造）；"
-            "禁止模板套话（如「它与你学过的内容有什么联系」「这个概念还适用于什么情况」——"
-            "指代不明/学生无从判断的一律不要）。" + (" " + fact_hint if fact_hint else ""),
-            node_title=ctx.node_title,
-        )
-        out = self._p.chat_json(CALL_EXPLAIN_NODE, [{"role": "system", "content": system}, {"role": "user", "content": user}], strategy=strategy)
+        system, user, tag = self._render(
+            "explain_node",
+            context_vars=context_parts(
+                level=getattr(ctx, "level", ""),
+                explanation_body=getattr(ctx, "explanation_body", ""),
+                worked_examples=getattr(ctx, "worked_examples", []) or [],
+                whitelist=list(getattr(ctx, "whitelist", []) or []),
+                core_concepts=list(getattr(ctx, "core_concepts", []) or []),
+                style=getattr(ctx, "profile_style_block", ""),
+            ),
+            task_vars={"fact_hint": " " + fact_hint if fact_hint else "",
+                       "node_title": ctx.node_title or ""},
+            unit_id=ctx.node_id)
+        out = self._call_json(CALL_EXPLAIN_NODE, system, user, strategy=strategy,
+                             prompt_versions=tag, unit_id=ctx.node_id)
         return filter_asks(ExplainOut(**out.parsed),
                            sources=[out.parsed.get("lecture_md") or "", ctx.explanation_body or ""],
                            fact_ids={str(f.get("id")) for f in facts})
 
     # ---- 调用点 2：答疑 ----
     def answer_question(self, ctx: AnswerQuestionIn, *, strategy: str | None = None) -> AnswerQuestionOut:
-        system = self._system(ctx)
-        user = task_json(
-            task="回答学生问题；若问题超出白名单/当前范围，回复应说明并置 out_of_scope=true。",
-            question=ctx.student_question,
-        )
-        out = self._p.chat_json(CALL_ANSWER_QUESTION, [{"role": "system", "content": system}, {"role": "user", "content": user}], strategy=strategy)
+        system, user, tag = self._render(
+            "answer_question",
+            context_vars=context_parts(
+                level=getattr(ctx, "level", ""),
+                explanation_body=getattr(ctx, "explanation_body", ""),
+                worked_examples=[],
+                whitelist=list(getattr(ctx, "whitelist", []) or []),
+                core_concepts=list(getattr(ctx, "core_concepts", []) or []),
+                style=getattr(ctx, "profile_style_block", ""),
+            ),
+            task_vars={"question": ctx.student_question or ""},
+            unit_id=ctx.node_id)
+        out = self._call_json(CALL_ANSWER_QUESTION, system, user, strategy=strategy,
+                             prompt_versions=tag, unit_id=ctx.node_id)
         return AnswerQuestionOut(**out.parsed)
 
     # ---- 调用点 4：错题提示（禁令：禁止输出完整解答） ----
     def hint_on_error(self, ctx: HintOnErrorIn, *, strategy: str | None = None) -> HintOnErrorOut:
-        system = context_block(
-            level="",
-            explanation_body="",
-            worked_examples=[],
-            whitelist=[],
-            core_concepts=[],
-            extra_bans=[
-                "这是提示生成：**绝对禁止给出完整解答或最终答案表达式**，只给方向性提示（哪一步可疑、检查什么）。",
-            ],
-        )
-        user = task_json(
-            task="给一条方向性提示（hint_md），帮助学生发现自己的错误。",
-            prompt=ctx.prompt,
-            mode=ctx.mode,
-            student_answer=ctx.user_answer,
-            judge_detail=ctx.judge_detail,
-        )
-        out = self._p.chat_json(CALL_HINT_ON_ERROR, [{"role": "system", "content": system}, {"role": "user", "content": user}], strategy=strategy)
+        system, user, tag = self._render(
+            "hint_on_error",
+            context_vars=context_parts(
+                level="", explanation_body="", worked_examples=[], whitelist=[],
+                core_concepts=[],
+                extra_bans=[
+                    "这是提示生成：**绝对禁止给出完整解答或最终答案表达式**，"
+                    "只给方向性提示（哪一步可疑、检查什么）。",
+                ],
+            ),
+            task_vars={"prompt": ctx.prompt or "", "mode": ctx.mode or "",
+                       "student_answer": ctx.user_answer or "",
+                       "judge_detail": ctx.judge_detail or ""},
+            unit_id=ctx.node_id)
+        out = self._call_json(CALL_HINT_ON_ERROR, system, user, strategy=strategy,
+                             prompt_versions=tag, unit_id=ctx.node_id)
         return HintOnErrorOut(**out.parsed)
 
     # ---- 调用点 6：费曼评分（逐字 evidence） ----
     def feynman_evaluate(self, ctx: FeynmanEvaluateIn, *, strategy: str | None = None) -> FeynmanEvaluateOut:
-        system = context_block(
-            level="",
-            explanation_body="",
-            worked_examples=[],
-            whitelist=list(getattr(ctx, "core_concepts", []) or []),
-            core_concepts=list(getattr(ctx, "core_concepts", []) or []),
-            extra_bans=[
-                "评分必须可审计：每个维度必须给出 **evidence_quote —— 逐字引用学生原话片段**，禁止无据评分；"
-                "misconceptions_found 也须附 evidence。",
-            ],
-        )
-        user = task_json(
-            task="按 rubric 逐维打分（score 0..1），给评语与逐字证据；给出 recommend_action；"
-            "可附带评分置信度 confidence(0..1)（可选）。",
-            task_prompt=ctx.task_prompt,
-            rubric_dimensions=ctx.rubric_dimensions,
-            transcript=ctx.transcript,
-            previous_round=ctx.previous_round,
-            previously_acknowledged=ctx.previously_acknowledged,
-        )
-        out = self._p.chat_json(CALL_FEYNMAN_EVALUATE, [{"role": "system", "content": system}, {"role": "user", "content": user}], strategy=strategy)
+        system, user, tag = self._render(
+            "feynman_evaluate",
+            context_vars=context_parts(
+                level="", explanation_body="", worked_examples=[],
+                whitelist=list(getattr(ctx, "core_concepts", []) or []),
+                core_concepts=list(getattr(ctx, "core_concepts", []) or []),
+                extra_bans=[
+                    "评分必须可审计：每个维度必须给出 **evidence_quote —— 逐字引用学生原话片段**，"
+                    "禁止无据评分；misconceptions_found 也须附 evidence。",
+                ],
+            ),
+            task_vars={"task_prompt": ctx.task_prompt or "",
+                       "rubric_dimensions": _js(ctx.rubric_dimensions),
+                       "transcript": ctx.transcript or "",
+                       "previous_round": _js(ctx.previous_round),
+                       "previously_acknowledged": _js(ctx.previously_acknowledged)},
+            unit_id=ctx.node_id)
+        out = self._call_json(CALL_FEYNMAN_EVALUATE, system, user, strategy=strategy,
+                             prompt_versions=tag, unit_id=ctx.node_id)
         return FeynmanEvaluateOut(**out.parsed)
 
     # ---- 调用点 7：Socratic 追问（R27 定向缺口 + R35 S4 引文纪律） ----
     def feynman_followup(self, ctx: FeynmanFollowupIn, *, strategy: str | None = None) -> FeynmanFollowupOut:
-        system = context_block(
-            level="",
-            explanation_body="",
-            worked_examples=[],
-            whitelist=[],
-            core_concepts=[],
-            extra_bans=[
-                "追问必须**定向到 unmet_gaps 里最弱的那一个缺口**（一次只问一个问题、只问这一点），"
-                "不要泛泛自由发问，也不要给出答案。",
-                "**R35 S4 追问纪律（硬要求）**："
-                "① `student_quote` 必须**逐字**取自 student_transcript（照抄一段 ≥6 字的原话，"
-                "不得改写、不得拼接；服务端做逐字包含校验，不通过则整条追问作废）；"
-                "② `missing` 必须说清**这句话缺了什么**（学生视角，具体到这一点）；"
-                "③ `question_md` 只针对该缺口，并且要**引用学生原话**再提问。"
-                "④ 若学生的话里**没有可引用的实质内容**（例如只写「我不知道」「不会」），"
-                "**禁止硬造发散题**：把 `reteach` 置 true（`student_quote`/`missing`/`question_md` 留空）。",
-                "禁止任何指代不明的模板套话作为兜底（如「这个概念还适用于什么情况」"
-                "「它与你学过的内容有什么联系」）——无从判断的问题一律不出。",
-            ],
-        )
-        user = task_json(
-            task="生成一条定向追问（question_md，可用 Markdown/LaTeX）：先**逐字引用**学生说过的那句话"
-            "（student_quote），指出这句话缺了什么（missing），再要求学生就这一点补讲；"
-            "不得换到别的知识点；学生无可引用内容时置 reteach=true。",
-            unmet_gaps=ctx.unmet_gaps,
-            socratic_topics=ctx.socratic_followups,
-            previous_scores=ctx.previous_scores,
-            student_transcript=ctx.student_transcript,
-        )
-        out = self._p.chat_json(CALL_FEYNMAN_FOLLOWUP, [{"role": "system", "content": system}, {"role": "user", "content": user}], strategy=strategy)
+        system, user, tag = self._render(
+            "feynman_followup",
+            context_vars=context_parts(
+                level="", explanation_body="", worked_examples=[], whitelist=[], core_concepts=[],
+                extra_bans=[
+                    "追问必须**定向到 unmet_gaps 里最弱的那一个缺口**（一次只问一个问题、只问这一点），"
+                    "不要泛泛自由发问，也不要给出答案。",
+                    "**R35 S4 追问纪律（硬要求）**："
+                    "① `student_quote` 必须**逐字**取自 student_transcript（照抄一段 ≥6 字的原话，"
+                    "不得改写、不得拼接；服务端做逐字包含校验，不通过则整条追问作废）；"
+                    "② `missing` 必须说清**这句话缺了什么**（学生视角，具体到这一点）；"
+                    "③ `question_md` 只针对该缺口，并且要**引用学生原话**再提问。"
+                    "④ 若学生的话里**没有可引用的实质内容**（例如只写「我不知道」「不会」），"
+                    "**禁止硬造发散题**：把 `reteach` 置 true（`student_quote`/`missing`/`question_md` 留空）。",
+                    "禁止任何指代不明的模板套话作为兜底（如「这个概念还适用于什么情况」"
+                    "「它与你学过的内容有什么联系」）——无从判断的问题一律不出。",
+                ],
+            ),
+            task_vars={"unmet_gaps": _js(ctx.unmet_gaps),
+                       "socratic_topics": _js(ctx.socratic_followups),
+                       "previous_scores": _js(ctx.previous_scores),
+                       "student_transcript": ctx.student_transcript or ""},
+            unit_id=ctx.node_id)
+        out = self._call_json(CALL_FEYNMAN_FOLLOWUP, system, user, strategy=strategy,
+                             prompt_versions=tag, unit_id=ctx.node_id)
         return FeynmanFollowupOut(**out.parsed)
 
     # ---- 调用点 13（R27）：缺口补答评估（轻量，只更新缺口维度） ----
     def feynman_gap_check(self, ctx: GapCheckIn, *, strategy: str | None = None) -> GapCheckOut:
-        system = context_block(
-            level="",
-            explanation_body="",
-            worked_examples=[],
-            whitelist=list(getattr(ctx, "core_concepts", []) or []),
-            core_concepts=list(getattr(ctx, "core_concepts", []) or []),
-            extra_bans=[
-                "这是**缺口补答评估**（不是整体重评）：只判断 target_gap.key 这一个维度是否补上，"
-                "dimension_updates **只允许包含该维度一条**；"
-                "evidence_quote 必须**逐字引用 student_answer**（服务端做包含校验，杜撰即降级）；"
-                "若补答没有真正回答该缺口，gap_filled=false 且 dimension_updates 为空数组。",
-            ],
-        )
-        user = task_json(
-            task="判定 gap_filled（该缺口是否补上）并给出该维度的新分；可用 comment 用学生能懂的话"
-            "说明还差什么。",
-            task_prompt=ctx.task_prompt,
-            rubric_dimensions=ctx.rubric_dimensions,
-            followup_question=ctx.followup_question,
-            target_gap=ctx.target_gap,
-            student_answer=ctx.student_answer,
-        )
-        out = self._p.chat_json(CALL_FEYNMAN_GAP_CHECK, [{"role": "system", "content": system}, {"role": "user", "content": user}], strategy=strategy)
+        system, user, tag = self._render(
+            "feynman_gap_check",
+            context_vars=context_parts(
+                level="", explanation_body="", worked_examples=[],
+                whitelist=list(getattr(ctx, "core_concepts", []) or []),
+                core_concepts=list(getattr(ctx, "core_concepts", []) or []),
+                extra_bans=[
+                    "这是**缺口补答评估**（不是整体重评）：只判断 target_gap.key 这一个维度是否补上，"
+                    "dimension_updates **只允许包含该维度一条**；"
+                    "evidence_quote 必须**逐字引用 student_answer**（服务端做包含校验，杜撰即降级）；"
+                    "若补答没有真正回答该缺口，gap_filled=false 且 dimension_updates 为空数组。",
+                ],
+            ),
+            task_vars={"task_prompt": ctx.task_prompt or "",
+                       "rubric_dimensions": _js(ctx.rubric_dimensions),
+                       "followup_question": ctx.followup_question or "",
+                       "target_gap": _js(ctx.target_gap),
+                       "student_answer": ctx.student_answer or ""},
+            unit_id=ctx.node_id)
+        out = self._call_json(CALL_FEYNMAN_GAP_CHECK, system, user, strategy=strategy,
+                             prompt_versions=tag, unit_id=ctx.node_id)
         return GapCheckOut(**out.parsed)
 
     # ---- 调用点 14（R35 S3）：挑战题单独生成（**允许超出讲解**——与核心题池刻意相反） ----
     def challenge_exercise(self, ctx: ChallengeIn, *, strategy: str | None = None) -> ChallengeOut:
-        system = context_block(
-            level=ctx.level,
-            explanation_body=ctx.explanation_body,
-            worked_examples=list(ctx.worked_examples or []),
-            whitelist=list(ctx.whitelist or []),
-            core_concepts=list(ctx.core_concepts or []),
-            style=ctx.profile_style_block,
-            extra_bans=[
-                "⚠️ 本调用点是**挑战题池**（R35 S3）：上面那条『禁止引入白名单之外的新名词/公式/方法』"
-                "**对本题不适用**——挑战题**就是要**超出讲解（更广的背景、迁移推广、极端情形、"
-                "与其它知识的联系）。这不是越界，是本池的定义。",
-                "但必须：只出**一道**题；可被一个没读过本讲解的人凭常识或外部知识**尝试**作答"
-                "（不许出无解、需要未公开数据、或依赖本节点私有编号的题）；"
-                "不得照抄讲解稿里的原题；用 why_hard_md 说明它为什么超出讲解。",
-            ],
-        )
-        user = task_json(
-            task="为这个节点出一道**挑战题**（prompt_md）：需要讲解之外的知识，答不出也不影响学习进度。"
-                 "给出 answer_hint_md（作答形式提示）与 why_hard_md（为什么它超出讲解，学生视角，不要泄答案本身）。",
-            node_title=ctx.node_title,
-            core_concepts=list(ctx.core_concepts or []),
-            asked_before=ctx.asked,
-        )
-        out = self._p.chat_json(
-            CALL_CHALLENGE_EXERCISE,
-            [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            strategy=strategy,
-        )
+        system, user, tag = self._render(
+            "challenge_exercise",
+            context_vars=context_parts(
+                level=ctx.level, explanation_body=ctx.explanation_body,
+                worked_examples=list(ctx.worked_examples or []),
+                whitelist=list(ctx.whitelist or []),
+                core_concepts=list(ctx.core_concepts or []),
+                style=ctx.profile_style_block,
+                extra_bans=[
+                    "⚠️ 本调用点是**挑战题池**（R35 S3）：上面那条『禁止引入白名单之外的新名词/公式/方法』"
+                    "**对本题不适用**——挑战题**就是要**超出讲解（更广的背景、迁移推广、极端情形、"
+                    "与其它知识的联系）。这不是越界，是本池的定义。",
+                    "但必须：只出**一道**题；可被一个没读过本讲解的人凭常识或外部知识**尝试**作答"
+                    "（不许出无解、需要未公开数据、或依赖本节点私有编号的题）；"
+                    "不得照抄讲解稿里的原题；用 why_hard_md 说明它为什么超出讲解。",
+                ],
+            ),
+            task_vars={"node_title": ctx.node_title or "",
+                       "core_concepts": "、".join(ctx.core_concepts or []),
+                       "asked_before": str(ctx.asked or 0)},
+            unit_id=ctx.node_id)
+        out = self._call_json(CALL_CHALLENGE_EXERCISE, system, user, strategy=strategy,
+                             prompt_versions=tag, unit_id=ctx.node_id)
         return ChallengeOut(**out.parsed)
 
     # ---- 调用点 15（R35 S3）：挑战题判分（只记复盘，不写任何账本） ----
     def challenge_check(self, ctx: ChallengeCheckIn, *, strategy: str | None = None) -> ChallengeCheckOut:
-        system = context_block(
-            level="",
-            explanation_body="",
-            worked_examples=[],
-            whitelist=[],
-            core_concepts=[],
-            extra_bans=[
-                "这是**挑战题判分**：挑战题允许超出讲解，学生用课外知识作答是**正确行为**，不得因此扣分。"
-                "只判「有没有给出实质判断 + 理由是否站得住」；没有标准答案时，讲清楚即可给分。",
-                "feedback_md 必须对学习者说人话（鼓励 + 指出差在哪）；better_md 给参考思路"
-                "（挑战题不上算，教比考重要）。",
-            ],
-        )
-        user = task_json(
-            task="判定这道挑战题的作答（correct/score 0..1），给出 feedback_md 与 better_md。",
-            prompt_md=ctx.prompt_md,
-            student_answer=ctx.student_answer,
-            node_title=ctx.node_title,
-        )
-        out = self._p.chat_json(
-            CALL_CHALLENGE_CHECK,
-            [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            strategy=strategy,
-        )
+        system, user, tag = self._render(
+            "challenge_check",
+            context_vars=context_parts(
+                level="", explanation_body="", worked_examples=[], whitelist=[], core_concepts=[],
+                extra_bans=[
+                    "这是**挑战题判分**：挑战题允许超出讲解，学生用课外知识作答是**正确行为**，"
+                    "不得因此扣分。只判「有没有给出实质判断 + 理由是否站得住」；"
+                    "没有标准答案时，讲清楚即可给分。",
+                    "feedback_md 必须对学习者说人话（鼓励 + 指出差在哪）；better_md 给参考思路"
+                    "（挑战题不上算，教比考重要）。",
+                ],
+            ),
+            task_vars={"prompt_md": ctx.prompt_md or "",
+                       "student_answer": ctx.student_answer or "",
+                       "node_title": ctx.node_title or ""},
+            unit_id=ctx.node_id)
+        out = self._call_json(CALL_CHALLENGE_CHECK, system, user, strategy=strategy,
+                             prompt_versions=tag, unit_id=ctx.node_id)
         return ChallengeCheckOut(**out.parsed)
 
     # ---- 调用点 8：错误分类 ----
     def classify_error(self, ctx: ClassifyErrorIn) -> ClassifyErrorOut:
-        system = (
-            "[角色] 你是学习系统的错因分类器。\n"
-            "[输出纪律] 只输出 JSON：{\"error_type\": \"<枚举>\"}。\n"
-            f"枚举：arithmetic_slip | sign_error | concept_confusion | step_omission | "
-            f"procedure_misuse | notation_error | unknown（无法归类时用 unknown）。"
-        )
-        user = task_json(task="分类学生的错答类型", prompt=ctx.prompt, correct_solution=ctx.correct_solution, student_answer=ctx.user_answer)
-        out = self._p.chat_json(CALL_CLASSIFY_ERROR, [{"role": "system", "content": system}, {"role": "user", "content": user}])
+        system, user, tag = self._render(
+            "classify_error",
+            task_vars={"prompt": ctx.prompt or "", "correct_solution": ctx.correct_solution or "",
+                       "student_answer": ctx.user_answer or ""},
+            unit_id=ctx.node_id)
+        out = self._call_json(CALL_CLASSIFY_ERROR, system, user, strategy=None,
+                             prompt_versions=tag, unit_id=ctx.node_id)
         return ClassifyErrorOut(**out.parsed)
 
     # ---- 调用点 3：变体（MVP 不启用，docs/08 §1） ----
     def generate_practice_variant(self, ctx: VariantIn) -> VariantOut:
         raise AiCallError("generate_practice_variant", "MVP 不启用 AI 变体出题（docs/08 §1）")
+
+    # ---- 调用点 5：解题步骤（轻量；保留接口） ----
+    def explain_solution_step(self, step_text: str, *, strategy: str | None = None) -> SolutionStepOut:
+        system, user, tag = self._render(
+            "explain_solution_step",
+            context_vars=context_parts(level="", explanation_body="", worked_examples=[],
+                                       whitelist=[], core_concepts=[]),
+            task_vars={"step_text": step_text or ""})
+        out = self._call_json(CALL_EXPLAIN_SOLUTION_STEP, system, user, strategy=strategy,
+                             prompt_versions=tag)
+        return SolutionStepOut(**out.parsed)
 
 
 # --------------------------------------------------------------------------

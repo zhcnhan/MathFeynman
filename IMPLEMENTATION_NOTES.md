@@ -2595,6 +2595,19 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     ③ 讲解"整句命中教材"仅 19%（转述 + 夹引号，S3 允许），是否要更贴原文；
     ④ 附录类小条目（45 字）也会成为单元（S2 无豁免规则）；⑤ 有章节地图时**单元数由书决定**
     （样本 46 个），`count` 只在无地图时生效——与 docs/14 §2.1 字面略有出入。
+    → **①–⑤ 已由 R40 裁决**（`50bdde7`）：①改**拒绝出稿**（**R38 已实现**，见 §68.1 末行）②接受现状但
+    **必须显性**（已进账本 + 大纲页）③接受，basis 引文改节级（提升项）④**条目过短须合并/标跳过且必须记账**
+    ⑤确认语义，须在 UI 说明。**④/⑤ 仍待办**（见本条 17-⑦）。
+
+17. **【R38/R39 收尾待办 / 请架构侧定夺】（2026-09-10）**：
+    ① 账本是否也给"成功路径"记账（当前只记"异常/偏离"）——§69.7-1；
+    ② 复习降级回炉是否在新总账里再记一条（当前只留 `relearn_logs` 单一权威源）——§69.7-2；
+    ③ 模型调用的"**降档**"（think→fast）是否逐次记账——§69.7-3；
+    ④ 提示词 **user 模板**是否开放编辑（当前只读对照；接线已就绪）——§69.7-4；
+    ⑤ 审计文件**自动**按保留期清理（当前人工触发 + 参数）——§69.7-5；
+    ⑥ **R38 "总注入上限"口径**：事实报告（不丢章节）vs 跨批硬封顶（会丢章节）——**§68.4**；
+    ⑦ **R40 遗留**：材料"条目过短（<200 字）→ 合并进相邻单元或标跳过，且跳过必须记账"
+       与"有地图时 `count` 只在无书时生效"的 **UI 说明**——**尚未落地**（R37 裁决 §2-4/§2-5）。
 
 
 ---
@@ -3454,6 +3467,30 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
 | 出稿失败三档 | 复用 R35 既有"重试一次 → 丢弃 → 失败"骨架（本次把"教材"接进同一骨架） | `test_r37_s5_*` |
 | 审计工具 | 复用 `content/citations.py` 尺子 + 既有审计脚本范式（`audit_*` 不带 `test_` 前缀） | `audit_material_binding.py` 工具输出 |
 
+### 67.4b 融合对照表（**R38 / R39 行**：新增件 → 复用点 → 断言）
+
+| 新增件 | 复用点（禁新建平行机制） | 断言/用例 |
+|---|---|---|
+| 预算两个滑块 + `GET/PUT /subjects/{sid}/budget` | **复用 `subjects.meta_json`（不新建表）** + 既有中文错误口径 | `test_r38_a1_slider_takes_effect_and_reads_back`、`test_r38_a5_illegal_value_is_zh_422` |
+| 优先级解析（请求 > 学科 > `.env` > 内置） | 复用 R37 的 `config.material_inject_budget/batch_budget` 与 `MF_MATERIAL_*` 变量名 | `test_r38_a5_priority_request_beats_subject_slider` |
+| "不限"= 真不限 | 复用 R37 `_make_batches`（不截断）＋ R39 铁则（`dropped` 恒空） | `test_r38_a2_unlimited_means_no_truncation` |
+| 调小滑块不丢章节 | 复用 R37 结构化分批（同一次实现，不加第二套） | `test_r38_a3_smaller_slider_more_batches_chapters_intact` |
+| 上下文安全阀 | 复用 `bookmap.split_entries`（页边界切）＋ R39 账本 | `test_r38_a4_context_valve_batches_instead_of_sending` |
+| 节粒度：页合并成章级单元 | **在既有 `bookmap._chapters_from_blocks` 内改**；页标记沿用 `PAGE_MARK` | `test_r38_a1b_pdf_pages_merge_into_chapter_units_with_page_numbers` |
+| 多材料合并与来源标注 | 复用 `draft_materials` 唯一入口 + `coverage_ledger` 唯一账 | `test_r38_b1_multi_material_merges_map_and_groups_uncovered` |
+| 未纳入者显式列出 | 复用覆盖账结构 + R39 账本 | `test_r38_b1_blocked_material_is_listed_explicitly_and_in_ledger` |
+| 材料角色（主/补） | 复用材料 frontmatter（不新建类型/表）+ `entry_order` 书序 | `test_r38_b2_role_orders_main_first_and_is_reported` |
+| **账本 `service/ledger.py` + `content_ledger` 表** | **唯一入口**；错误文案复用 `errors_zh` 口径 | §69.4 六类 `test_r39_ironclad_*` |
+| 就地提示 `LedgerAlerts.tsx` | 复用 API 响应（不起第二份状态源） | 同上 + 活体冒烟 |
+| 总账页 `/ledger` + `api/ledger_api.py` | 复用同一 `ledger.list_entries`（就地与总账**同源**） | `test_r39_ledger_total_page_filters` |
+| 提示词注册表 `ai/prompt_templates.py` | 复用 `ai.calls.CALLS`（**用例锁死两集合相等**）；占位符取值复用 `ai/prompts.context_parts` | `test_r39_all_call_sites_are_editable` |
+| 提示词生效入口 `ai/prompt_runtime.py` | 复用网关与 outline 两条调用路径（**不写第二套渲染**） | `test_r39_prompt_edit_takes_effect_and_is_visible_in_audit` |
+| `prompt_overrides` 表 + `service/prompt_store.py` | 新数据建表正当（不塞 `subjects.meta_json`）；台账复用 R39 账本 | `test_r39_prompt_reset_one_and_all`、`test_r39_prompt_missing_required_is_rejected_zh` |
+| 提示词页 `PromptsPage.tsx` | 复用设置页入口 + 既有 `api.ts` | 活体冒烟（保存→差异→拒存→恢复） |
+| 审计扩字段（`ai_logs`）+ `service/ai_trace.py` | **复用既有 `ai_logs` 表 + 既有 `make_ai_log_sink`**（不新建第二套日志） | `test_r39_audit_one_record_per_call_with_full_expand` |
+| 审计页 `AiTracePage.tsx` + 调试开关（`app_settings`） | 复用设置页与 `/settings`（开关只控入口，**不控是否记录**） | `test_r39_audit_failed_call_records_retries_and_ranking` |
+| 审计红线（遮蔽密钥 / 写失败记账 / 清理留痕） | 复用 R39 账本 + 既有中文口径 | `test_r39_audit_no_api_key_leak`、`test_r39_audit_write_failure_is_logged` |
+
 ### 67.5 回归与验收（实测，非推算）
 
 | 项 | 基线（架构侧） | 本批实测 |
@@ -3488,6 +3525,183 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
    故它被目录补齐；若架构侧认为附录不必成单元，需要一条"哪些条目可豁免覆盖"的规则（当前**无豁免**）。
 5. **单元数不再受 `count` 约束**：有章节地图时，单元数由书的结构决定（本样本 46 个，`UNIT_LOCAL` 上限放宽到 60）；
    `count` 只在无地图时生效——与 docs/14 §2.1"用户指定单元数"的字面略有出入，请确认口径。
+
+---
+
+## 68. R38 材料注入预算用户可控（两个滑块）+ 多材料合并口径（2026-09-10）
+
+> 规格：docs/09 **R38**（§0.5 已按 R37 落地结果校准的两个参数）；工单 `.runtime/EULER_TICKET_R38.md`。
+> 前置：R37 已验收（`50bdde7`）——注入语义已变成"默认不限 + 按结构分批"，本批补**用户可控那一半**。
+> **R39 铁则的记账入口按工单要求先落地**：R38 里凡"丢弃/截断/未纳入"处**直接调 `service.ledger`**（见 §68.3）。
+
+### 68.1 做了什么（A1–A5 / B1–B2）
+
+| 项 | 落地件 | 关键点 |
+|---|---|---|
+| **A1 两个滑块 + 就地可见** | `outline/materials.py`（`BATCH_TIERS/INJECT_TIERS`、`subject_budget/resolve_budget/set_budget/budget_view`）、`api/subjects.py`（`GET/PUT /subjects/{sid}/budget`）、`MaterialBudgetPanel.tsx` | 滑块 A＝**单次调用预算**（`subjects.meta_json.material_batch_chars`＝20,000/60,000/150,000/**0=不限**）；滑块 B＝**总注入上限**（默认不限）；**必显**两档当前值 + 来源（你设定的（本学科）/.env 配置/默认）+ **上一轮注入总量与批次数** + 逐材料明细 + 未纳入清单；就地说明"调小 A 只是分更多批，不会少学章节" |
+| **A1b 节粒度** | `bookmap._chapters_from_blocks(unit_chars=…)`、`parse_book(page_unit_chars=…)`、`config.page_unit_chars`（`MF_PAGE_UNIT_CHARS`=8000） | 无标题/无目录 PDF **按页合并成"章级"单元**（不再一页一节）；保留 `【第 N 页】` → **页号可溯源**；覆盖账按章级统计 + `page_total/page_covered`（页级下钻） |
+| **A2 不限 = 真不限** | `resolve_budget` | A/B 都 0 → `per_call_chars=0`、`truncated` 恒 false、`dropped` 恒空；`used_chars` 与"显式大预算"逐字相同 |
+| **A3 与 R37 分批共存** | `resolve_budget` + `_make_batches` | 预算只决定"每批装多少块"；**造错用例**：60000→300 批次数上升但**归一化内容逐字相同**、逐章不丢、覆盖账不变 |
+| **A4 安全阀** | `materials.context_valve` + `MF_CONTEXT_TOKEN_LIMIT`（默认 120000） | 「字符≈token」粗估；**将超上下文 → 不发请求**，自动分批 + 中文"本书较大，已分 N 批处理"；单块超限先在**页边界**切（不切句子），仍超则独立成批并**记账**（绝不静默截断） |
+| **A5 配置与优先级** | `resolve_budget`/`set_budget`/`_validate_budget` | **单次请求参数 > 学科滑块 > `.env` > 内置默认**（逐项给中文来源）；**复用 `subjects.meta_json`（不新建表）**；非法值 → **中文 422** |
+| **B1 多材料合并** | `draft_materials`（合并 `chapter_map` + `usage.per_material/not_injected`）、`coverage_ledger`（`by_material`/`uncovered_by_material`/`uncovered_materials`/`order_basis`）、前端覆盖卡 | 所有材料章节地图**合并成一份**、每条标来源；覆盖账**跨全部材料**；未覆盖清单**按材料分组**；**任何未纳入的材料/章节都显式列出**（不再"只在 prompt 尾部提一句"） |
+| **B2 材料角色** | `set_material_role/_ordered/order_basis`、`PUT .../materials/{mid}/role`、材料行下拉 | 主教材定顺序与范围、补充材料只补细节与例题；**未标注 → 按导入顺序**并在覆盖账注明。⚠️ 本轮把"未标注"从"默认主教材"改为**独立取值 `未标注`**（否则与显式主教材并列，排序失去意义） |
+| **R40 §2-1 顺带闭合** | `draft.draft_outline` | **有教材 + 无可用模型 → 拒绝出稿**（中文 422 + 记账），不再产出"没有教材依据"的稿；无教材时仍退化为仅按 brief 起草 |
+
+### 68.2 接线（R38 调 R39 入口，两处可见）
+
+- `GET /subjects/{sid}/budget`＝界面"当前值/来源/上一轮用量/未纳入"的唯一数据源（全中文）；
+- `POST .../outline/draft` 与 `POST .../units/{uid}/content`：**API 层开 `ledger.collector`**，响应带 `ledger[]`
+  → 候选卡/单元结果就地显示；
+- 材料区常驻 `SubjectLedgerInline`（读 `GET /subjects/{sid}/ledger`，最近 20 条）。
+
+### 68.3 R38 里"丢弃/截断/未纳入"的**直接记账点**
+
+| 触发 | 类别 | 中文原因（摘要） |
+|---|---|---|
+| 材料健康度不合格（扫描版）整份未注入 | 材料吸纳 | "该材料**未被注入**（文本层健康度不合格，疑似扫描/图片版）：…" |
+| 某章/节不在任何注入批次 | 材料吸纳 | "该章/节**未被注入任何批次**（不在任何材料块里）" |
+| 安全阀生效（超上下文自动分批） | 材料吸纳 | "本书较大，已分 N 批处理：按「字符≈token」粗估，单次调用最多 ~X 字…不截断正文、不漏章节" |
+| 单块自身超上下文（页边界也切不开） | 材料吸纳 | "该章/节自身约 X 字，超过单次调用上下文硬上限…已**独立成批**（不截断、不丢弃）" |
+| 实际注入量超过用户设的总注入上限 | 材料吸纳 | "本次**实际注入 X 字**，超过你设定的总注入上限 Y 字…为不丢任何章节，系统仍按批次完整注入" |
+| 本学科无引用材料 | 材料吸纳 | "本学科没有引用材料：本次按 brief 起草（无教材依据）" |
+| **有教材 + 无可用模型 → 拒绝出稿**（R40 §2-1） | 模型调用 | "未配置模型（LLM_API_KEY 为空），**无法依据教材生成大纲**…（**拒绝出稿**，不落盘）" |
+| 无 key 离线起草（**仅无教材时**） | 模型调用 | "未配置模型…本次大纲由离线启发式骨架产出，没有读教材" |
+| AI 起草失败 → 降级启发式 | 模型调用 | "AI 起草失败，本次已**降级为离线启发式骨架**（内容无教材锚定）" |
+| 材料溯源不成立 → 驳回重生成一次 | 生成与校验 | "首次候选有 N 条材料溯源不成立，已把中文原因回灌并**驳回重生成一次**" |
+| 重生成后仍不成立 → 剔除引用 | 生成与校验 | "驳回重生成后仍有 N 条不成立，**已剔除该引用**（宁缺勿造）" |
+| 滑块改值 / 材料角色标注 | 材料吸纳 | "用户调整了材料注入预算滑块…调小单次预算**只是分成更多批，不会少学章节**" / "用户把该材料标为「主教材/补充材料」" |
+
+### 68.4 "总注入上限"的口径（**请架构侧确认**）
+
+R38 §0.5 把它定为"**总注入上限**（跨全部批次）"，而 **R37 已验收语义**是">0 时作**单次调用预算**"，
+且 A3 铁则要求**调小不得丢章节**——两者在"上限小于整本书"时**必然冲突**（真要跨批累计封顶，
+就只能不处理后面的批次＝丢章节）。**本批取舍**：
+1. **单次调用预算**（滑块 A / 请求参数）＝真正生效的**每批上限**；
+2. **总注入上限**（滑块 B / `.env > 0`）＝"**花费天花板**"的**事实报告**：超支就**记账 + 就地显示**，
+   但**不为满足它而少注入任何章节**（与 R37 验收口径、A3 铁则、用户"不省成本要教材真源"三处一致）；
+3. 想省成本 → 调小**滑块 A**（只分更多批，不丢章节）。
+
+若要求"跨批累计硬封顶"，请明确——那需同时**放宽 A3** 并确认"未处理的章节在覆盖账里显式列出"可接受
+（该清单已实现，切换成本很低）。
+
+### 68.5 验收自证（实测）
+
+| R38 验收项 | 证据（用例） |
+|---|---|
+| 滑块改值立即生效 + API 回读一致 | `test_r38_a1_slider_takes_effect_and_reads_back` |
+| 非法值 → 中文 422 | `test_r38_a5_illegal_value_is_zh_422`（4 组） |
+| 优先级 请求 > 学科 > .env > 内置 | `test_r38_a5_priority_request_beats_subject_slider` |
+| 不限无截断（贴 `used_chars`） | `test_r38_a2_unlimited_means_no_truncation` |
+| **调小滑块不丢章节（造错）** | `test_r38_a3_smaller_slider_more_batches_chapters_intact` |
+| A4 安全阀自动分批 + 中文说明 | `test_r38_a4_context_valve_batches_instead_of_sending` |
+| A1b 章级单元 + 页号可下钻 | `test_r38_a1b_pdf_pages_merge_into_chapter_units_with_page_numbers` |
+| 多材料合并 + 每节标来源 | `test_r38_b1_multi_material_merges_map_and_groups_uncovered` |
+| 未纳入者显式列出 | `test_r38_b1_blocked_material_is_listed_explicitly_and_in_ledger` |
+| 材料角色 + 顺序依据 | `test_r38_b2_role_orders_main_first_and_is_reported` |
+| **R40 §2-1** 有教材无模型 → 拒绝出稿 | `test_r38_r40_offline_with_material_refuses_draft_and_logs` |
+| 前端必显字段契约 | `test_r38_api_contract_has_current_values_and_last_usage` |
+| 前端全中文 / `tsc` / `build` | `MaterialBudgetPanel.tsx`；`tsc --noEmit` exit 0；`vite build` exit 0 |
+| 真实库活体冒烟 | `.runtime/r38_r39_smoke.py` → `.runtime/r38_r39_smoke.out.txt`（3 份材料：`by_material` 3 组、`uncovered_materials=[扫描版]`；滑块 60000→0→300 逐行贴 `per_call/batches/used`，`truncated=False dropped=0`） |
+
+## 69. R39 「一切显性」铁则 + 提示词可改可恢复 + AI 对话审计（2026-09-10）
+
+> 规格：docs/09 **R39**（地基级铁则，凌驾于所有既有功能）；工单 `.runtime/EULER_TICKET_R39.md`。
+> 顺序按工单 **R38 → R39**；但 **§1 的记账入口已在 R38 之前落地**（`service/ledger.py`），
+> R38 各点**直接调用它**（§68.3）。**提交纪律：R38 与 R39 分开提交，不混提。**
+
+### 69.1 铁则 §1：单一记账入口 + 两处可见
+
+| 件 | 说明 |
+|---|---|
+| **`service/ledger.py`（新）** | **唯一入口**：`collector()`（一次操作的收集器）/`note()`（深层代码轻入口）/`write()`（落库）。类别：材料吸纳 `material` · 生成与校验 `generation` · 模型调用 `model_call` · 覆盖 `coverage` · 其它 `other` |
+| **字段** | 时间 · 类别（+中文标签）· 对象（材料/单元/题号）· **原因（中文）** · 影响面 · 可否补救（+ `detail_json`、`subject_id/unit_id`） |
+| **落库** | 新表 `content_ledger`（**新数据建表正当**）；写库失败**不影响主流程** |
+| **两处可见** | ① 就地：`collector` + API 响应 `ledger[]`（前端 `LedgerAlerts.tsx`）；② 总账页 `/ledger`（按学科/类别筛 + 计数） |
+| **禁止** | 各处自行 `print`；**只在 prompt 尾部提一句**（旧毛病，已删）；**拿日志文件当交付** |
+
+**接入点全量**：材料（未注入/未进批次/安全阀/单块超限/超上限/无材料）、预算滑块与材料角色、
+大纲起草（无 key/AI 失败降级/溯源驳回与剔除）、单元出稿（题·事实句·小思考丢弃、降级启发式、
+启发式也不通过、整单元未出稿）、**日限额拦截**（`ai/provider.py`）、**审计写入失败**、
+**审计文件清理**、**提示词改动/恢复/读库或渲染失败回退默认**。
+
+### 69.2 §2：所有提示词可在程序内修改 + 一键恢复默认
+
+- **单一注册表** `ai/prompt_templates.py`：**15 个调用点**（＝`ai.calls.CALLS` 全集）逐个声明
+  `label/purpose/system/user/必填占位符/必留硬约束`；用例 **锁死注册表 == CALLS**（"一处不漏"的机器保证）。
+- **模板语法**：`{placeholder}` 由程序注入；字面花括号写 `{{` `}}`（渲染后**逐字还原**旧文本）。
+- **改动立即生效**：所有调用点经 `ai/prompt_runtime.render_pair()` 取**用户改过的**模板
+  （网关 + `outline/draft.py` + `outline/generate.py` 三处统一）——此前 outline 两条路径直接读默认模板，
+  **已修**（那正是"改了提示词却不生效＝静默失效"的隐患）。
+- **存储**：新表 `prompt_overrides(call_name PK, system_text, user_text, updated_at)`（**不塞 `subjects.meta_json`**）。
+- **拒存防线（中文 422）**：缺必填占位符 / 缺必留硬约束 / 模板花括号不合法（报错并教"双花括号"）；**拒存不落库**。
+- **可回溯**："哪次生成用哪版"→ 审计 `prompt_versions`（`default:<call>` / `custom:<call>@<时间>`）。
+- **界面**：设置 →「提示词」页（左列调用点 + 右编辑器 + 当前值/是否默认/上次修改时间 +
+  **与默认的差异行** + 单条/全部恢复（确认）+ 保存前提示"改动会影响生成结果"）。
+
+### 69.3 §3：提示词监听 / AI 对话审计（含调试模式）
+
+- **每次调用一条**：时间 · 调用点 · 档位 · 模型 · 渲染后 system/user · 原始返回 · 解析/校验结果 ·
+  **重试次数** · token · 耗时 · **最终结局**（采纳/降级/丢弃/失败）· **提示词版本** · 学科/单元。
+- **存储（防库爆）**：元数据入 `ai_logs`（**扩既有表**；旧库由 `db._migrate_columns` 幂等补列）；
+  全文落 `.runtime/ai_trace/<时间>-<调用点>-<id>.txt`（`MF_AI_TRACE_DIR`），DB 只存**路径+预览(600字)+字符数**；
+  保留期 `MF_AI_TRACE_KEEP_DAYS`（默认 30 天）。
+- **默认记录**：`write_trace` 无 sink 时自动落 `ai_logs`（provider 与 outline 两条路径都留证据）；
+  调试开关只决定**界面入口**是否出现。
+- **界面**：`AiTracePage.tsx`（侧栏入口随开关出现）：时间倒序、可按学科/调用点/是否失败筛、
+  **失败与丢弃置顶 + 红色**；点开：**上＝发给 AI 的完整内容（system/user 分区折叠）**，
+  **下＝AI 返回的完整内容**（等宽、可全文展开）+ 顶部一行摘要；**非流式**；超长只渲染前 20 万字。
+- **红线**：全文**遮蔽疑似密钥**（`redact` → `[已隐去]`）；记录不阻塞主流程；写文件失败记账；
+  文件缺失 → 详情页**如实说明 + 预览兜底**。
+
+### 69.4 铁则"造错必报"用例（≥5 类，每类界面可见 + 中文原因）
+
+| # | 类别 | 用例 | 断言 |
+|---|---|---|---|
+| ① | 材料吸纳 | `test_r39_ironclad_1_material_not_absorbed_is_in_ledger` | 响应 `ledger` 有 `material` 条目 + 原因含"未被注入/健康度"；`/ledger?category=material` 可筛 |
+| ② | 生成与校验 | `test_r39_ironclad_2_dropped_exercise_is_in_ledger` | `generation` 条目含"丢弃" + 有"可否补救"；覆盖状态记"部分" |
+| ③ | 生成失败降级 | `test_r39_ironclad_3_ai_failure_degrade_is_in_ledger` | `model_call` 含"降级…启发式" + 原始错误入 `detail` |
+| ④ | 模型调用（日限额） | `test_r39_ironclad_4_daily_token_cap_blocked_is_in_ledger` | 账本含"额度已用尽"；审计 `outcome=failed` 一条 |
+| ⑤ | 覆盖（未出稿） | `test_r39_ironclad_5_uncovered_unit_is_in_ledger` | `coverage` 条目 + `/coverage` 该单元 `status=未覆盖` |
+| ⑥ | 其它 | `test_r39_ironclad_6_...`、`test_r39_audit_write_failure_is_logged` | 提示词改动 / 审计清理 / 审计写入失败 三类都在 `other` 下可见 |
+
+### 69.5 验收自证（逐条实测）
+
+| R39 验收项 | 证据 |
+|---|---|
+| 提示词：改一条 → 生成用新版（审计对照） | `test_r39_prompt_edit_takes_effect_and_is_visible_in_audit` |
+| 单条 / 全部恢复默认 | `test_r39_prompt_reset_one_and_all`（`changed == []`） |
+| 删占位符/硬约束 → **中文拒存** | `test_r39_prompt_missing_required_is_rejected_zh`（4 组；库内仍默认） |
+| 模板语法错 → 中文拒存 | `test_r39_prompt_bad_template_syntax_is_rejected_zh` |
+| 审计：每次调用一条 + 完整展开 | `test_r39_audit_one_record_per_call_with_full_expand` |
+| 长 prompt（>10 万字）不卡界面 | `test_r39_audit_long_prompt_is_served_whole_but_ui_caps_render` |
+| 失败/丢弃置顶 + 红色 | `test_r39_audit_failed_call_records_retries_and_ranking`（`retries==2`） |
+| **无 API Key 泄漏** | `test_r39_audit_no_api_key_leak`（上游回显 `sk-…` → 文件里 `[已隐去]`） |
+| **非流式** | 同上用例（`application/json`，非 `text/event-stream`） |
+| 调试模式开关生效 | 活体冒烟：开→True、入口出现、关→False |
+| 真实库活体冒烟 | `.runtime/r38_r39_smoke.out.txt`（15 调用点；保存→差异 4 行→删占位符 422→恢复默认；审计 57 条、最新一条 system 1071 / user 1593 / response 302 字可完整展开） |
+
+### 69.6 回归与基线（本批实测）
+
+| 项 | 基线（R40 验收，`50bdde7`） | 本批实测 |
+|---|---|---|
+| `pytest backend/tests` | 404 passed + 2 skipped / 406 collected | **441 passed + 2 skipped / 443 collected**（+37 用例：R38 15 + R39 22） |
+| `content validate` | ok 26 / 55 | **ok 26 / 55**（逐位一致；本批未动内容） |
+| audit 五学段 | 27/31/81/59/60 | 未跑（需 `MF_ALLOW_LIVE_AI=1` + key）；**只读**的 `audit_material_binding.py s-f2decfcf` 复跑：**9/9、5/5、19%、54%**——**逐位一致** |
+| `tsc --noEmit` / `vite build` | exit 0 / exit 0 | **exit 0 / exit 0** |
+| `semantics_stats()` | {30,0,30,0} | 未变（本批未动模板/闸门） |
+
+**提交链**（分开不混提）：`R38 …` → `R39 …`（见两条提交信息）。
+
+### 69.7 疑点 / 需架构侧确认（§58-17）
+
+1. **账本是否也给"成功路径"记账**：本批只记"异常/偏离"（否则日常噪音淹没）；若要"成功也留账"请明确；
+2. **复习降级回炉未重复记账**：既有 `relearn_logs` + 会话事件已是权威留痕（R30/R27 验收过），避免双源；
+   若要在总账页也看到，在 `service/review.py`/`session.py` 回炉点加一条 `ledger.note(CAT_OTHER, …)` 即可；
+3. **"降档"（think→fast）无独立账目**：目前只有"AI 失败降级"与"日限额拦截"；`ai/tier.resolve` 的
+   `edge/trigger` 降档是否逐次记账？会显著增加账本量（倾向：只在用户显式选轻档或边缘带复评失败时记）；
+4. **提示词 `user` 模板本批只读对照**（可编辑的是 `system`）；接线已就绪（`prompt_store.save(user_text=…)`）；
+5. **审计文件清理目前人工触发 + 保留期参数**（无后台定时任务）；若要自动，`main.lifespan` 一行即可。
 
 
 

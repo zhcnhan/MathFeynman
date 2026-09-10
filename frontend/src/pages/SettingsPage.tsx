@@ -1,14 +1,22 @@
-// 设置页（docs/07：Dashboard/Review 之外 + 画像手调 docs/06 §1；R12 模型模式三档）。
+// 设置页（docs/07：Dashboard/Review 之外 + 画像手调 docs/06 §1；R12 模型模式三档；
+// R39 §2/§3：提示词页入口 + 开发者/调试模式开关 + AI 对话记录入口）。
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, ConfigModels, ProfileData } from "../api";
 import ModelModeSwitch from "../components/ModelModeSwitch";
 import { ModelMode } from "../components/ModelMode";
+
+type AppSettings = {
+  developer_mode: boolean;
+  ai_trace: { dir: string; keep_days: number };
+};
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [cfg, setCfg] = useState<ConfigModels | null>(null);
   const [depth, setDepth] = useState(2);
   const [modelMode, setModelMode] = useState<ModelMode>("smart");
+  const [app, setApp] = useState<AppSettings | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -25,7 +33,23 @@ export default function SettingsPage() {
       .get<ConfigModels>("/config/models")
       .then(setCfg)
       .catch(() => setCfg(null));
+    // R39 §3：开发者/调试模式（决定界面入口是否出现；审计本身默认记录）
+    api
+      .get<AppSettings>("/settings")
+      .then(setApp)
+      .catch(() => setApp(null));
   }, []);
+
+  const toggleDev = async (on: boolean) => {
+    try {
+      const next = await api.put<AppSettings>("/settings", { developer_mode: on });
+      setApp(next);
+      setMsg(on ? "已开启开发者/调试模式：侧栏出现「AI 对话记录」入口。" : "已关闭开发者/调试模式。");
+      window.dispatchEvent(new Event("yanhui:settings-changed"));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
 
   const saveDepth = async () => {
     try {
@@ -98,6 +122,41 @@ export default function SettingsPage() {
             </ul>
           ) : (
             <p className="empty">无法读取模型配置</p>
+          )}
+        </section>
+        <section className="card">
+          <h2>提示词（R39 §2）</h2>
+          <p className="dim" style={{ fontSize: 13 }}>
+            程序里用到的**所有**发往模型的提示词都可以在这里改，并随时恢复默认。
+            改动立即生效；删掉必填占位符/硬约束会被**中文拒存**。
+          </p>
+          <p>
+            <Link className="button-link" to="/prompts">打开「提示词」页 →</Link>
+          </p>
+          <h2>开发者 / 调试（R39 §3）</h2>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={!!app?.developer_mode}
+              onChange={(e) => void toggleDev(e.target.checked)}
+            />
+            开启「AI 对话记录」（提示词监听 / 对话审计）
+          </label>
+          <p className="dim" style={{ fontSize: 12 }}>
+            注意：审计**默认记录**（不靠本开关决定“要不要留证据”），本开关只控制界面入口是否出现。
+            全文落本地文件（{app?.ai_trace?.dir ?? "—"}），库内只存路径 + 预览 + 字符数；
+            界面**不流式**、加载完再看；失败与丢弃项在列表里**置顶并红色标记**。
+            {app?.ai_trace && (
+              <>
+                <br />
+                审计目录：{app.ai_trace.dir}（保留期 {app.ai_trace.keep_days} 天；清理会记入总账）
+              </>
+            )}
+          </p>
+          {app?.developer_mode && (
+            <p>
+              <Link className="button-link" to="/ai-traces">打开「AI 对话记录」→</Link>
+            </p>
           )}
         </section>
       </div>

@@ -160,6 +160,33 @@
 > ——那是 R35 的最终验收，也是**非数学路径的第一次真考试**（架构侧 §17 收口，NOTES §58-1）。
 > 开工入口照旧：**本节 → `IMPLEMENTATION_NOTES §58`（挂账总表）→ `docs/09` R35/R35b §18 与 §66 相关裁决**。
 
+> **R38（材料注入预算用户可控 · 两个滑块）+ R39（「一切显性」铁则 + 提示词可改 + AI 对话审计）
+> 已完成（Euler，2026-09-10 · 待架构侧验收）**：
+> ① **R38**：`GET/PUT /subjects/{sid}/budget`（单次调用预算＝滑块 A：20k/60k/150k/**不限 0**；
+> 总注入上限＝滑块 B，默认不限；优先级 请求 > 学科 > `.env` > 内置；非法值中文 422）；
+> 前端**材料区**滑块面板（当前值 + 来源 + 上一轮注入总量/批次数 + 逐材料明细 + 未纳入清单）；
+> 无标题 PDF **按页合并成章级单元**（`MF_PAGE_UNIT_CHARS`=8000，页号保留可下钻）；
+> **A4 安全阀**（超上下文自动分批 + 中文说明"本书较大，已分 N 批处理"）；
+> **多材料合并**（一份章节地图 + 每节标来源 + 覆盖账跨材料 + 未覆盖清单**按材料分组** +
+> 未纳入者显式列出）+ **材料角色**（主教材/补充材料/未标注→导入顺序）。
+> **调小滑块不丢章节**有**造错用例**（60000→300：批次数上升、归一化内容逐字相同）。
+> ② **R39 铁则**：新 `service/ledger.py` + `content_ledger` 表＝**唯一记账入口**（材料吸纳/生成与校验/
+> 模型调用/覆盖/其它 五类），**两处可见**（就地 `LedgerAlerts` + 总账页 `/ledger`）；
+> §69.4 六类造错用例（材料未被纳入 / 题被校验丢弃 / AI 失败降级启发式 / **日限额拦截** /
+> 单元未出稿 / 提示词改动与审计失败·清理）。
+> ③ **提示词**：`ai/prompt_templates.py` 注册 **15 个调用点**（用例锁死 == `ai.calls.CALLS`）+
+> `ai/prompt_runtime.py`（**所有**调用点读用户改后的模板——含 outline 两条自建 provider 路径）+
+> `prompt_overrides` 表 + 设置页「提示词」页（改/单条恢复/全部恢复/差异行/必填占位符缺→中文拒存）。
+> ④ **审计**：`ai_logs` 扩字段 + 全文落 `.runtime/ai_trace/`（DB 只存路径+预览+字符数）+
+> 调试开关 + 「AI 对话记录」页（失败置顶、**非流式**、可全文展开、**无密钥泄漏**、
+> 写文件失败/清理都记账）；`>10 万字`接口给全文、界面折叠并限 20 万字渲染。
+> ⑤ 回归 **440 passed + 2 skipped / 442 collected**；`content validate` 26/55；
+> `audit_material_binding` 逐位一致；`tsc`/`build` exit 0；
+> 活体冒烟（真实库）见 `.runtime/r38_r39_smoke.out.txt`。
+> 记录：NOTES **§68（R38）/ §69（R39）**；融合对照表 §67.4b；挂账 §58-17（本批 7 条待裁）。
+> **下一批入口**：架构侧对 §58-17 七条 + §68.4「总注入上限口径」裁决后，再做 R40 遗留
+> （材料过短条目合并/跳过的记账 + "有书时 count 失效"的 UI 说明）。
+
 ## 4. 环境速查（新人必读）
 - 服务：`powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`（前端 5173 / 后端 8000）；
   停止 `scripts\stop.ps1`；日志 `.runtime/backend.err.log`。
@@ -183,16 +210,21 @@
   `MF_MATERIAL_BATCH_CHARS`（默认 60000，按章/页边界分批）、`MF_MATERIAL_MIN_CHARS_PER_PAGE`（默认 40，
   扫描版判定）、`MF_MATERIAL_MIN_TEXT_PAGE_RATIO`（默认 0.5）；旧名 `MF_OUTLINE_MATERIAL_MAX_CHARS`
   仅在**显式设置**时生效（回落 R36 截断口径）。
-- 当前基线（**Euler 于 R37 收尾批复跑确认，2026-09-10**）：pytest **403 passed + 2 skipped**
-  （405 collected，exit 0；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
-  均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60）；
-  content validate **ok 26 节点 / 55 练习**（含 R37 重建的 `s-f2decfcf.u01`；R35b 时为 25/50——
-  差的 1 节点 4 练习即该学科旧样本，R37 重建后为 1 节点 5 练习）；
+  **R38 新增**：`MF_PAGE_UNIT_CHARS`（默认 8000；无标题 PDF 按页**合并成章级单元**的目标大小，0=关闭合并）、
+  `MF_CONTEXT_TOKEN_LIMIT`（默认 120000；"字符≈token"的安全阀上限，超过就自动分批 + 中文说明）；
+  两个滑块（单次调用预算 / 总注入上限）按**学科**存 `subjects.meta_json`（前端：学科管理卡 → 材料区）。
+  **R39 新增**：`MF_AI_TRACE_DIR`（默认 `.runtime/ai_trace`，审计全文落盘目录）、
+  `MF_AI_TRACE_KEEP_DAYS`（默认 30，保留期；`POST /api/ai-traces/cleanup` 按它清理并记账）。
+- 当前基线（**Euler 于 R38+R39 收尾批复跑确认，2026-09-10**）：pytest **440 passed + 2 skipped**
+  （**442 collected**，exit 0；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
+  均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60，
+  需真模型/未在本批复跑）；**只读**审计 `audit_material_binding.py s-f2decfcf` 复跑＝
+  **9/9、5/5、19%、54%（逐位一致）**；content validate **ok 26 节点 / 55 练习**；
   前端 `npx tsc --noEmit` + `vite build` 均通过；git 仓库不含 data/、_drafts。
   > 注：**pytest 数字不随真实库清空变化**——`backend/tests/conftest.py` 在导入 app 之前就隔离了
   > `MF_DB_PATH`（临时库）与 `MF_CONTENT_ROOT`（会话级内容副本），真实库与测试完全隔离。
   > 历史基线：R30 前 306+2 → R30 325+2 → R33 325+2 → R34-fin 325+2 → R35a 349+2 → R35b-P0 358+2
-  > → §13 373+2 → §14 376+2 → §66 392+2 → **R37 403+2**。
+  > → §13 373+2 → §14 376+2 → §66 392+2 → R37 403+2 → R40 404+2 → **R38+R39 440+2**。
 - 工作目录已改名：`D:\DeepseekHarness\YanHui`（旧名 MathFeynman；执行记录见 docs/09 R32 §3）。
 - **数据库（R33 任务 B 已归一为 `backend/data/yanhui.db`，2026-09-10）**：
   - **清空后现状**（docs/15 §3.1 + NOTES §57.2e/§59.2）：`subjects 1`（math，**enabled=0 停用**）、

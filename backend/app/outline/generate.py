@@ -549,12 +549,27 @@ def generate_unit_content(
             "dropped_exercises": len(getattr(report, "dropped_exercises", []) or []),
             "sources": list(pack.get("sources") or []), "note": note,
         })
+        _log_generation_drops(subject_id, unit, report, note, kind="unit_failed")
         return {"status": "uncovered", "node_id": unit.id, "path": "", "subject": subject_id,
-                "unit": unit_id, "note": note, "coverage": {"status": "未覆盖"}}
+                "unit": unit_id, "note": note, "coverage": {"status": "未覆盖"},
+                "ledger": _acc_list()}
     if doc is None:
         lecture = heuristic_lecture(unit)
         facts = heuristic_facts(unit, lecture)
         exercises = heuristic_exercises(unit, sibling_tags=_sibling_tags(subject_id, unit), facts=facts)
+        if use_ai:
+            # R39 §1：AI 两轮都没过 → 降级启发式出稿（**必须显性**，不许静默换内容来源）
+            from ..service import ledger as _ledger
+
+            _ledger.note(
+                _ledger.CAT_GENERATION, f"单元内容（{unit.id}）",
+                "AI 出稿两轮均未通过服务端校验，已**降级为离线启发式内容**"
+                "（本内容不读教材、无教材依据）："
+                + "；".join((a11y_problems or [])[:2] or ["未通过校验"]),
+                impact=_ledger.SCOPE_UNIT, remedy=_ledger.REMEDY_RETRY,
+                subject_id=subject_id, unit_id=unit.id,
+                detail={"attempts": 2, "kind": "degraded_to_heuristic"},
+            )
         doc = build_node_doc(unit, subject_id=subject_id, subject_label=subj.label,
                              exercises=exercises, lecture=lecture, facts=facts,
                              worked_examples=[{
@@ -570,8 +585,17 @@ def generate_unit_content(
         a11y_problems = list(report.problems)
         problems = validate_generic_content(doc) + _answerability_structure_problems(doc, report)
         if problems:
+            from ..service import ledger as _ledger
+
+            _ledger.note(
+                _ledger.CAT_GENERATION, f"单元内容（{unit.id}）",
+                "启发式内容也未通过校验，本单元**出稿失败**（未落盘）：" + "；".join(problems[:3]),
+                impact=_ledger.SCOPE_UNIT, remedy=_ledger.REMEDY_RETRY,
+                subject_id=subject_id, unit_id=unit.id, detail={"kind": "heuristic_failed"},
+            )
             return {"status": "failed", "node_id": unit.id, "path": "", "subject": subject_id,
-                    "unit": unit_id, "note": "启发式内容校验未通过：" + "；".join(problems[:3])}
+                    "unit": unit_id, "note": "启发式内容校验未通过：" + "；".join(problems[:3]),
+                    "ledger": _acc_list()}
     # B3/R37：引用材料可追溯（讲解正文附"教材依据"来源标注）
     refs = _source_refs(pack, material_summaries)
     if refs:
@@ -580,6 +604,7 @@ def generate_unit_content(
         doc.explanation.body += suffix
     # R37 S6：覆盖状态写回大纲单元（完整/部分/未覆盖 + 来源材料/节标签）
     coverage = _coverage_of(report, pack, has_material=has_material)
+    _log_generation_drops(subject_id, unit, report, coverage.get("note", ""), kind="dropped")
     path = _node_file_path(subject_id, unit.id)
     path.write_text(_frontmatter_md(doc), encoding="utf-8")
     from ..service.library import refresh_library, sync_content
@@ -590,12 +615,65 @@ def generate_unit_content(
     _record_coverage(db, subject_id, unit.id, coverage)
     if not out_report.ok:
         return {"status": "failed", "node_id": unit.id, "path": str(path), "subject": subject_id,
-                "unit": unit_id, "note": "；".join(out_report.errors[:3])}
+                "unit": unit_id, "note": "；".join(out_report.errors[:3]), "ledger": _acc_list()}
     return {"status": "created", "node_id": unit.id, "path": str(path), "subject": subject_id,
-            "unit": unit_id, "coverage": coverage,
+            "unit": unit_id, "coverage": coverage, "ledger": _acc_list(),
             "note": (f"出稿：{'AI（教材锚定）' if use_ai and has_material else ('AI' if use_ai else '启发式')}"
                      + (f"；覆盖状态：{coverage['status']}" if has_material else
                         "；本内容无教材依据（该学科无引用材料）"))}
+
+
+def _acc_list() -> list[dict]:
+    """当前操作的账目（就地提示用；无收集器 → 空）。"""
+    from ..service import ledger
+
+    acc = ledger.current()
+    return acc.to_list() if acc is not None else []
+
+
+def _log_generation_drops(subject_id: str, unit, report, note: str, *, kind: str) -> None:
+    """R39 §1：把**题 / 事实句 / 小思考被丢弃**逐类记账（"静默丢弃"的重灾区）。"""
+    from ..service import ledger
+
+    if report is None:
+        return
+    dropped_facts = list(getattr(report, "dropped_facts", []) or [])
+    dropped_ex = list(getattr(report, "dropped_exercises", []) or [])
+    dropped_asks = list(getattr(report, "dropped_asks", []) or [])
+    if dropped_facts:
+        ledger.note(
+            ledger.CAT_GENERATION, f"单元内容（{unit.id}）· 事实句",
+            f"{len(dropped_facts)} 条「已声明事实句」因**教材原文里找不到对应句子**被丢弃"
+            "（R37 S5 教材锚定；丢弃原因见明细）",
+            impact=ledger.SCOPE_UNIT, remedy=ledger.REMEDY_RETRY,
+            subject_id=subject_id, unit_id=unit.id,
+            detail={"count": len(dropped_facts), "items": dropped_facts[:8], "kind": kind},
+        )
+    if dropped_ex:
+        ledger.note(
+            ledger.CAT_GENERATION, f"单元内容（{unit.id}）· 练习题",
+            f"{len(dropped_ex)} 道题因**依据引文不成立**被丢弃（该题不落盘，其余题保留）",
+            impact=ledger.SCOPE_UNIT, remedy=ledger.REMEDY_RETRY,
+            subject_id=subject_id, unit_id=unit.id,
+            detail={"count": len(dropped_ex), "items": dropped_ex[:8], "kind": kind},
+        )
+    if dropped_asks:
+        ledger.note(
+            ledger.CAT_GENERATION, f"单元内容（{unit.id}）· 小思考",
+            f"{len(dropped_asks)} 条「小思考」因依据引文不成立被丢弃（模板套话不再兜底）",
+            impact=ledger.SCOPE_UNIT, remedy=ledger.REMEDY_RETRY,
+            subject_id=subject_id, unit_id=unit.id,
+            detail={"count": len(dropped_asks), "items": dropped_asks[:8], "kind": kind},
+        )
+    if kind == "unit_failed":
+        # 覆盖类：整单元未出稿（教材未覆盖/无字面接地）——"覆盖未完成"必须显性
+        ledger.note(
+            ledger.CAT_COVERAGE, f"单元内容（{unit.id}）",
+            "该单元**未能出稿**（教材未覆盖/无字面接地），覆盖账里记为未覆盖：" + str(note)[:160],
+            impact=ledger.SCOPE_UNIT, remedy=ledger.REMEDY_CONFIRM,
+            subject_id=subject_id, unit_id=unit.id,
+            detail={"kind": kind, "note": str(note)[:300]},
+        )
 
 
 def _source_refs(pack: dict, material_summaries: list[dict] | None) -> str:
@@ -682,8 +760,10 @@ def _ai_draft(
     必须注入 prompt 并给出硬约束——讲解是该段的完整演绎（可换措辞/举例，不得省略要点、
     不得加教材外事实）；`taught_facts[].text` 与 `basis.quote` 必须**逐字出自教材**。
     ⚠️ 新增输出字段三处同改（R36 §8 纪律）：`ai/calls.py` schema + 本 prompt + 往返用例。
+    R39 §2：system/user 模板取自**可编辑的提示词注册表**（设置里改后**立即生效**）。
     """
     from ..ai.calls import CALL_UNIT_CONTENT
+    from ..ai import prompt_runtime
     from ..ai.provider import OpenAICompatibleProvider
     from ..config import get_settings
     from ..service.ai_sink import make_ai_log_sink
@@ -698,55 +778,33 @@ def _ai_draft(
         f"- 「{m.get('title', '')}」{m.get('source', '')}: {m.get('summary', '')}"
         for m in (material_summaries or [])
     ) or "（无）"
-    sys = (
-        "你是学科内容作者。为一门课的知识点单元写学习内容：输出 JSON："
-        '{"lecture":"Markdown 讲解（含 1 个直观例子）",'
-        '"taught_facts":[{"id":"f1","text":"讲解里逐字出现过的一句话"}],'
-        '"derivable":[{"conclusion":"可由已述事实推出的结论","premises":["f1","f2"],"rule":"所用规则"}],'
-        '"worked_examples":[{"prompt":"例题题干","solution_steps":["步骤1","步骤2"]}],'
-        '"asks":[{"ask":"引导确认/小思考（学生应能自己回答）","basis":{"fact_ids":["f1"],"quote":"讲解原文引文"}}],'
-        '"feynman_task":"费曼口述任务（一段话）",'
-        '"exercises":[{"kind":"boolean|choice|fill","prompt":"…",'
-        '"answer_bool":true（boolean 用）,"options":[…],"answer_index":0（choice 用,0 起）,'
-        '"expected":"…","aliases":[…]（fill 用）,'
-        '"basis":{"fact_ids":["f1"],"quote":"讲解原文里逐字出现的一句依据"}}]}\n'
-        "**可答性硬要求（R35，违反即被服务端丢弃）**：\n"
-        "1) 零基础假设：学习者**只读过本单元讲解**，没教过的一律当不会（不许假设常识/课外知识）；\n"
-        "2) `taught_facts[].text` 必须是**讲解里逐字出现过**的句子（≥6 字，不得改写）；\n"
-        "3) 每道题/每条 asks 必须带 `basis`：`fact_ids` 只能引用上面声明的事实 id，"
-        "`quote` 必须**逐字出自讲解**（≥6 字）；\n"
-        "4) **只能问讲解讲过的东西**：可以复述已述事实，或由 ≥2 条已述事实经 `derivable` 里的规则推出；"
-        "**不许问个体比较/排序/课外事实**（例：讲了「整类体积大」就不能问「哪一个最大」）；\n"
-        "5) 讲解写了整类的性质时，**不要**出需要个体之间比较的题；\n"
-        "6) `worked_examples` **至少 1 个**（示范如何合法作答）；`asks` 1–3 条，"
-        "指代必须明确（禁止「这个概念/它」这类无指向的说法）；\n"
-        "7) `exercises` 3–5 道且**至少含 2 种题型**、题面互不相同；判断陈述明确可判；讲解简洁准确。\n"
-        "**教材锚定硬要求（R37，违反即被服务端丢弃/整单元失败）**：\n"
-        "8) 有教材段落时，你的讲解必须是**该段教材的完整演绎**——逐个要点讲到（不得省略要点），"
-        "可以换措辞、举例、类比、衔接，但**不得引入教材没有陈述的事实/数字/结论**；\n"
-        "9) `taught_facts[].text` **必须逐字摘录自教材段落原文**（服务端会用引文尺子在教材原文里查；"
-        "抄写时不要改写、不要补字、不要合并两句）；\n"
-        "10) 每道题/每条 asks 的 `basis.quote` 也必须**逐字出自教材段落原文**"
-        "（而不是只出自你自己的讲解）；教材里找不到依据的题，服务端会**丢弃该题**；\n"
-        "11) 教材段落没讲到的内容**一律不写、不问**——宁可少讲，不得编造。"
-    )
+    material_discipline = ""
     if material_text:
         entries = "、".join(material_entries or []) or "（见下文）"
-        sys += f"\n**本单元对应的教材段落**（{entries}）：必须逐字引用其中的句子作为事实与依据。"
-    user = (
-        f"学科：{subject_id}\n单元：{unit.title}\n学习目标：" + "；".join(unit.objectives) +
-        f"\n概念标签：{'、'.join(unit.concept_tags)}\n引用材料摘要：\n{mats}\n"
+        material_discipline = (
+            "\n**本单元对应的教材段落**（" + entries + "）：必须逐字引用其中的句子作为事实与依据。")
+    sys, user, version = prompt_runtime.render_pair(
+        "unit_content_draft",
+        system_vars={"material_discipline": material_discipline},
+        user_vars={
+            "subject_id": subject_id,
+            "unit_title": unit.title,
+            "objectives": "；".join(unit.objectives),
+            "concept_tags": "、".join(unit.concept_tags),
+            "mats": mats,
+            "material_block": (
+                "\n===== 教材段落（**权威真源**：讲解与题目只能由它出，不得引入其外的事实）=====\n"
+                + material_text + "\n===== 教材段落结束 =====\n"
+                if material_text else ""),
+            "errors_block": (f"\n[上一轮未通过自动校验]\n" + "\n".join(errors[:6]) if errors else ""),
+        },
+        subject_id=subject_id, unit_id=unit.id,
     )
-    if material_text:
-        user += ("\n===== 教材段落（**权威真源**：讲解与题目只能由它出，不得引入其外的事实）=====\n"
-                 + material_text + "\n===== 教材段落结束 =====\n")
-    user += "请起草本单元学习内容。"
-    if errors:
-        user += (f"\n[上一轮未通过自动校验]\n" + "\n".join(errors[:6]))
     out = provider.chat_json(
         CALL_UNIT_CONTENT,
         [{"role": "system", "content": sys}, {"role": "user", "content": user}],
         strategy="fast",
+        audit={"subject_id": subject_id, "unit_id": unit.id, "prompt_versions": version},
     )
     data = out.parsed
     exercises: list[ExerciseDoc] = []

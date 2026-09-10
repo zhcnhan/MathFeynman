@@ -82,6 +82,27 @@ def _migrate_columns(engine) -> None:
             missing.append("ALTER TABLE subjects ADD COLUMN removed_at DATETIME")
     except sa.exc.NoSuchTableError:
         pass
+    # R39 §3：ai_logs 审计扩字段（旧库补列；新库由 create_all 建齐）
+    try:
+        acol = {c["name"] for c in insp.get_columns("ai_logs")}
+    except sa.exc.NoSuchTableError:
+        acol = None
+    if acol is not None:
+        for name, ddl in (
+            ("subject_id", "TEXT NOT NULL DEFAULT ''"),
+            ("unit_id", "TEXT NOT NULL DEFAULT ''"),
+            ("retries", "INTEGER NOT NULL DEFAULT 0"),
+            ("outcome", "TEXT NOT NULL DEFAULT 'adopted'"),
+            ("prompt_versions", "TEXT NOT NULL DEFAULT ''"),
+            ("trace_path", "TEXT NOT NULL DEFAULT ''"),
+            ("trace_chars", "INTEGER NOT NULL DEFAULT 0"),
+            ("system_preview", "TEXT NOT NULL DEFAULT ''"),
+            ("user_preview", "TEXT NOT NULL DEFAULT ''"),
+            ("response_preview", "TEXT NOT NULL DEFAULT ''"),
+            ("parse_result", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if name not in acol:
+                missing.append(f"ALTER TABLE ai_logs ADD COLUMN {name} {ddl}")
     for stmt in missing:
         with engine.begin() as conn:
             conn.execute(sa.text(stmt))
