@@ -269,8 +269,11 @@ def regenerate_outline(subject_id: str, db: Session = Depends(get_db),
     from ..outline.draft import draft_outline as _draft
 
     b = body or DraftOutlineBody()
-    return _draft(subject_id, brief=b.brief, count=b.count, group_hint=b.group_hint,
-                  materials=_draft_materials(db, subject_id))
+    try:
+        return _draft(subject_id, brief=b.brief, count=b.count, group_hint=b.group_hint,
+                      materials=_draft_materials(db, subject_id))
+    except OutlineError as e:
+        raise _outline_err(e) from e
 
 
 class DraftOutlineBody(BaseModel):
@@ -295,8 +298,10 @@ def _draft_materials(db: Session, subject_id: str) -> dict | None:
 def draft_outline(subject_id: str, body: DraftOutlineBody, db: Session = Depends(get_db)) -> dict:
     """AI/启发式起草大纲候选（不落盘）→ UI 预览 → PUT 采纳（docs/14 §2.1 · A4）。
 
-    R36 D1/D2：注入该学科**引用材料**（分节摘要，受预算约束）；**材料可选**——无材料时退化为
-    仅按 brief 起草，不报错；有材料时要求逐单元 `materials:[{title,section}]` 溯源（服务端校验，不成立则驳回重生成一次）。
+    R36 D1/D2 → R37 S1/S2/S8：注入该学科**教材的章 → 节地图 + 完整正文**（默认不设预算，
+    书太大时按章/页分批）；**材料可选**——无材料时退化为仅按 brief 起草，不报错（如实标注无教材依据）；
+    有材料时要求逐单元 `materials:[{title,section}]` 溯源（服务端校验，不成立则驳回重生成一次），
+    并做**全覆盖校验**（未映射的章/节按教材目录补齐并记问题）；教材是扫描版 → 中文 422。
     """
     _require_enabled(db, subject_id)
     row = outline_store.get_subject(db, subject_id)
@@ -304,9 +309,11 @@ def draft_outline(subject_id: str, body: DraftOutlineBody, db: Session = Depends
         raise _err(409, "conflict", "预置学科大纲由课程蓝图（roadmap）治理，请使用派生/再生成接口")
     from ..outline.draft import draft_outline as _draft
 
-    return _draft(subject_id, brief=body.brief, count=body.count, group_hint=body.group_hint,
-                  materials=_draft_materials(db, subject_id))
-
+    try:
+        return _draft(subject_id, brief=body.brief, count=body.count, group_hint=body.group_hint,
+                      materials=_draft_materials(db, subject_id))
+    except OutlineError as e:
+        raise _outline_err(e) from e
 
 @router.post("/subjects/{subject_id}/units/{unit_id}/content")
 def generate_unit_content(subject_id: str, unit_id: str, db: Session = Depends(get_db)) -> dict:

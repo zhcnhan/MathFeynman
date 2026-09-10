@@ -48,7 +48,7 @@ def materials_dir(subject_id: str) -> Path:
 
 # ---------- R37 S7：文本层健康度（扫描/图片版 PDF 的诚实边界） ----------
 THIN_CHARS_PER_PAGE = 40      # 每页平均字符数下限（低于此值视为"没提取到文字"）
-MIN_PAGES_FOR_HEALTH = 3      # 页数过少（粘贴文本/短材料）不做扫描版判定
+MIN_PAGES_FOR_HEALTH = 5      # 页数过少（粘贴文本/短材料）不做扫描版判定
 EMPTY_PAGE_CHARS = 20         # 单页字符数低于此值视为"空白页"
 
 
