@@ -2813,11 +2813,92 @@ check(quote, source, *, where=…) -> (bool, str)
 校验器实现只比对**同文件内**前置 → **只会漏检、不会误拒**，与架构侧结论一致（**非缺陷**，登记备查）。
 
 ### 61.7 本批自曝（纪律）：ad-hoc 探针污染过真实内容库
-
 调试可答性判定时用了一个临时探针脚本（只隔离了 `MF_DB_PATH`，**未隔离 `MF_CONTENT_ROOT`**）
 → 在**真实 `content/`** 下写入了 `content/subjects/r35probe/`（outline.yaml + 空 materials 目录），
 并被本批第一次提交 `f9e68c8` 一并带上。**处置**：`8b0fe8a` `git rm` 删除 + 磁盘清理 + 复核
 （`content/subjects` 仅 `math/`；`content validate` 仍 ok 25/48；真实库无 `r35probe` 行——探针当时用的是临时库）。
 **教训（写入纪律）**：**调试脚本必须同时隔离 `MF_CONTENT_ROOT` 与 `MF_DB_PATH`**（`conftest.py` 就是这么做的），
 只隔离 DB 不够；提交前一律 `git status` 检查是否混入 `content/` 产物。
+
+---
+
+## 62. R35b · P0：S6 🤔 小思考对齐 + S7「这题我没法答」反馈入口（2026-09-10）
+
+> 架构侧 R35 §11 三条裁定已照办：`taught_facts` **不落 concepts 表**（改为给 `TaughtFact` 加**可选
+> `concept_id`** 指向既有注册表，见 §62.4）、数学参数化题采 **模板级 basis + 降优先级**、
+> 审计脚本**不随常规 CI**（docstring 已写明"这是工具，不是测试"）。
+
+### 62.1 S6（P0）已落地
+
+| 件 | 实现 | 复用点 |
+|---|---|---|
+| 依据字段 | `ai/calls.py`：`CiteBasis{fact_ids,quote,premises,rule}`（**声明在 schema**，R36 §8 三处同改）；`ExplainOut.asks_basis`（与 `asked_to_confirm` **按下标对齐**）；`ExplainIn.taught_facts`（可选） | `UnitContentBasis(CiteBasis)` 同一结构，不写两套 |
+| 生成约束 | `OpenAICompatibleGateway.explain_node` 的 task 增硬要求：**每条小思考必须能被"只读过本讲解的零基础学生"答出**、须给 `asks_basis` 引文（≥6 字逐字）、**没有依据就不要出**、禁模板套话（"它与你学过的内容有什么联系"等） | `ai/prompts.py::context_block`（讲解正文 + 白名单注入**原样复用**，未另写 prompt 组装） |
+| 服务端校验 | `gateway.filter_asks()`：引文必须逐字出自**本次讲解或官方讲解稿**（`content/citations.py`，≥6 字）；声明了 `taught_facts` 时 `fact_ids` 必须落在其中；**不合规的那条直接丢弃** | 引文尺子＝`content/citations.py`（**单一实现**） |
+| 离线兜底 | `OfflineGateway`：小思考从讲解里**含该概念的整句**取引文（`sentence_with`）；取不到 → **不出这条** | 同一 `filter_asks` 尺子 |
+| 留档 | `session.py` 把 `asks_basis` 写进 `lecture_cache`（审计/复盘可查） | 既有 `lecture_cache`（不新建存储） |
+
+### 62.2 S7（P0）已落地
+
+| 件 | 实现 | 复用点 |
+|---|---|---|
+| 投诉入口 | `POST /api/exercises/unanswerable` `{node_id, exercise_id, session_id?, message?}` → **中文**回应「已记录：这题不计失败、不扣分…」 | 复用 `service.feedback.record` |
+| 存储 | `feedback.KINDS += "answerability"`（**同一张表、加一种 kind，不建表**） | `models.Feedback`（既有 `kind/exercise_id/status/result`） |
+| **不计失败/不扣分** | 端点**不写 `attempts`**、不动掌握度/连对/额度；若正卡在会话里的这道题 → `_clear_current_if_matches()` 把 `practice.current` 清空并 `attempts_this=0`（**换一题，无失败记录**） | 复用既有 practice flow 字段 |
+| 护栏口径 | `guardrails.KINDS += "answerability"` → 与纠错反馈**同一问题率**（`TRIP_RATIO=0.3`），不另立阈值 | `service/guardrails.py`（原样复用） |
+| 内容修正 | auto 节点按**既有反馈闭环**后台重生成（"这题没法答"＝内容缺陷 → 修生成器，不是改这一题） | `feedback.spawn_auto_regen` |
+
+### 62.3 融合对照表（§3b 验收项 · 本批部分）
+
+| 新增件 | 复用点 | 断言 / 用例 |
+|---|---|---|
+| `taught_facts` 声明 | 概念层（**同源口径**）：不落表，`concept_id` 指向既有 `concepts` 注册表（§62.4） | `test_gate_drops_fact_not_verbatim_in_lecture` |
+| 问题 `basis` 引文纪律 | `content/citations.py`（R36 已收敛，`MIN_QUOTE_CHARS=6`） | `test_citation_ruler_is_shared_with_feynman_evidence`（R35a）+ `test_filter_asks_keeps_only_cited_ones` |
+| S6 小思考约束 | `ai/prompts.py::context_block` + 既有 `ExplainOut.asked_to_confirm` | `test_offline_gateway_ask_requires_lecture_basis` / `test_session_payload_asks_are_all_backed` |
+| S7 可答性投诉 | `feedback` 表加 `kind`（**不建表**）+ `guardrails.KINDS` | `test_feedback_kind_answerability_registered_in_guardrails` / `test_report_unanswerable_records_feedback_without_penalty` |
+| S7 不计失败 | 既有 practice flow（`current`/`attempts_this`） | `test_clear_current_exercise_replaces_question`（断言 attempts 与 user_nodes 计数不变） |
+| 错误/提示文案 | `api/errors_zh.py` 口径（端点回中文；HTTPException 走既有 `{detail:{error:{code,message}}}`） | `test_report_unanswerable_rejects_unknown_exercise_zh` |
+| AI 输出字段 | R36 §8 纪律（schema + prompt + 往返用例） | `test_explain_call_schema_carries_asks_basis` |
+| **S3 挑战题 / S4 追问 / P4 机器校验 / 数学模板级 basis** | —— | **本批未做**（见 §62.5，附件为下一批计划） |
+
+### 62.4 `TaughtFact.concept_id`（架构侧裁定 1 的落地）
+
+- `content/schemas.py::TaughtFact` 增**可选** `concept_id`；`answerability.clean_facts` 归一保留；
+  校验（R35b 补）：`concept_id` 若给出，**必须指向已注册概念**（`concepts` 表 / 大纲 `concept_tags`），
+  否则该事实句**剔除并记问题**——"讲过的概念"与"考的概念"因此共用同一套 id，而"这句事实"仍留在节点内。
+- ⚠️ 本批只落**字段 + 校验器接口**；把节点事实与注册表的**批量对齐**（内容侧回填）留 R35b 收尾。
+
+### 62.5 本批未做（下一任照做）
+
+① **S3 挑战题双池**（可开始/取消/放弃 + 「挑战一下」单独调模型 + **不得**污染账本/mastery/额度/掌握统计）；
+② **S4 追问 `reteach`**（学生无引用内容 → 禁止硬造发散题）；③ **P4 机器校验**（R36 欠账）；
+④ 数学路径**模板级 basis**（降优先级）；⑤ 全库审计 + 用户新建 PDF 学科的 A2 证据；⑥ docs/06、docs/07 同步。
+
+### 62.6 s27 体检结果（架构侧 A5 靶子 · 真模型审计，`--nodes primary.s27`）
+
+`.runtime/r35_s27_audit.txt`（明细 JSON：`%TEMP%\mf_r35_audit_20260910-181105.json`）：
+**6 项受检 → ❌ 不可答 2 项**（讲解 778 字 · 练习 1 · 例题 1 · **taught_facts 0** · socratic 3）：
+
+| 项 | 结果 | 原因（审计原文摘要） |
+|---|---|---|
+| `exercise[ex1]` | ❌ 不可答 | 渲染为「求 5 和 5 的最小公倍数」；讲解只给了 12/18 的例子与 LCM 定义，**没有"相同数/倍数关系"情形的结论** |
+| `socratic[2]` | ❌ 不可答 | 「如果两个数中一个是另一个的倍数，它们的最大公因数和最小公倍数分别是什么？」——**讲解没有该结论**（正是 R35 要治的"问超纲"） |
+| `socratic[1]` / `socratic[3]` / 费曼任务 / 例题 | ✅ 可答（4 项） | — |
+
+**由该审计顺带发现的 P0 内容缺陷（比"不可答"更严重：答案本身错）**——`primary.s27` 的 `ex1` 模板：
+`prompt="求 {a} 和 {b} 的最小公倍数，其中 {b} 是 {a} 的倍数"`、**`constraint=None`（条件未强制）**、
+`answer_expr="a*b"`。实测渲染：
+
+```
+seed=1: 求 5 和 5 的最小公倍数，其中 5 是 5 的倍数。   -> 模板答案 25（正确应为 5）
+seed=2: 求 6 和 8 的最小公倍数，其中 8 是 6 的倍数。   -> 模板答案 48（题干陈述为假；正确 LCM 为 24）
+seed=3: 求 5 和 7 的最小公倍数，其中 7 是 5 的倍数。   -> 模板答案 35（题干陈述为假）
+```
+
+- **两层问题**：① `constraint` 缺失 → **题干可能陈述假事实**；② `answer_expr=a*b` 与"b 是 a 的倍数"矛盾
+  （该条件下 LCM **就是 b**；`a*b` 只在互质时成立，而互质 + 倍数关系在 a≥2 时无解）→ **每次渲染答案都是错的**。
+- 既有 sympy 自检**测不出**这类错：它只验"模板能渲染 + 表达式可解析"，不验"题面条件与答案一致"。
+- **处置建议（R35b P2"数学路径模板级 basis"一并做）**：生成器侧要求 ① `constraint` 必须强制题面所述条件
+  （如 `b % a == 0`）；② `answer_expr` 用 `lcm(a,b)` 之类**与条件自洽**的表达式，禁止"条件+答案"互相矛盾；
+  ③ 该模板**当前仍在库中（用户在库可见）**，建议随 P2 一起重生成。
 

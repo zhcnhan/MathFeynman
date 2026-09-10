@@ -28,10 +28,25 @@ ErrorType = Literal[
 ModelTier = Literal["heavy", "light"]
 
 
+class CiteBasis(BaseModel):
+    """R35 S2/S6：一个问题的**依据**（引用的已述事实 id + 讲解原文引文；推理题另附前提与规则）。
+
+    ⚠️ 必须在 schema 里声明（R36 §8 纪律）：pydantic 默认丢弃未声明字段 ——
+    漏声明会让"模型给了依据、服务端收到空"，整条引文纪律**静默失效**。
+    """
+
+    fact_ids: list[str] = Field(default_factory=list)
+    quote: str = ""
+    premises: list[str] = Field(default_factory=list)  # 仅推理题
+    rule: str = ""                                     # 仅推理题
+
+
 # ---------- 输出 Schema（LLM 必须产出；pydantic 校验） ----------
 class ExplainOut(BaseModel):
     lecture_md: str
     asked_to_confirm: list[str] = Field(default_factory=list)  # 引导确认/提问出口
+    # R35 S6：与 asked_to_confirm **按下标对齐**的依据（无据的那条不下发——模板套话不再兜底）
+    asks_basis: list[CiteBasis] = Field(default_factory=list)
 
 
 class AnswerQuestionOut(BaseModel):
@@ -124,6 +139,8 @@ class ExplainIn(BaseModel):
     prereq_titles: list[str] = Field(default_factory=list)
     whitelist: list[str] = Field(default_factory=list)  # = core_concepts ∪ prereq titles
     profile_style_block: str = ""
+    # R35 S1/S6：本节点已声明的事实句（旧内容为空）——S6 的小思考可以引用其 id，服务端据此校验
+    taught_facts: list[dict] = Field(default_factory=list)
 
 
 class AnswerQuestionIn(BaseModel):
@@ -277,17 +294,8 @@ CALL_OUTLINE_DRAFT = CallSpec(
 
 
 # ---------- 调用点 11：通用学科单元内容起草（docs/14 Phase B · B1） ----------
-class UnitContentBasis(BaseModel):
-    """R35 S2：一道题/一条小思考的**依据**（引用的已述事实 id + 讲解原文引文）。
-
-    ⚠️ 必须在 schema 里声明：pydantic 默认丢弃未声明字段，漏声明会让"模型给了依据、
-    服务端收到空"（R36 §8 立的纪律：schema 声明 + prompt 说明 + 一条往返用例，三处同改）。
-    """
-
-    fact_ids: list[str] = Field(default_factory=list)
-    quote: str = ""
-    premises: list[str] = Field(default_factory=list)  # 仅推理题
-    rule: str = ""                                     # 仅推理题
+class UnitContentBasis(CiteBasis):
+    """单元内容起草里的依据（与 `CiteBasis` 同结构；保留独立名字以标注调用点语义）。"""
 
 
 class UnitContentFact(BaseModel):

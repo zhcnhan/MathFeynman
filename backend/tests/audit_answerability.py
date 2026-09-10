@@ -1,16 +1,20 @@
 """R35 可答性审计（**长期保留** · 零基础学生模型逐题判定）。
 
+⚠️ **这是工具，不是测试**：文件名不带 `test_` 前缀，**pytest 不会收集它**；它与 `test_live_ai.py`
+同属**真模型冒烟**，**不随常规 CI 运行**。手动门槛（架构侧 R35 §11 裁定）：
+① **每次改生成器后**跑一次全库审计；② **发版前**跑一次。日常 CI 只跑离线结构校验。
+
 原理（docs/09 R35 §7 / 工单 §5）：把"只读过本单元讲解原文、禁止使用任何课外知识"的学生模型
 逐题去答（**选择题必须把 `options` 一并交给它**，否则会误判"没有选项"——架构侧第一版踩过这个假阳性）。
 凡它答不出、或必须引用课外知识的，就是**不可答**的题。
 
 用法（需 `.env` 的 LLM_API_KEY；默认用**临时库**、真实内容根，不动用户数据）：
     $env:MF_ALLOW_LIVE_AI=1
-    .\.venv\Scripts\python backend/tests/audit_answerability.py --nodes node_primary_s27_auto,<其它节点 id>
-    # 不传 --nodes → 审全部已入库内容节点（27 节点体检用）
+    .\\.venv\\Scripts\\python backend/tests/audit_answerability.py --nodes primary.s27
+    # 不传 --nodes → 审全部已入库内容节点（全库体检用）
 
-输出：stdout 明细 + `%TEMP%\\mf_r35_audit_<yyyyMMdd-HHmmss>.json`（**文件名唯一、不覆盖**，F1 纪律）。
-本文件不被 pytest 收集（文件名非 test_*），是**审计工具**；`MF_ALLOW_LIVE_AI!=1` 时直接拒绝运行。
+输出：stdout 明细 + 临时目录下 `mf_r35_audit_<yyyyMMdd-HHmmss>.json`（**文件名唯一、不覆盖**，F1 纪律）；
+有不可答项 → 退出码 1。
 """
 from __future__ import annotations
 

@@ -63,8 +63,13 @@ def fact_id_set(facts: list[TaughtFact]) -> set[str]:
     return {f.id for f in facts}
 
 
-def clean_facts(raw_facts: list, lecture: str) -> tuple[list[TaughtFact], list[str]]:
-    """事实句归一 + 逐字来源校验：`text` 必须能在讲解里找到（citations 同一把尺子）。"""
+def clean_facts(raw_facts: list, lecture: str, *,
+                known_concepts: set[str] | None = None) -> tuple[list[TaughtFact], list[str]]:
+    """事实句归一 + 逐字来源校验：`text` 必须能在讲解里找到（citations 同一把尺子）。
+
+    `known_concepts`（R35 §11）：给出时，`concept_id` **必须指向已注册概念**，否则剔除并记问题——
+    保证"讲过的概念/考的概念"共用同一套 id（不新建第二套概念系统）。
+    """
     kept: list[TaughtFact] = []
     problems: list[str] = []
     seen_ids: set[str] = set()
@@ -72,16 +77,20 @@ def clean_facts(raw_facts: list, lecture: str) -> tuple[list[TaughtFact], list[s
         item = _as_dict(raw)
         text = str(item.get("text") or "").strip()
         fid = str(item.get("id") or "").strip() or f"f{i}"
+        concept_id = str(item.get("concept_id") or "").strip()
         if not text:
             continue
         ok, reason = citations.check(text, lecture, where="本单元讲解")
         if not ok:
             problems.append(f"事实 {fid} 未逐字出自讲解（{reason}）：{text[:40]}…")
             continue
+        if concept_id and known_concepts is not None and concept_id not in known_concepts:
+            problems.append(f"事实 {fid} 的 concept_id {concept_id!r} 未注册（须指向既有概念注册表）")
+            continue
         if fid in seen_ids:
             fid = f"{fid}-{i}"
         seen_ids.add(fid)
-        kept.append(TaughtFact(id=fid, text=text))
+        kept.append(TaughtFact(id=fid, text=text, concept_id=concept_id))
     return kept, problems
 
 
@@ -144,15 +153,17 @@ def _drop_exercise(ex: ExerciseDoc, reason: str) -> dict:
     return {"id": ex.id, "prompt": (ex.prompt or "")[:60], "reason": reason}
 
 
-def gate_node(doc: NodeDoc, *, drop: bool = True) -> AnswerabilityReport:
+def gate_node(doc: NodeDoc, *, drop: bool = True,
+              known_concepts: set[str] | None = None) -> AnswerabilityReport:
     """对一个 NodeDoc 做可答性判定。
 
     `drop=True`（生成端默认）：不合规的**核心题**与 socratic 一律**丢弃**（S5：丢弃该题，不是让内容失败），
     并把通过校验的事实/推理/题/追问回填到 doc（供落盘留档）。
     `drop=False`（审计/只读）：只报告，不改 doc。
+    `known_concepts`（R35 §11）：给出时，`taught_facts[].concept_id` 必须落在其中。
     """
     lecture = doc.explanation.body or doc.body_md or ""
-    facts, fp = clean_facts(doc.taught_facts, lecture)
+    facts, fp = clean_facts(doc.taught_facts, lecture, known_concepts=known_concepts)
     derivable, dp = clean_derivable(doc.derivable, fact_id_set(facts))
     report = AnswerabilityReport(facts=facts, derivable=derivable, problems=list(fp) + list(dp))
     report.verified = bool(facts)

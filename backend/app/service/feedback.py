@@ -22,7 +22,9 @@ from sqlalchemy.orm import Session
 from .. import models
 from .library import refresh_library, sync_content
 
-KINDS = ("lecture", "exercise", "content")
+KINDS = ("lecture", "exercise", "content", "answerability")
+# R35 S7：kind=answerability = "这题我没法答（讲解里没有）" 的可答性投诉——**同表同闭环**，
+# 不新建表；它同时进 guardrails 问题率（内容缺陷信号）并触发 auto 节点重生成。
 # 未处置 = pending | regenerating | failed（regenerated/reviewed 视为已处置）
 UNRESOLVED = ("pending", "regenerating", "failed")
 

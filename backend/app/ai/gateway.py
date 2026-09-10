@@ -8,7 +8,10 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Protocol
+
+from ..content import citations
 from .calls import (
     AiCallError,
     AnswerQuestionIn,
@@ -21,6 +24,7 @@ from .calls import (
     CALL_FEYNMAN_GAP_CHECK,
     CALL_GENERATE_VARIANT,
     CALL_HINT_ON_ERROR,
+    CiteBasis,
     ClassifyErrorIn,
     ClassifyErrorOut,
     ExplainIn,
@@ -186,6 +190,47 @@ def offline_gap_check(ctx: GapCheckIn) -> GapCheckOut:
     )
 
 
+# ---------------------------------------------------------------------------
+# R35 S6：🤔 小思考的引文纪律（"零基础学生只读讲解就能答"才允许下发）
+# ---------------------------------------------------------------------------
+_SENTENCE_SPLIT = re.compile(r"[。！？!?\n]+")
+
+
+def sentence_with(body: str, needle: str, *, min_chars: int = citations.MIN_QUOTE_CHARS) -> str:
+    """从讲解正文里取**包含该关键词**的整句（供引文用）；取不到返回空串。"""
+    if not body or not needle:
+        return ""
+    for sent in _SENTENCE_SPLIT.split(body):
+        s = sent.strip()
+        if len(citations.normalize(s)) < min_chars:
+            continue
+        if citations.normalize(needle) and citations.normalize(needle) in citations.normalize(s):
+            return s
+    return ""
+
+
+def filter_asks(out: ExplainOut, *, sources: list[str], fact_ids: set[str] | None = None) -> ExplainOut:
+    """只保留**有据**的 asked_to_confirm（S6）：引文须逐字出自讲解（≥6 字，citations 同一把尺子）；
+    若声明了 `taught_facts`，引用的 fact_ids 必须落在其中。无据的那条**直接丢弃**（模板套话不再兜底）。
+    """
+    kept: list[str] = []
+    kept_basis: list[CiteBasis] = []
+    declared = fact_ids or set()
+    for i, ask in enumerate(out.asked_to_confirm or []):
+        basis = out.asks_basis[i] if i < len(out.asks_basis) else None
+        quote = str(getattr(basis, "quote", "") or "")
+        if quote and not any(citations.is_valid(quote, s) for s in sources if s):
+            continue  # 引文不在讲解里 → 不可答
+        if not quote:
+            continue  # 无引文 → 不可答
+        ids = [str(x) for x in (getattr(basis, "fact_ids", None) or [])]
+        if declared and any(x not in declared for x in ids):
+            continue  # 引用了未声明的事实 id
+        kept.append(ask)
+        kept_basis.append(basis)
+    return ExplainOut(lecture_md=out.lecture_md, asked_to_confirm=kept, asks_basis=kept_basis)
+
+
 class AiGateway(Protocol):
     """service 只依赖此协议。所有方法要么返回校验过的输出，要么抛 AiCallError。
 
@@ -208,15 +253,19 @@ class OfflineGateway:
     """确定性离线兜底实现（无 key 默认；真模型失败时 service 回落至此路径）。"""
 
     name = "offline"
-
     def explain_node(self, ctx: ExplainIn, *, strategy: str | None = None) -> ExplainOut:
         del strategy  # 离线实现忽略档位（决策层在 service 记账）
         header = "（离线模式：以下为官方讲解稿原文）\n\n"
         lecture = ctx.explanation_body.strip() or "（本节点暂无讲解稿）"
         asks: list[str] = []
+        asks_basis: list[CiteBasis] = []
         if ctx.core_concepts:
-            asks.append(f"请确认：你能用自己的话说出「{ctx.core_concepts[0]}」是什么吗？")
-        return ExplainOut(lecture_md=header + lecture, asked_to_confirm=asks)
+            concept = str(ctx.core_concepts[0])
+            quote = sentence_with(ctx.explanation_body, concept)
+            if quote:  # R35 S6：没有讲解依据就不出这条（离线模式也不得凭空发问）
+                asks.append(f"请确认：你能用自己的话说出「{concept}」是什么吗？")
+                asks_basis.append(CiteBasis(fact_ids=[], quote=quote))
+        return ExplainOut(lecture_md=header + lecture, asked_to_confirm=asks, asks_basis=asks_basis)
 
     def answer_question(self, ctx: AnswerQuestionIn, *, strategy: str | None = None) -> AnswerQuestionOut:
         del strategy
@@ -302,13 +351,26 @@ class OpenAICompatibleGateway:
     # ---- 调用点 1：讲解 ----
     def explain_node(self, ctx: ExplainIn, *, strategy: str | None = None) -> ExplainOut:
         system = self._system(ctx)
+        facts = list(getattr(ctx, "taught_facts", []) or [])
+        fact_hint = ""
+        if facts:
+            fact_hint = ("本单元已声明事实（可引用其 id）："
+                         + "；".join(f"{f.get('id')}={str(f.get('text'))[:40]}" for f in facts[:8]))
         user = task_json(
             task="基于讲解稿为本节点写一份适合该生（考虑风格块）的演绎讲解（lecture_md，Markdown+LaTeX）。"
-            "给出 1-3 个'引导确认/提问'出口（asked_to_confirm，学生应能自己回答的检查问题）。",
+            "给出 1-3 个'引导确认/提问'出口（asked_to_confirm），**每条都必须能被一个只读过本讲解的"
+            "零基础学生答出来**（复述讲解里写过的话，或由 ≥2 条讲解事实经明确规则推出）；"
+            "并为每条给出 asks_basis（与 asked_to_confirm **按下标对齐**）："
+            '{"fact_ids":["上面事实 id（若有）"],"quote":"讲解原文里逐字出现的一句依据"}；'
+            "引文必须 ≥6 字且**逐字**取自讲解（不得改写）；**没有依据就不要出这条**（宁缺勿造）；"
+            "禁止模板套话（如「它与你学过的内容有什么联系」「这个概念还适用于什么情况」——"
+            "指代不明/学生无从判断的一律不要）。" + (" " + fact_hint if fact_hint else ""),
             node_title=ctx.node_title,
         )
         out = self._p.chat_json(CALL_EXPLAIN_NODE, [{"role": "system", "content": system}, {"role": "user", "content": user}], strategy=strategy)
-        return ExplainOut(**out.parsed)
+        return filter_asks(ExplainOut(**out.parsed),
+                           sources=[out.parsed.get("lecture_md") or "", ctx.explanation_body or ""],
+                           fact_ids={str(f.get("id")) for f in facts})
 
     # ---- 调用点 2：答疑 ----
     def answer_question(self, ctx: AnswerQuestionIn, *, strategy: str | None = None) -> AnswerQuestionOut:

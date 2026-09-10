@@ -462,7 +462,8 @@ def generate_unit_content(
             problems = validate_generic_content(doc)
             # R35 S1/S2/S5：可答性判定（**独立函数、独立调用**，不揉进结构校验）——
             # 不合规的题/追问被丢弃；若丢弃后不满足题量/题型/例题要求 → 带原因重生成
-            report = answerability.gate_node(doc)
+            report = answerability.gate_node(
+            doc, known_concepts={str(t) for t in (unit.concept_tags or []) if str(t).strip()})
             a11y_problems = list(report.problems)
             problems = problems + _answerability_structure_problems(doc, report)
             if not problems:
@@ -482,7 +483,8 @@ def generate_unit_content(
                                                     "再用自己的话解释它，并举一个讲解里出现过的例子"],
                              }],
                              asks=heuristic_asks(unit, lecture))
-        report = answerability.gate_node(doc)
+        report = answerability.gate_node(
+            doc, known_concepts={str(t) for t in (unit.concept_tags or []) if str(t).strip()})
         a11y_problems = list(report.problems)
         problems = validate_generic_content(doc) + _answerability_structure_problems(doc, report)
         if problems:

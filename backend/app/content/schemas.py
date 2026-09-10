@@ -28,10 +28,13 @@ class TaughtFact(BaseModel):
     """本单元**显式陈述**的一条事实/关系句（封闭集合）。
 
     `text` 必须**逐字出自讲解正文**（服务端用 `content/citations.py` 的同一把尺子校验）。
+    `concept_id`（可选，R35 §11 裁定）：指向**既有概念注册表**（`concepts` 表 / 大纲 concept_tags）的 id，
+    使"讲过的概念"与"考的概念"共用同一套 id；**事实句本身仍留在节点内**（不落 concepts 表）。
     """
 
     id: str
     text: str
+    concept_id: str = ""
 
 
 class Derivable(BaseModel):

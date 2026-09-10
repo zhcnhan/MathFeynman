@@ -29,7 +29,9 @@ TRIP_RATIO = 0.3
 MIN_PROBLEM_NODES = 2
 MIN_DENOM = 3
 
-KINDS = ("lecture", "exercise", "content")
+KINDS = ("lecture", "exercise", "content", "answerability")
+# R35 S5/S7：可答性投诉（kind=answerability）与纠错反馈**同一口径**进问题率——
+# 投诉"这题讲解里没有"就是内容缺陷信号，超过 TRIP_RATIO 同样转 _drafts 待检。
 # 未处置反馈状态（pending=待处理/复核、regenerating=自动重生成中、failed=重生成失败保留原内容）——
 # regenerated/reviewed 视为已处置（工单 B 段：重生成替换或人工复核后即恢复）
 UNRESOLVED = ("pending", "regenerating", "failed")

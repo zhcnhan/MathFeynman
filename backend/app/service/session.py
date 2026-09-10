@@ -1354,11 +1354,14 @@ class SessionService:
                 prereq_titles=self._prereq_titles(node),
                 whitelist=list(node.core_concepts) + node.prereqs,
                 profile_style_block=self._style_block(db),
+                # R35 S6：把本节点声明的事实句交给讲解调用点（小思考必须能在讲解里找到依据）
+                taught_facts=[f.model_dump() for f in (node.taught_facts or [])],
             )
             out, degraded = self._call(db, self.gateway.explain_node, ctx, strategy=decision.strategy)
             flow["lecture_cache"] = {
                 "lecture_md": out.lecture_md,
                 "asks": out.asked_to_confirm,
+                "asks_basis": [b.model_dump() for b in (out.asks_basis or [])],  # R35 S6：留档
                 "degraded": degraded,
                 "strategy": decision.strategy,  # R12：标注本次讲解档位（审计/UI）
                 "explicit": explicit,           # R21：是否手动单次指定（不被档位联动自动翻）

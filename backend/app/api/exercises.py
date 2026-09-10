@@ -35,6 +35,63 @@ class NextBody(BaseModel):
     exclude_ids: list[str] = Field(default_factory=list)
 
 
+class UnanswerableBody(BaseModel):
+    """R35 S7：「这题我没法答（讲解里没有）」学习者反馈。"""
+
+    node_id: str
+    exercise_id: str
+    session_id: str | None = None
+    message: str = ""
+
+
+def _clear_current_if_matches(db: Session, session_id: str, exercise_id: str) -> bool:
+    """把会话里"当前正在答的这道题"清空（换题）——**不记 attempt**，故不计失败/不扣分。"""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    sess = db.get(models.Session, session_id)
+    if sess is None or not sess.flow_json:
+        return False
+    flow = dict(sess.flow_json)
+    p = flow.get("practice") or {}
+    cur = p.get("current") or {}
+    if flow.get("stage") != "practice" or cur.get("exercise_id") != exercise_id:
+        return False
+    p["current"] = None
+    p["attempts_this"] = 0
+    p["hints_this"] = 0
+    flow["practice"] = p
+    sess.flow_json = flow
+    flag_modified(sess, "flow_json")
+    db.commit()
+    return True
+
+
+@router.post("/unanswerable")
+def report_unanswerable(body: UnanswerableBody, db: Session = Depends(get_db)) -> dict:
+    """R35 S7：记录"这题我没法答（讲解里没有）"。
+
+    - **复用 `feedback` 表**（`kind=answerability`，不新建表）→ 进既有护栏统计（`guardrails.KINDS`）；
+    - **该题不计失败、不扣分**：不写 `attempts`、不动掌握度/连对/额度；若正卡在会话里的这道题 → 直接换一题；
+    - auto 内容按既有反馈闭环**后台重生成**（"这题没法答"＝内容缺陷，修的是生成器而不是这一题）。
+    """
+    from ..service import feedback as fb
+
+    _exercise_of(body.node_id, body.exercise_id)  # 校验节点/题目真实存在（404 中文）
+    message = (body.message or "").strip() or "这题我没法答（讲解里没有）"
+    row = fb.record(db, USER, node_id=body.node_id, kind="answerability",
+                    message=message, exercise_id=body.exercise_id)
+    db.commit()
+    cleared = _clear_current_if_matches(db, body.session_id, body.exercise_id) if body.session_id else False
+    regen = fb.spawn_auto_regen(row["node_id"], USER) if row["source"] == "auto" else None
+    return {
+        "ok": True,
+        "item": row,
+        "session_cleared": cleared,
+        "regen": regen,
+        "message": "已记录：这题不计失败、不扣分；我们会据此修正讲解或换掉这道题。",
+    }
+
+
 def _exercise_of(node_id: str, exercise_id: str):
     lib = get_library()
     loaded = lib.by_id.get(node_id)
