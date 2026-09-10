@@ -1,11 +1,16 @@
-"""outline.materials：材料层基础（docs/14 §8 · Phase B B3）。
+"""outline.materials：材料层基础（docs/14 §8 · Phase B B3；R37 教材真源化）。
 
 - 本地导入：用户自有/授权文本 → 本地引用库（分节文本 + 来源标注，入库
   content/subjects/<sid>/materials/<slug>-<hash>.md）；
 - 联网候选：search 返回候选清单（无网/未接检索后端时给提示）；select 将勾选候选
   （标题/来源/摘要）本地化入库为 web 引用——**不整本下载**；
-- 生成单元时引用：materials_summaries() 供 outline.generate 注入 AI 起草上下文
-  （可追溯来源标注）。
+- **R37 起（教材＝权威真源）**：
+  - 注入默认**不设预算**（``MF_MATERIAL_INJECT_MAX_CHARS=0``＝不限）；按 ``bookmap`` 解析出的
+    **章/节结构注入完整正文**，书太大时在章/页边界**结构化分段**（绝不"前 N 字"截断）；
+  - 显式设置 ``MF_MATERIAL_INJECT_MAX_CHARS``/旧名 ``MF_OUTLINE_MATERIAL_MAX_CHARS`` > 0 时，
+    沿用 R36 D4 的预算降级口径（截断留痕）——上限是**显式选择**，不再是默认；
+  - 入库时检测**文本层健康度**（S7）：扫描/图片版 PDF 明确中文告知，不静默出稿；
+  - 覆盖账本（S6）：章/节条目 ↔ 单元的映射由 ``coverage_ledger`` 统一算账。
 来源策略 source_policy（ai|import|web|mixed，默认 ai）存 subjects.meta_json；
 math（preset）同样支持（材料作讲解增强，不影响 roadmap 内容）。
 """
@@ -15,7 +20,9 @@ import hashlib
 import re
 from pathlib import Path
 
+from ..config import get_settings, material_inject_budget
 from ..outline import store as outline_store
+from . import bookmap
 from .schemas import OutlineError
 
 POLICY_AI = "ai"
@@ -26,6 +33,7 @@ SOURCE_POLICIES = (POLICY_AI, POLICY_IMPORT, POLICY_WEB, POLICY_MIXED)
 DEFAULT_POLICY = POLICY_AI
 
 _SLUG = re.compile(r"[^A-Za-z0-9_.-]+")
+_PAGE_MARK = re.compile(r"^【第\s*(\d+)\s*页】\s*$", re.M)
 
 
 def _slug(s: str) -> str:
@@ -36,6 +44,51 @@ def materials_dir(subject_id: str) -> Path:
     d = outline_store.subject_dir(subject_id) / "materials"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+# ---------- R37 S7：文本层健康度（扫描/图片版 PDF 的诚实边界） ----------
+THIN_CHARS_PER_PAGE = 40      # 每页平均字符数下限（低于此值视为"没提取到文字"）
+MIN_PAGES_FOR_HEALTH = 3      # 页数过少（粘贴文本/短材料）不做扫描版判定
+EMPTY_PAGE_CHARS = 20         # 单页字符数低于此值视为"空白页"
+
+
+def text_health(body: str, *, min_chars_per_page: int | None = None,
+                min_page_ratio: float | None = None) -> dict:
+    """材料文本层健康度（每页字符数 / 空白页占比）→ 中文结论。
+
+    - 页数 < ``MIN_PAGES_FOR_HEALTH``（粘贴短文本）→ 不做扫描版判定，如实标注"未判定"；
+    - 页数 ≥ 3 且（每页平均字符数 < 下限 或 有文字页占比 < 下限）→ ``healthy=False``，
+      note 直接给用户可执行的下一步（OCR / 换文本版），**不含糊**。
+    """
+    s = get_settings()
+    cap = THIN_CHARS_PER_PAGE if min_chars_per_page is None else min_chars_per_page
+    ratio = 0.5 if min_page_ratio is None else min_page_ratio
+    text = body or ""
+    marks = _PAGE_MARK.findall(text)
+    pages = len(marks) if marks else 1
+    chars = len(text.strip())
+    per_page = chars / pages if pages else 0
+    nonempty = 0
+    if marks:
+        parts = re.split(r"(?m)^【第\s*\d+\s*页】\s*$", text)
+        nonempty = sum(1 for p in parts if len(p.strip()) >= EMPTY_PAGE_CHARS)
+    else:
+        nonempty = 1 if chars >= EMPTY_PAGE_CHARS else 0
+    text_ratio = (nonempty / pages) if pages else 0.0
+    if pages < MIN_PAGES_FOR_HEALTH:
+        return {"pages": pages, "chars": chars, "chars_per_page": round(per_page, 1),
+                "text_page_ratio": round(text_ratio, 2), "healthy": True, "checked": False,
+                "note": "页数过少，未做扫描版判定（粘贴文本按可用处理）"}
+    healthy = per_page >= cap and text_ratio >= ratio
+    note = "" if healthy else (
+        f"本书疑似扫描/图片版：{pages} 页仅提取到 {chars} 个字符"
+        f"（每页约 {per_page:.0f} 字，下限 {cap}；有文字页 {nonempty}/{pages}）。"
+        "请先 OCR 或改用文本版 PDF/粘贴文本后重新上传——"
+        "系统不会在「没读到书」的情况下生成大纲（R37 S7）。"
+    )
+    return {"pages": pages, "chars": chars, "chars_per_page": round(per_page, 1),
+            "text_page_ratio": round(text_ratio, 2), "healthy": healthy, "checked": True,
+            "note": note}
 
 
 def get_policy(db, subject_id: str) -> str:
@@ -64,6 +117,7 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
 
     kind ∈ local|web|pdf（缺省按 url 推导：有 url=web、无=local；pdf 由 C2 解析器显式传入）；
     filename 记录源文件名（PDF/文档导入的展示与追溯）。
+    R37 S7：入库时计算文本层健康度并写入 frontmatter（扫描版 → 中文告知，见 ``text_health``）。
     """
     title = title.strip()
     text = text.strip()
@@ -72,6 +126,7 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
     effective_kind = kind or ("web" if url else "local")
     if effective_kind not in ("local", "web", "pdf"):
         raise OutlineError(f"材料 kind 非法: {effective_kind!r}")
+    health = text_health(text)
     entry_id = "mat-" + hashlib.sha1(f"{subject_id}:{title}:{url}:{text[:80]}".encode("utf-8")).hexdigest()[:10]
     p = materials_dir(subject_id) / f"{_slug(title)}-{entry_id[4:]}.md"
     if not p.exists():
@@ -85,11 +140,17 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
         ]
         if filename:
             meta_lines.append(f"filename: {filename}")
+        # R37 S7：健康度（明确结论 + 中文说明；扫描版在此留痕，供列表/起草闸门读取）
+        meta_lines += [
+            f"text_healthy: {'yes' if health['healthy'] else 'no'}",
+            f"text_pages: {health['pages']}",
+            f"chars_per_page: {health['chars_per_page']}",
+        ]
         meta_lines += ["", "---", ""]
         p.write_text("\n".join(meta_lines) + "\n" + text + "\n", encoding="utf-8")
     return {"id": entry_id, "title": title, "source": source, "url": url,
             "kind": effective_kind, "file": p.name,
-            "filename": filename or p.name}
+            "filename": filename or p.name, "text_health": health}
 
 
 def _parse_entry(p: Path) -> dict | None:
@@ -103,6 +164,7 @@ def _parse_entry(p: Path) -> dict | None:
                     k, _, v = line.partition(":")
                     fm[k.strip()] = v.strip()
             body = raw[end + 4 :].strip()
+            healthy_raw = str(fm.get("text_healthy", "")).strip().lower()
             return {
                 "id": fm.get("id", p.stem),
                 "title": fm.get("title", p.stem),
@@ -112,6 +174,8 @@ def _parse_entry(p: Path) -> dict | None:
                 "file": p.name,
                 "filename": fm.get("filename", ""),
                 "body": body,
+                # R37 S7：入库时算的健康度（老材料没有该字段 → 现算一次，不让历史材料失去判定）
+                "text_healthy": (healthy_raw != "no") if healthy_raw else None,
             }
     return None
 
@@ -122,9 +186,13 @@ def list_materials(db, subject_id: str) -> list[dict]:
     for p in sorted(d.glob("*.md")):
         e = _parse_entry(p)
         if e:
+            health = text_health(e.get("body", ""))
+            if e.get("text_healthy") is False:
+                health["healthy"] = False
             out.append({"id": e["id"], "title": e["title"], "source": e["source"],
                         "url": e["url"], "kind": e["kind"], "file": e["file"],
-                        "filename": e.get("filename", "")})
+                        "filename": e.get("filename", ""),
+                        "text_health": health})
     return out
 
 
@@ -155,12 +223,22 @@ def materials_summaries(db, subject_id: str, *, limit_chars: int = 220) -> list[
 
 # ---------- R36 D1/D2/D4：大纲起草读材料（可选输入）＋逐单元溯源 ----------
 
-DEFAULT_INJECT_MAX_CHARS = 6000   # 单次起草注入的材料正文总字符预算（config 可覆盖，D4）
-DEFAULT_SECTION_CHARS = 400       # 每节摘要字符上限（分节摘要降级用）
-MAX_SECTIONS_PER_MATERIAL = 12    # 每份材料最多展示的节数（超出的节进"已截取"口径）
+DEFAULT_INJECT_MAX_CHARS = 0      # R37 S1：默认**不限**（0＝不设预算；旧值 6000 属 R36 D4 口径）
+LEGACY_SECTION_CHARS = 400        # 每节摘要字符上限（**仅在显式设上限时**的降级口径）
+MAX_SECTIONS_PER_MATERIAL = 12    # 每份材料最多展示的节数（同上，仅降级口径）
+DEFAULT_BATCH_CHARS = 60000       # R37 S1：单次调用的结构化分段阈值（按章/页边界切，不截断）
 
-_PAGE_MARK = re.compile(r"^【第\s*(\d+)\s*页】\s*$")
 _HEADING_MARK = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+
+
+def inject_budget() -> int:
+    """生效的注入上限（0 = 不限）；见 ``config.material_inject_budget``。"""
+    return material_inject_budget()
+
+
+def batch_budget() -> int:
+    """单次调用的结构化分段阈值（字符）；0 = 不分段。"""
+    return max(0, int(get_settings().material_batch_chars or 0))
 
 
 def _entries_with_body(subject_id: str) -> list[dict]:
@@ -174,11 +252,12 @@ def _entries_with_body(subject_id: str) -> list[dict]:
 
 
 def material_sections(body: str, *, max_sections: int = MAX_SECTIONS_PER_MATERIAL,
-                      section_chars: int = DEFAULT_SECTION_CHARS) -> list[dict]:
+                      section_chars: int = LEGACY_SECTION_CHARS) -> list[dict]:
     """把材料正文切成"可引用的节"：PDF 的 `【第 N 页】` → Markdown 标题 → 段落兜底。
 
-    返回 ``[{label, text}]``：label＝章节名（第 N 页 / 标题 / 第 N 节），供 D2 溯源与 D4 分节摘要。
-    text 已按 ``section_chars`` 截断（超长留 `…` 标记）。
+    返回 ``[{label, text}]``：label＝章节名（第 N 页 / 标题 / 第 N 节）。
+    text 已按 ``section_chars`` 截断——**仅用于显式设上限时的降级口径**（R36 D4）；
+    R37 默认路径用 ``bookmap`` 的章/节**完整正文**（见 ``material_structure``）。
     """
     raw = (body or "").strip()
     if not raw:
@@ -215,31 +294,57 @@ def material_sections(body: str, *, max_sections: int = MAX_SECTIONS_PER_MATERIA
     return sections[:max_sections]
 
 
-def draft_materials(db, subject_id: str, *, max_chars: int = DEFAULT_INJECT_MAX_CHARS) -> dict:
-    """D1＋D4：大纲起草的**材料注入包**（唯一入口）。
+def material_structure(body: str) -> dict:
+    """R37 S1/S2/S8：材料正文 → **章 → 节**结构（完整正文，不截断）。
 
-    返回:
-    - ``text``：注入 prompt 的材料块（分节摘要 + 章节名；受 ``max_chars`` 总预算硬约束）；
-    - ``index``：``[{id,title,source,url,body,sections}]``——**服务端 D2 校验用**（含正文，不下发前端）；
-    - ``used_chars`` / ``dropped``（未注入的材料标题）/ ``truncated``（是否因预算截断）。
-
-    预算纪律（D4）：**绝不整本塞进一次调用**——先到先得 + 总字符上限；超出即截断并留痕；
-    每日 token 上限仍由 ``LLM_MAX_TOKENS_PER_DAY``（provider 侧）保护。
+    返回 ``{"kind", "note", "entries": [MapEntry], "chapter_map": [dict]}``；
+    解析器是 ``outline.bookmap``（唯一实现；大纲起草与单元出稿共用同一份地图）。
     """
-    index = []
+    parsed = bookmap.parse_book(body or "")
+    entries = parsed["entries"]
+    return {
+        "kind": parsed["kind"],
+        "note": parsed["note"],
+        "pages": parsed.get("pages", 0),
+        "entries": entries,
+        "chapter_map": bookmap.chapter_map(entries),
+    }
+
+
+def _material_index(db, subject_id: str) -> list[dict]:
+    """材料索引（服务端用）：正文 + 章/节结构 + 健康度。"""
+    out = []
     for e in _entries_with_body(subject_id):
-        index.append({
+        body = e.get("body", "")
+        structure = material_structure(body)
+        health = text_health(body)
+        if e.get("text_healthy") is False:
+            health["healthy"] = False
+        out.append({
             "id": e["id"], "title": e["title"], "source": e["source"], "url": e["url"],
-            "body": e.get("body", ""), "sections": material_sections(e.get("body", "")),
+            "kind": e.get("kind", "local"), "filename": e.get("filename", ""),
+            "body": body, "sections": material_sections(body),
+            "structure": structure, "text_health": health,
         })
+    return out
+
+
+def _block_header(m: dict) -> str:
+    head = f"### 材料《{m['title']}》（{m['source'] or '本地'}"
+    head += f"，{m['url']}" if m["url"] else ""
+    return head + "）"
+
+
+def _legacy_pack(index: list[dict], max_chars: int, dropped: list[str],
+                 blocked: list[dict]) -> dict:
+    """R36 D4 降级口径（**仅在显式设上限时**）：分节摘要 + 总预算截断 + 留痕。"""
     used = 0
     blocks: list[str] = []
-    dropped: list[str] = []
     truncated = False
     for m in index:
-        head = f"### 材料《{m['title']}》（{m['source'] or '本地'}"
-        head += f"，{m['url']}" if m["url"] else ""
-        head += "）"
+        if not m["text_health"]["healthy"]:
+            continue
+        head = _block_header(m)
         block_used = len(head)
         if used + block_used > max_chars:  # 标题都放不下 → 整份材料不注入（留痕）
             dropped.append(m["title"])
@@ -262,15 +367,120 @@ def draft_materials(db, subject_id: str, *, max_chars: int = DEFAULT_INJECT_MAX_
     if dropped:
         text += ("\n\n（另有 %d 份材料因超出本次注入预算未展示：%s）"
                  % (len(dropped), "、".join(dropped)))
-    return {"text": text, "index": index, "used_chars": used, "dropped": dropped,
-            "truncated": truncated, "count": len(index)}
+    return {"text": text, "used_chars": used, "dropped": dropped,
+            "truncated": truncated, "batches": [{"text": text, "used_chars": used, "labels": []}],
+            "blocked": blocked}
+
+
+def _full_blocks(index: list[dict]) -> list[dict]:
+    """R37 S1 默认口径：每份材料按章/节**完整正文**成块（不截断、不摘要）。"""
+    blocks: list[dict] = []
+    for m in index:
+        if not m["text_health"]["healthy"]:
+            continue
+        for entry in m["structure"]["entries"]:
+            secs = "；".join(entry.sections[:12])
+            head = (f"#### [{entry.label}]（材料《{m['title']}》"
+                    f"{'，节：' + secs if secs else ''}）")
+            blocks.append({"material": m["title"], "material_id": m["id"],
+                           "label": entry.label, "text": f"{head}\n{entry.text}",
+                           "chars": entry.chars})
+    return blocks
+
+
+def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
+                    batch_chars: int | None = None) -> dict:
+    """D1（R36）＋ S1/S2/S8（R37）：大纲起草的**材料注入包**（唯一入口）。
+
+    返回:
+    - ``text``：**首批**注入 prompt 的材料块（多批时见 ``batches``）；
+    - ``index``：``[{id,title,source,url,body,sections,structure,text_health}]``
+      ——**服务端校验用**（含正文与章/节地图，不下发前端）；
+    - ``chapter_map``：整本书的章 → 节地图（跨材料合并；S2 覆盖校验的尺子）；
+    - ``batches``：结构化分批（每批 ``text`` 完整可注入；按章/页边界切，**绝不截断句子**）；
+    - ``used_chars``：全部批次注入的字符总量（**随书规模增长**；=0 时确实不限）；
+    - ``dropped`` / ``truncated``：仅显式设上限时的降级留痕；
+    - ``blocked``：健康度不合格（扫描/图片版）而被挡下的材料 ``[{title, note}]``（S7）。
+
+    预算纪律（R37）：默认**不省成本**（``MF_MATERIAL_INJECT_MAX_CHARS=0``）——整本书按结构
+    完整注入，仅按 ``MF_MATERIAL_BATCH_CHARS`` 在章/页边界分成多次调用；
+    每日 token 上限仍由 ``LLM_MAX_TOKENS_PER_DAY``（provider 侧）保护。
+    """
+    if max_chars is None:
+        max_chars = inject_budget()
+    if batch_chars is None:
+        batch_chars = batch_budget()
+    index = _material_index(db, subject_id)
+    blocked = [{"title": m["title"], "note": m["text_health"]["note"]}
+               for m in index if not m["text_health"]["healthy"]]
+    dropped: list[str] = []
+    if max_chars and max_chars > 0:  # 显式设上限 → R36 D4 口径
+        pack = _legacy_pack(index, max_chars, dropped, blocked)
+    else:
+        blocks = _full_blocks(index)
+        batches = _make_batches(blocks, batch_chars)
+        used = sum(len(b["text"]) for b in batches)
+        pack = {"text": batches[0]["text"] if batches else "", "used_chars": used,
+                "dropped": [], "truncated": False, "batches": batches, "blocked": blocked}
+    pack.update({
+        "index": index,
+        "chapter_map": [{"material_id": m["id"], "material": m["title"],
+                         "kind": m["structure"]["kind"], "note": m["structure"]["note"],
+                         "entries": m["structure"]["chapter_map"]} for m in index],
+        "count": len(index),
+        "inject_max_chars": max_chars,
+        "batch_chars": batch_chars,
+    })
+    return pack
+
+
+def _make_batches(blocks: list[dict], batch_chars: int) -> list[dict]:
+    """按章/节边界把材料块分批（``batch_chars<=0`` → 单批含全部）。"""
+    if not blocks:
+        return []
+    if batch_chars <= 0:
+        return [_batch_of(blocks)]
+    out: list[dict] = []
+    cur: list[dict] = []
+    size = 0
+    for b in blocks:
+        if cur and size + len(b["text"]) > batch_chars:
+            out.append(_batch_of(cur))
+            cur, size = [], 0
+        cur.append(b)
+        size += len(b["text"])
+    if cur:
+        out.append(_batch_of(cur))
+    return out
+
+
+def _batch_of(blocks: list[dict]) -> dict:
+    text = "\n\n".join(b["text"] for b in blocks)
+    return {"text": text, "used_chars": len(text),
+            "labels": [b["label"] for b in blocks],
+            "materials": sorted({b["material"] for b in blocks})}
+
+
+def valid_sections(hit: dict) -> set[str]:
+    """材料的**合法溯源标签**全集（归一化后）：章/节地图标签 ∪ 页标签 ∪ 分节标签。"""
+    from ..content import citations
+
+    labels: set[str] = set()
+    for sec in hit.get("sections") or []:
+        labels.add(citations.normalize(str(sec.get("label") or "")))
+    structure = hit.get("structure") or {}
+    for entry in structure.get("entries") or []:
+        labels.add(citations.normalize(entry.label))
+        for pg in entry.pages:
+            labels.add(citations.normalize(pg))
+    return {x for x in labels if x}
 
 
 def check_unit_material(ref: dict, index: list[dict]) -> tuple[dict | None, str]:
-    """D2：校验单个 ``{title, section}`` 溯源引用 → ``(规范化引用 | None, 中文问题)``。
+    """D2（R36）＋ R37 S2：校验单个 ``{title, section}`` 溯源引用 → ``(规范化引用 | None, 中文问题)``。
 
-    规则：① ``title`` 必须真实存在于该学科引用库；② ``section`` 必须是该材料的**真实章节名**
-    （第 N 页 / 标题，见 ``material_sections``）**或逐字出自其正文的引文**——
+    规则：① ``title`` 必须真实存在于该学科引用库；② ``section`` 必须是该材料的**真实章/节/页标签**
+    （``bookmap`` 的章节地图或 ``material_sections`` 的节名）**或逐字出自其正文的引文**——
     后者复用 ``content.citations`` 的同一把尺子（归一化 + ≥6 字 + 子串包含），
     与 R35 S2 的 basis 引文纪律同源，不另写一份。
     """
@@ -285,12 +495,162 @@ def check_unit_material(ref: dict, index: list[dict]) -> tuple[dict | None, str]
         return None, f"材料溯源不成立：该学科引用库里没有名为「{title}」的材料"
     if not section:
         return None, f"材料《{title}》的溯源缺少 section（须给出真实章节名或逐字引文）"
-    if citations.normalize(section) in {citations.normalize(s["label"]) for s in hit["sections"]}:
+    if citations.normalize(section) in valid_sections(hit):
         return {"title": hit["title"], "section": section}, ""
     ok, reason = citations.check(section, hit["body"], where=f"材料《{hit['title']}》正文")
     if ok:
         return {"title": hit["title"], "section": section}, ""
     return None, f"材料《{hit['title']}》溯源不成立：{reason}"
+
+
+# ---------- R37 S2：章节全覆盖校验（未映射 → 违规） ----------
+def _covered_entries(units: list, index: list[dict]) -> dict[tuple[str, str], list[str]]:
+    """算账：地图条目 → 覆盖它的单元 id 列表。
+
+    单元的一条 ``{title, section}`` 溯源**算覆盖**当且仅当：
+    ① section 归一化后等于条目标签 / 该条目的任一页标签；或
+    ② section 是**逐字引文**（≥6 字）且落在该条目正文内（同 ``citations`` 的尺子，不另写一份）。
+    """
+    from ..content import citations
+
+    mapping: dict[tuple[str, str], list[str]] = {}
+    for m in index:
+        for e in (m.get("structure") or {}).get("entries") or []:
+            mapping[(m["id"], e.label)] = []
+    for u in units:
+        refs = (u.materials if hasattr(u, "materials") else (u or {}).get("materials")) or []
+        uid = u.id if hasattr(u, "id") else str((u or {}).get("id") or "")
+        for r in refs:
+            title = str((r or {}).get("title") or "").strip()
+            section = str((r or {}).get("section") or "").strip()
+            norm = citations.normalize(section)
+            if not norm:
+                continue
+            for m in index:
+                if title and m["title"] != title:
+                    continue
+                for e in (m.get("structure") or {}).get("entries") or []:
+                    labels = {citations.normalize(e.label)} | {citations.normalize(p) for p in e.pages}
+                    body = citations.normalize(e.text)
+                    if norm in labels or (len(norm) >= citations.MIN_QUOTE_CHARS and norm in body):
+                        bucket = mapping.setdefault((m["id"], e.label), [])
+                        if uid and uid not in bucket:
+                            bucket.append(uid)
+    return mapping
+
+
+def coverage_problems(units: list, index: list[dict]) -> list[str]:
+    """S2：每个地图条目（章/节）必须被 ≥1 个单元的溯源映射到；未映射 → 中文违规。
+
+    ``index``：``draft_materials()["index"]`` 或 ``materials._material_index()``；
+    空/无结构条目（无材料、未识别结构）→ 不报（退化为现状）。
+    """
+    mapping = _covered_entries(units, index)
+    if not mapping:
+        return []
+    total = len(mapping)
+    unmapped = [key[1] for key, ids in mapping.items() if not ids]
+    if not unmapped:
+        return []
+    return [f"教材覆盖不全：{len(unmapped)}/{total} 个章/节条目没有任何单元对应"
+            "（教材＝权威真源，不得悄悄丢章节）。未映射：" + "、".join(unmapped[:8])
+            + ("…" if len(unmapped) > 8 else "")
+            + "。请为每个条目至少派生 1 个单元（小条目可合并，但合并后 materials 必须列出全部被合并的条目标签）。"]
+
+
+def coverage_summary(units: list, index: list[dict]) -> dict:
+    """覆盖摘要（供起草候选/大纲页显示）：``{total, covered, uncovered:[标签]}``。"""
+    mapping = _covered_entries(units, index)
+    unmapped = [key[1] for key, ids in mapping.items() if not ids]
+    return {"total": len(mapping), "covered": len(mapping) - len(unmapped), "uncovered": unmapped}
+
+
+# ---------- R37 S3/S4：单元出稿的教材注入包 ----------
+def unit_material_pack(db, subject_id: str, unit, *, batch_chars: int | None = None) -> dict:
+    """单元出稿用的**教材注入包**（S3/S4 的唯一入口）。
+
+    - 单元有 ``materials: [{title, section}]`` → 取对应章/节的**完整正文**（按标签匹配；
+      标签对不上时退回该材料全文里包含该引文的章）；
+    - 单元没有溯源（手工大纲）→ 用单元标题/概念标签在章节地图里做**确定性关键词检索**，
+      取命中的章（找不到 → ``covered=False``，出稿端如实报"教材未覆盖此单元"，不编造）；
+    - 返回 ``{"text", "entries", "sources", "binding_text", "covered", "note"}``：
+      ``binding_text``＝该学科**全部材料正文**（S5 教材锚定校验的原文），``text``＝本次注入正文。
+    """
+    index = _material_index(db, subject_id)
+    healthy = [m for m in index if m["text_health"]["healthy"]]
+    if not index:
+        return {"text": "", "entries": [], "sources": [], "binding_text": "",
+                "covered": False, "no_materials": True, "note": "本学科没有引用材料"}
+    if not healthy:
+        return {"text": "", "entries": [], "sources": [{"title": m["title"]} for m in index],
+                "binding_text": "", "covered": False, "no_materials": False,
+                "note": "；".join(m["text_health"]["note"] for m in index)
+                        or "该学科材料未通过文本层健康度检查（疑似扫描版）"}
+    binding = "\n\n".join(f"《{m['title']}》\n{m['body']}" for m in healthy)
+    picked: list[dict] = []
+    sources: list[dict] = []
+    refs = list(getattr(unit, "materials", None) or [])
+    for ref in refs:
+        title = str((ref or {}).get("title") or "").strip()
+        section = str((ref or {}).get("section") or "").strip()
+        for m in healthy:
+            if title and m["title"] != title:
+                continue
+            hit = _entry_for_section(m, section)
+            if hit is not None:
+                picked.append({"material": m["title"], "label": hit.label, "text": hit.text})
+                sources.append({"title": m["title"], "section": hit.label, "match": "declared"})
+                break
+    if not picked:  # 无溯源 / 溯源没落上 → 关键词检索（确定性；找不到就如实说未覆盖）
+        for m in healthy:
+            hit = _entry_by_terms(m, unit)
+            if hit is not None:
+                picked.append({"material": m["title"], "label": hit.label, "text": hit.text})
+                sources.append({"title": m["title"], "section": hit.label, "match": "retrieved"})
+    text = "\n\n".join(f"【教材段落：{p['label']}（材料《{p['material']}》）】\n{p['text']}"
+                       for p in picked)
+    return {"text": text, "entries": [p["label"] for p in picked], "sources": sources,
+            "binding_text": binding, "covered": bool(picked), "no_materials": False,
+            "note": "" if picked else "教材中未检索到与本节相关的章/节"}
+
+
+def _entry_for_section(m: dict, section: str):
+    """按标签匹配章/节条目（归一化比较）；失败则用引文包含关系定位所在条目。"""
+    from ..content import citations
+
+    entries = (m.get("structure") or {}).get("entries") or []
+    if not entries:
+        return None
+    if section:
+        norm = citations.normalize(section)
+        for e in entries:
+            if norm == citations.normalize(e.label) or norm in {citations.normalize(x) for x in e.pages}:
+                return e
+        for e in entries:
+            if norm and norm in citations.normalize(e.text):
+                return e
+    return None
+
+
+def _entry_by_terms(m: dict, unit):
+    """确定性关键词检索：用单元标题/概念标签在章节地图里找最相关的章（分数 0 → None）。"""
+    from ..content import citations
+
+    terms = [str(getattr(unit, "title", "") or "")]
+    terms += [str(t) for t in (getattr(unit, "concept_tags", None) or [])]
+    grams: list[str] = []
+    for t in terms:
+        norm = citations.normalize(t)
+        if len(norm) >= 2:
+            grams += [norm[i:i + 3] for i in range(max(1, len(norm) - 2))]
+    best = None
+    best_score = 0
+    for e in (m.get("structure") or {}).get("entries") or []:
+        body = citations.normalize(e.text + " " + " ".join(e.sections))
+        score = sum(1 for g in grams if g and g in body)
+        if score > best_score:
+            best, best_score = e, score
+    return best if best_score >= 1 else None
 
 
 def material_ids_for_titles(db, subject_id: str, titles: list[str]) -> tuple[list[str], list[str]]:
@@ -309,6 +669,68 @@ def material_ids_for_titles(db, subject_id: str, titles: list[str]) -> tuple[lis
         if mid not in ids:
             ids.append(mid)
     return ids, missing
+
+
+# ---------- R37 S6：覆盖账本 ----------
+def coverage_ledger(db, subject_id: str) -> dict:
+    """**覆盖账本**：章节地图 ↔ 单元映射 ↔ 单元覆盖状态（大纲页与 API 的唯一数据源）。
+
+    返回::
+
+        {
+          "total": 章/节条目总数,
+          "covered": 已覆盖条目数,
+          "uncovered": [未覆盖条目标签…],
+          "materials": [{id,title,kind,healthy,note,kind_of_structure,structure_note}],
+          "entries": [{material, label, chapter, chars, sections, units:[unit_id…]}],
+          "units": [{unit_id, title, sources:[{title,section}], status, note, grounded_facts,
+                     material_bound, dropped_exercises}]
+        }
+    """
+    from ..content import citations
+
+    index = _material_index(db, subject_id)
+    doc = outline_store.get_outline(subject_id)
+    units = list(doc.units) if doc is not None else []
+    mapping = _covered_entries(units, index)
+    entries: list[dict] = []
+    uncovered: list[str] = []
+    for m in index:
+        for e in (m.get("structure") or {}).get("entries") or []:
+            hit = sorted(set(mapping.get((m["id"], e.label)) or []))
+            if not hit:
+                uncovered.append(f"{m['title']} · {e.label}")
+            entries.append({"material": m["title"], "label": e.label, "chapter": e.chapter,
+                            "chars": e.chars, "sections": list(e.sections), "units": hit,
+                            "covered": bool(hit)})
+    unit_ledger = []
+    for u in units:
+        meta = dict(u.meta or {})
+        cov = dict(meta.get("coverage") or {})
+        unit_ledger.append({
+            "unit_id": u.id, "title": u.title,
+            "sources": [dict(r) for r in (u.materials or [])],
+            "status": str(cov.get("status") or "未知"),
+            "note": str(cov.get("note") or ""),
+            "grounded_facts": int(cov.get("grounded_facts") or 0),
+            "material_bound": bool(cov.get("material_bound")),
+            "dropped_exercises": int(cov.get("dropped_exercises") or 0),
+            "generated_at": str(cov.get("at") or ""),
+        })
+    return {
+        "subject": subject_id,
+        "has_materials": bool(index),
+        "total": len(entries),
+        "covered": len(entries) - len(uncovered),
+        "uncovered": uncovered,
+        "materials": [{"id": m["id"], "title": m["title"], "kind": m.get("kind", ""),
+                       "healthy": m["text_health"]["healthy"],
+                       "note": m["text_health"]["note"],
+                       "structure_kind": m["structure"]["kind"],
+                       "structure_note": m["structure"]["note"]} for m in index],
+        "entries": entries,
+        "units": unit_ledger,
+    }
 
 
 def search_candidates(db, subject_id: str, query: str) -> dict:
@@ -438,6 +860,7 @@ __all__ = [
     "SOURCE_POLICIES",
     "DEFAULT_POLICY",
     "DEFAULT_INJECT_MAX_CHARS",
+    "DEFAULT_BATCH_CHARS",
     "materials_dir",
     "get_policy",
     "set_policy",
@@ -445,9 +868,18 @@ __all__ = [
     "list_materials",
     "delete_material",
     "materials_summaries",
+    "text_health",
     "material_sections",
+    "material_structure",
+    "inject_budget",
+    "batch_budget",
     "draft_materials",
+    "valid_sections",
     "check_unit_material",
+    "coverage_problems",
+    "coverage_summary",
+    "coverage_ledger",
+    "unit_material_pack",
     "material_ids_for_titles",
     "search_candidates",
     "select_candidates",

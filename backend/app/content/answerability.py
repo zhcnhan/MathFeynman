@@ -11,6 +11,13 @@
 
 判定用的引文尺子是 `app.content.citations`（**单一实现**，R36 已收敛，`MIN_QUOTE_CHARS=6`）。
 
+**R37 S5（教材锚定 · 第三类校验）**：有教材时，"已教集合"从"AI 写的讲解"**上移一层**到
+**教材原文**——`taught_facts[].text` 与 `basis.quote` 还必须**逐字出自该学科材料正文**：
+- 事实句在教材里找不到 → **丢弃该事实**（一条不剩 → 调用方判**整单元失败**，不得编造）；
+- 题目/追问引文在教材里找不到 → **丢弃该题/该追问**（重试后仍不行就丢，不放行）；
+- 违规信息全中文，并**说明缺什么**（"教材里没有这句话" vs "该句没讲到"），便于用户判断是
+  模型编了、还是这一节确实没讲。**不做 OCR、不猜**。
+
 兼容（S1）：**没有** `taught_facts` 的旧内容**不阻塞加载**，但**不得**通过可答性校验——
 `gate_node()` 会把它标成 `verified=False` 并把其中的问题全部判为"未声明依据"。
 """
@@ -29,6 +36,14 @@ NO_PACK_PROBLEM = (
     "（R35 S1；重新生成即可获得声明）"
 )
 
+# R37 S5：教材锚定的默认原文名（违规文案里对用户说"哪里找不到"）
+MATERIAL_WHERE = "教材正文"
+NO_MATERIAL_COVERAGE = (
+    "教材未覆盖此单元：模型两轮都没能产出「逐字出自教材」的内容。"
+    "可能是本节对应的教材段落没有讲到该主题，或模型在用自己的知识编——"
+    "系统不编造、不落盘（R37 S3/S6）。"
+)
+
 
 @dataclass
 class AnswerabilityReport:
@@ -38,11 +53,13 @@ class AnswerabilityReport:
     derivable: list[Derivable] = field(default_factory=list)
     exercises: list[ExerciseDoc] = field(default_factory=list)
     dropped_exercises: list[dict] = field(default_factory=list)
+    dropped_facts: list[dict] = field(default_factory=list)   # R37 S5：教材里找不到的事实句
     asks: list[str] = field(default_factory=list)              # 存活的 socratic
     asks_basis: list[BasisDoc] = field(default_factory=list)
     dropped_asks: list[dict] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
     verified: bool = False                                     # 是否声明了知识包
+    material_checked: bool = False                             # R37 S5：本次是否做了教材锚定
 
     @property
     def dropped(self) -> int:
@@ -64,14 +81,22 @@ def fact_id_set(facts: list[TaughtFact]) -> set[str]:
 
 
 def clean_facts(raw_facts: list, lecture: str, *,
-                known_concepts: set[str] | None = None) -> tuple[list[TaughtFact], list[str]]:
+                known_concepts: set[str] | None = None,
+                material: str = "", material_where: str = MATERIAL_WHERE,
+                ) -> tuple[list[TaughtFact], list[str], list[dict]]:
     """事实句归一 + 逐字来源校验：`text` 必须能在讲解里找到（citations 同一把尺子）。
+
+    R37 S5：给了 `material`（教材正文）时，还**必须逐字出自教材**——找不到的事实句被丢弃，
+    并给出中文原因（含"教材里没有这句话"与所在位置）。
 
     `known_concepts`（R35 §11）：给出时，`concept_id` **必须指向已注册概念**，否则剔除并记问题——
     保证"讲过的概念/考的概念"共用同一套 id（不新建第二套概念系统）。
+
+    返回 ``(保留的事实, 问题清单, 被丢弃的事实)``。
     """
     kept: list[TaughtFact] = []
     problems: list[str] = []
+    dropped: list[dict] = []
     seen_ids: set[str] = set()
     for i, raw in enumerate(raw_facts or [], start=1):
         item = _as_dict(raw)
@@ -82,8 +107,19 @@ def clean_facts(raw_facts: list, lecture: str, *,
             continue
         ok, reason = citations.check(text, lecture, where="本单元讲解")
         if not ok:
-            problems.append(f"事实 {fid} 未逐字出自讲解（{reason}）：{text[:40]}…")
+            msg = f"事实 {fid} 未逐字出自讲解（{reason}）：{text[:40]}…"
+            problems.append(msg)
+            dropped.append({"id": fid, "text": text[:60], "reason": msg})
             continue
+        if material:
+            ok2, reason2 = citations.check(text, material, where=material_where)
+            if not ok2:
+                msg = (f"事实 {fid} 未逐字出自{material_where}（{reason2}）：{text[:40]}…"
+                       "——教材里找不到这句话：可能是模型用自己的知识编的，"
+                       "也可能本单元对应的教材段落没讲到它（教材锚定 R37 S5）")
+                problems.append(msg)
+                dropped.append({"id": fid, "text": text[:60], "reason": msg})
+                continue
         if concept_id and known_concepts is not None and concept_id not in known_concepts:
             problems.append(f"事实 {fid} 的 concept_id {concept_id!r} 未注册（须指向既有概念注册表）")
             continue
@@ -91,7 +127,7 @@ def clean_facts(raw_facts: list, lecture: str, *,
             fid = f"{fid}-{i}"
         seen_ids.add(fid)
         kept.append(TaughtFact(id=fid, text=text, concept_id=concept_id))
-    return kept, problems
+    return kept, problems, dropped
 
 
 def clean_derivable(raw_items: list, fact_ids: set[str]) -> tuple[list[Derivable], list[str]]:
@@ -116,8 +152,12 @@ def clean_derivable(raw_items: list, fact_ids: set[str]) -> tuple[list[Derivable
 
 
 def check_basis(basis: BasisDoc | dict | None, *, lecture: str, fact_ids: set[str],
-                derivable: list[Derivable] | None = None, label: str = "题目") -> tuple[bool, str]:
-    """单条 `basis` 判定 → (是否可答, 中文原因)。"""
+                derivable: list[Derivable] | None = None, label: str = "题目",
+                material: str = "", material_where: str = MATERIAL_WHERE) -> tuple[bool, str]:
+    """单条 `basis` 判定 → (是否可答, 中文原因)。
+
+    R37 S5：给了 `material` 时，引文还必须**逐字出自教材正文**（第三类校验，教材锚定）。
+    """
     if basis is None:
         return False, f"{label}未声明依据（basis 缺失）——零基础学习者无从推出，按不可答处理"
     b = basis if isinstance(basis, BasisDoc) else BasisDoc(**basis)
@@ -132,6 +172,11 @@ def check_basis(basis: BasisDoc | dict | None, *, lecture: str, fact_ids: set[st
     ok, reason = citations.check(b.quote, lecture, where="本单元讲解原文")
     if not ok:
         return False, f"{label}的引文不成立：{reason}"
+    if material:
+        ok2, reason2 = citations.check(b.quote, material, where=material_where)
+        if not ok2:
+            return False, (f"{label}的引文不在{material_where}中（教材锚定未通过：{reason2}）"
+                           "——教材里没有这句话，不能拿它当出题依据（R37 S5）")
     premises = [str(x) for x in (b.premises or []) if str(x).strip()]
     rule = str(b.rule or "").strip()
     if premises or rule:  # 推理题：须 ≥2 条已述事实前提 + 明确规则
@@ -154,27 +199,41 @@ def _drop_exercise(ex: ExerciseDoc, reason: str) -> dict:
 
 
 def gate_node(doc: NodeDoc, *, drop: bool = True,
-              known_concepts: set[str] | None = None) -> AnswerabilityReport:
-    """对一个 NodeDoc 做可答性判定。
+              known_concepts: set[str] | None = None,
+              material: str | None = None,
+              material_where: str = MATERIAL_WHERE) -> AnswerabilityReport:
+    """对一个 NodeDoc 做可答性判定（R35）＋**教材锚定**（R37 S5）。
 
     `drop=True`（生成端默认）：不合规的**核心题**与 socratic 一律**丢弃**（S5：丢弃该题，不是让内容失败），
     并把通过校验的事实/推理/题/追问回填到 doc（供落盘留档）。
     `drop=False`（审计/只读）：只报告，不改 doc。
     `known_concepts`（R35 §11）：给出时，`taught_facts[].concept_id` 必须落在其中。
+    `material`（R37 S5）：给出时（该学科有教材），事实句与引文还必须**逐字出自教材正文**——
+    这是闸门的**第三类校验**；教材里找不到的事实句被丢弃，一条不剩 → `report.facts` 为空，
+    调用方据此判**整单元失败**（不得回退"自己编的启发式内容"）。
     """
     lecture = doc.explanation.body or doc.body_md or ""
-    facts, fp = clean_facts(doc.taught_facts, lecture, known_concepts=known_concepts)
+    material = material or ""
+    facts, fp, dropped_facts = clean_facts(doc.taught_facts, lecture,
+                                           known_concepts=known_concepts,
+                                           material=material, material_where=material_where)
     derivable, dp = clean_derivable(doc.derivable, fact_id_set(facts))
-    report = AnswerabilityReport(facts=facts, derivable=derivable, problems=list(fp) + list(dp))
+    report = AnswerabilityReport(facts=facts, derivable=derivable,
+                                 problems=list(fp) + list(dp),
+                                 dropped_facts=dropped_facts,
+                                 material_checked=bool(material))
     report.verified = bool(facts)
     if not facts:
         report.problems.append(NO_PACK_PROBLEM)
+        if material:
+            report.problems.append(NO_MATERIAL_COVERAGE)
 
     ids = fact_id_set(facts)
     kept_ex: list[ExerciseDoc] = []
     for ex in doc.exercises:
         ok, reason = check_basis(ex.basis, lecture=lecture, fact_ids=ids, derivable=derivable,
-                                 label=f"练习 {ex.id}")
+                                 label=f"练习 {ex.id}", material=material,
+                                 material_where=material_where)
         if ok:
             kept_ex.append(ex)
         else:
@@ -187,7 +246,8 @@ def gate_node(doc: NodeDoc, *, drop: bool = True,
     for i, ask in enumerate(follows):
         basis = bases[i] if i < len(bases) else None
         ok, reason = check_basis(basis, lecture=lecture, fact_ids=ids, derivable=derivable,
-                                 label=f"socratic[{i + 1}]")
+                                 label=f"socratic[{i + 1}]", material=material,
+                                 material_where=material_where)
         if ok:
             report.asks.append(ask)
             report.asks_basis.append(basis if isinstance(basis, BasisDoc) else BasisDoc(**basis))
@@ -217,7 +277,6 @@ def exercises_answerable(doc: NodeDoc) -> bool:
         check_basis(ex.basis, lecture=lecture, fact_ids=ids, label=ex.id)[0] for ex in doc.exercises
     )
 
-
 def check_progression(doc: NodeDoc, prereq_docs: list[NodeDoc]) -> list[str]:
     """**P4 机器校验**（R36 欠账）：难度提升只能靠"已教事实的累积"。
 
@@ -230,12 +289,12 @@ def check_progression(doc: NodeDoc, prereq_docs: list[NodeDoc]) -> list[str]:
     """
     problems: list[str] = []
     own_lecture = doc.explanation.body or doc.body_md or ""
-    own_facts, _ = clean_facts(doc.taught_facts, own_lecture)
+    own_facts, _, _ = clean_facts(doc.taught_facts, own_lecture)
     own_ids = fact_id_set(own_facts)
     inherited: set[str] = set()
     for pd in prereq_docs or []:
         p_lecture = pd.explanation.body or pd.body_md or ""
-        p_facts, _ = clean_facts(pd.taught_facts, p_lecture)
+        p_facts, _, _ = clean_facts(pd.taught_facts, p_lecture)
         inherited |= fact_id_set(p_facts)
     allowed = own_ids | inherited
 
@@ -268,6 +327,8 @@ def check_progression(doc: NodeDoc, prereq_docs: list[NodeDoc]) -> list[str]:
 __all__ = [
     "MIN_PREMISES_FOR_REASONING",
     "NO_PACK_PROBLEM",
+    "MATERIAL_WHERE",
+    "NO_MATERIAL_COVERAGE",
     "AnswerabilityReport",
     "fact_id_set",
     "clean_facts",

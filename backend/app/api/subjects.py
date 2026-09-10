@@ -193,6 +193,16 @@ def put_outline(subject_id: str, body: PutOutlineBody, db: Session = Depends(get
             raise _err(422, "validation_error",
                        "大纲引用的材料不存在于该学科引用库：" + "、".join(sorted(set(missing)))
                        + "。请先在「学科管理 · 材料」中导入/上传该材料，或移除该单元的溯源引用。")
+        # R37 S7：材料是扫描版/未提取到文字 → 不许采纳"没读到书"的大纲
+        for m in mat.list_materials(db, subject_id):
+            h = m.get("text_health") or {}
+            if h.get("checked") and not h.get("healthy"):
+                raise _err(422, "validation_error",
+                           f"无法采纳大纲：材料《{m['title']}》没有可用的文本层。{h.get('note', '')}")
+        # R37 S2：教材全覆盖——地图条目未映射 → 违规（不得悄悄丢章节）
+        cov = mat.coverage_problems(units, mat._material_index(db, subject_id))
+        if cov:
+            raise _err(422, "validation_error", "；".join(cov))
         doc = outline_store.add_outline(
             db, subject_id, units=units, status=body.status, source=body.source,
             note=body.note, known_content_ids=_content_ids(), source_materials=mat_ids,
@@ -270,11 +280,14 @@ class DraftOutlineBody(BaseModel):
 
 
 def _draft_materials(db: Session, subject_id: str) -> dict | None:
-    """R36 D1/D4：起草注入包（引用材料分节摘要 + 服务端校验索引）；无材料 → None（退化为现状）。"""
-    from ..config import get_settings
+    """D1/D4（R36）→ S1/S2/S8（R37）：起草注入包（章→节地图 + 完整正文分批 + 服务端校验索引）。
+
+    预算默认**不限**（``MF_MATERIAL_INJECT_MAX_CHARS=0``）；显式设上限时才走 R36 的截断降级。
+    无材料 → None（退化为现状：仅按 brief 起草，并显式标注本内容无教材依据）。
+    """
     from ..outline import materials as mat
 
-    pack = mat.draft_materials(db, subject_id, max_chars=get_settings().outline_material_max_chars)
+    pack = mat.draft_materials(db, subject_id)
     return pack if pack.get("count") else None
 
 
@@ -300,6 +313,8 @@ def generate_unit_content(subject_id: str, unit_id: str, db: Session = Depends(g
     """懒生成单元内容（source:auto 落盘 + 库/DB 同步；幂等；docs/14 §2.3 · A4）。
 
     预置学科内容由课程蓝图（roadmap）流水线治理 → 本端点仅 custom 学科。
+    R37：注入该单元对应的**教材章/节完整正文**并做**教材锚定**（S5）——
+    拿不到「逐字出自教材」的事实句 → ``status=uncovered``（中文告知"教材未覆盖此单元"，不落盘）。
     """
     _require_enabled(db, subject_id)
     from ..outline.generate import generate_unit_content as _gen
@@ -307,10 +322,27 @@ def generate_unit_content(subject_id: str, unit_id: str, db: Session = Depends(g
     try:
         from ..outline import materials as mat
 
-        summaries = mat.materials_summaries(db, subject_id)  # B3：引用材料注入
-        return _gen(db, subject_id, unit_id, material_summaries=summaries)
+        unit = None
+        doc = outline_store.get_outline(subject_id)
+        if doc is not None:
+            unit = doc.by_id().get(unit_id)
+        pack = mat.unit_material_pack(db, subject_id, unit) if unit is not None else None
+        return _gen(db, subject_id, unit_id, material_pack=pack)
     except OutlineError as e:
         raise _outline_err(e) from e
+
+
+@router.get("/subjects/{subject_id}/coverage")
+def subject_coverage(subject_id: str, db: Session = Depends(get_db)) -> dict:
+    """R37 S6：**覆盖账本**——`已覆盖节 / 总节` + 未覆盖清单 + 每单元来源材料/节标签/覆盖状态。
+
+    数据源＝教材章/节地图（``outline.bookmap``）× 大纲单元溯源 × 单元生成时写回的覆盖状态；
+    大纲页与前端复用同一份账（不新建平行机制）。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    return mat.coverage_ledger(db, subject_id)
 
 
 # ---------- A2：概念层与进度映射（docs/14 §2.2） ----------
@@ -433,6 +465,7 @@ class PdfUploadOut(BaseModel):
     filename: str
     pages: int | None = None
     chars: int | None = None
+    text_health: dict | None = None   # R37 S7：文本层健康度（扫描版 → 中文告知，不静默出稿）
 
 
 @router.post("/subjects/{subject_id}/materials/upload-pdf", status_code=201)
@@ -467,7 +500,6 @@ def material_upload_pdf(
     except OutlineError as e:
         raise _outline_err(e) from e
     return PdfUploadOut(**entry, pages=parsed["pages"], chars=parsed["chars"])
-
 
 class SearchBody(BaseModel):
     query: str = Field(min_length=1)

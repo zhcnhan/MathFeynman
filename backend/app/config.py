@@ -59,11 +59,27 @@ class Settings:
         default_factory=lambda: int(os.getenv("LLM_MAX_TOKENS_PER_DAY", "0") or "0")
     )
 
-    # --- 大纲起草的材料注入预算（R36 D4）---
-    # 单次起草注入 prompt 的引用材料正文**总字符上限**（超出即分节摘要降级 + 截断留痕；
-    # **禁止整本塞进一次调用**）。调用点：api/subjects._draft_materials → materials.draft_materials()。
+    # --- 大纲起草的材料注入预算（R36 D4 → R37 S1 改造）---
+    # **R37 起默认 0 = 不限**：教材＝权威真源，不再用"前 N 字摘要/总预算"糊弄（用户明示不省成本）。
+    # 该变量是 R36 的旧名，保留兼容（显式设置时仍生效）；新名优先：
+    # MF_MATERIAL_INJECT_MAX_CHARS（0=不限，>0=单次注入的硬上限，超限按结构截断并留痕）。
     outline_material_max_chars: int = field(
-        default_factory=lambda: int(os.getenv("MF_OUTLINE_MATERIAL_MAX_CHARS", "6000") or "6000")
+        default_factory=lambda: int(os.getenv("MF_OUTLINE_MATERIAL_MAX_CHARS", "0") or "0")
+    )
+    material_inject_max_chars: int = field(
+        default_factory=lambda: int(os.getenv("MF_MATERIAL_INJECT_MAX_CHARS", "0") or "0")
+    )
+    # R37 S1：书太大时的**结构化分段**阈值（单次调用注入正文的物理上限，按章/页边界切，
+    # **绝不**在句中截断）。0 = 不分段（整本一次调用，仅供小材料/测试）。
+    material_batch_chars: int = field(
+        default_factory=lambda: int(os.getenv("MF_MATERIAL_BATCH_CHARS", "60000") or "0")
+    )
+    # R37 S7：扫描/图片版 PDF 的文本层健康度门槛（每页平均字符数 / 有文字的页占比）
+    material_min_chars_per_page: int = field(
+        default_factory=lambda: int(os.getenv("MF_MATERIAL_MIN_CHARS_PER_PAGE", "40") or "40")
+    )
+    material_min_text_page_ratio: float = field(
+        default_factory=lambda: float(os.getenv("MF_MATERIAL_MIN_TEXT_PAGE_RATIO", "0.5") or "0.5")
     )
 
     # --- 外部检索后端（docs/14 §8 · Phase C C1；默认未启用）---
@@ -111,3 +127,16 @@ class Settings:
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def material_inject_budget(s: Settings | None = None) -> int:
+    """R37 S1：**生效的**材料注入上限（0 = 不限）。
+
+    优先级：``MF_MATERIAL_INJECT_MAX_CHARS``（R37 新名）> ``MF_OUTLINE_MATERIAL_MAX_CHARS``
+    （R36 旧名，显式设置时仍生效）> 默认 0（不限）。
+    """
+    s = s or get_settings()
+    raw = os.getenv("MF_MATERIAL_INJECT_MAX_CHARS")
+    if raw not in (None, ""):
+        return max(0, s.material_inject_max_chars)
+    return max(0, s.outline_material_max_chars)

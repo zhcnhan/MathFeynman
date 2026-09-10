@@ -349,7 +349,11 @@ def _answerability_structure_problems(doc: NodeDoc, report) -> list[str]:
     """可答性判定**之后**的结构后果：全丢光了也算不合格（避免落盘空壳）。"""
     problems: list[str] = []
     if not report.verified:
-        problems.append("未声明可答知识包（taught_facts）：本单元事实句未逐字取自讲解")
+        if report.material_checked:
+            problems.append("未声明可答知识包（taught_facts）：本单元事实句未逐字出自**教材正文**"
+                            "（R37 S5 教材锚定不通过——教材里找不到这些句子）")
+        else:
+            problems.append("未声明可答知识包（taught_facts）：本单元事实句未逐字取自讲解")
     if not doc.exercises:
         problems.append("可答性判定后无任何合规练习（全部因缺依据被丢弃）")
     return problems
@@ -438,11 +442,19 @@ def generate_unit_content(
     force: bool = False,
     drafter: str = "auto",  # auto=有 key 走 AI，否则 heuristic；heuristic=强制离线
     material_summaries: list[dict] | None = None,
+    material_pack: dict | None = None,
 ) -> dict:
     """懒生成单元内容（学科化多题型 + 学科 rubric + 多样/自检校验）。
 
-    AI 起草失败/校验不过 → 自动降级 heuristic；heuristic 也不过 → failed（带问题透传）。
-    material_summaries（B3）：本地/联网引用材料摘要（注入 AI 起草上下文）。
+    R37 教材真源化（有材料时）：
+    - 注入该单元对应的**教材章/节完整正文**（``materials.unit_material_pack``，不截断）；
+    - 闸门加**第三类校验**（教材锚定）：事实句/引文必须逐字出自教材；不合规的题**丢弃**；
+    - 两轮仍拿不到「逐字出自教材」的事实句 → **整单元失败**（status=uncovered，中文告知
+      "教材未覆盖此单元"），**不落盘、不编造**（不回退"自己编的启发式内容"）；
+    - 每单元把**覆盖状态**（完整/部分/未覆盖）+ 来源材料/节标签写回大纲单元 meta（S6 覆盖账本）。
+
+    AI 起草失败/校验不过 → 自动降级 heuristic（**仅当该学科无教材**）；heuristic 也不过 → failed。
+    material_summaries（B3 旧口径）：本地/联网引用材料摘要；有 material_pack 时以 pack 为准。
     """
     subj = outline_store.get_subject(db, subject_id)
     if subj is None:
@@ -461,15 +473,35 @@ def generate_unit_content(
                 "unit": unit_id, "note": "内容已在库（懒生成幂等）"}
     from ..config import get_settings
 
+    # R37：教材注入包（单元 → 教材章/节完整正文 + 全材料正文作为锚定原文）
+    from . import materials as mat
+
+    pack = material_pack if material_pack is not None else mat.unit_material_pack(db, subject_id, unit)
+    binding = str(pack.get("binding_text") or "")
+    has_material = bool(binding)
+    if has_material and not pack.get("covered"):
+        note = ("教材未覆盖此单元：" + str(pack.get("note") or "教材中未检索到与本节相关的内容")
+                + "。按 R37 S6，系统不编造内容——请调整单元与教材章节的对应关系，"
+                  "或确认该主题确实不在本教材中。")
+        _record_coverage(db, subject_id, unit.id, {
+            "status": "未覆盖", "material_bound": True, "grounded_facts": 0,
+            "dropped_facts": 0, "dropped_exercises": 0, "sources": [], "note": note,
+        })
+        return {"status": "uncovered", "node_id": unit.id, "path": "", "subject": subject_id,
+                "unit": unit_id, "note": note, "coverage": {"status": "未覆盖"}}
+
     use_ai = drafter == "auto" and bool(get_settings().llm_api_key)
     doc: NodeDoc | None = None
     a11y_problems: list[str] = []
+    report = None
     if use_ai:
         errs: list[str] = []
         for attempt in range(1, 3):
             try:
                 payload = _ai_draft(
-                    subject_id, unit, material_summaries=material_summaries, errors=errs or None)
+                    subject_id, unit, material_summaries=material_summaries, errors=errs or None,
+                    material_text=str(pack.get("text") or ""),
+                    material_entries=list(pack.get("entries") or []))
                 doc = build_node_doc(unit, subject_id=subject_id, subject_label=subj.label,
                                      exercises=payload["exercises"], feynman_task=payload["task"],
                                      lecture=payload["lecture"], facts=payload["facts"],
@@ -480,10 +512,11 @@ def generate_unit_content(
                 doc = None
                 continue
             problems = validate_generic_content(doc)
-            # R35 S1/S2/S5：可答性判定（**独立函数、独立调用**，不揉进结构校验）——
+            # R35 S1/S2/S5 ＋ R37 S5：可答性 + **教材锚定**（独立函数、独立调用）——
             # 不合规的题/追问被丢弃；若丢弃后不满足题量/题型/例题要求 → 带原因重生成
             report = answerability.gate_node(
-            doc, known_concepts={str(t) for t in (unit.concept_tags or []) if str(t).strip()})
+                doc, known_concepts={str(t) for t in (unit.concept_tags or []) if str(t).strip()},
+                material=binding or None)
             # P4（R36 欠账）：难度提升只能靠已教事实的累积（需前置单元内容）
             progress_problems = answerability.check_progression(doc, _prereq_docs(subject_id, unit))
             a11y_problems = list(report.problems)
@@ -493,6 +526,19 @@ def generate_unit_content(
             # 丢弃原因回灌给模型（这是"修生成器"的输入，不是只改某一题文案）
             errs.extend(f"[attempt {attempt}] {p}" for p in (problems + a11y_problems[:3]))
             doc = None
+    if doc is None and has_material and use_ai:
+        # 有教材 + 有模型：两轮都没能产出「逐字出自教材」的内容 → 整单元失败（不编造）
+        detail = "；".join((a11y_problems or [])[:2]) or "模型输出与教材无字面接地"
+        note = answerability.NO_MATERIAL_COVERAGE + f"（细节：{detail}）"
+        _record_coverage(db, subject_id, unit.id, {
+            "status": "未覆盖", "material_bound": True,
+            "grounded_facts": len(getattr(report, "facts", []) or []),
+            "dropped_facts": len(getattr(report, "dropped_facts", []) or []),
+            "dropped_exercises": len(getattr(report, "dropped_exercises", []) or []),
+            "sources": list(pack.get("sources") or []), "note": note,
+        })
+        return {"status": "uncovered", "node_id": unit.id, "path": "", "subject": subject_id,
+                "unit": unit_id, "note": note, "coverage": {"status": "未覆盖"}}
     if doc is None:
         lecture = heuristic_lecture(unit)
         facts = heuristic_facts(unit, lecture)
@@ -507,34 +553,103 @@ def generate_unit_content(
                              asks=heuristic_asks(unit, lecture))
         report = answerability.gate_node(
             doc, known_concepts={str(t) for t in (unit.concept_tags or []) if str(t).strip()})
+        # ⚠️ 离线启发式**不做**教材锚定（内容来自大纲元数据，不是教材）——因此覆盖状态如实记为
+        #    "未覆盖：本内容无教材依据"，绝不假装读过书（S3/S6）。有模型时才有教材锚定。
         a11y_problems = list(report.problems)
         problems = validate_generic_content(doc) + _answerability_structure_problems(doc, report)
         if problems:
             return {"status": "failed", "node_id": unit.id, "path": "", "subject": subject_id,
                     "unit": unit_id, "note": "启发式内容校验未通过：" + "；".join(problems[:3])}
-    # B3：引用材料可追溯（讲解正文附"参考材料"来源标注；AI 起草时摘要已注入上下文）
-    if material_summaries:
-        refs = "\n".join(
-            f"- 「{m.get('title', '')}」（{m.get('source', '本地')}"
-            + (f"，{m.get('url', '')}" if m.get("url") else "") + "）"
-            for m in material_summaries[:8]
-        )
-        if refs:
-            suffix = "\n\n## 参考材料（可追溯来源）\n" + refs + "\n"
-            doc.body_md += suffix
-            doc.explanation.body += suffix
+    # B3/R37：引用材料可追溯（讲解正文附"教材依据"来源标注）
+    refs = _source_refs(pack, material_summaries)
+    if refs:
+        suffix = "\n\n## 教材依据（可追溯来源）\n" + refs + "\n"
+        doc.body_md += suffix
+        doc.explanation.body += suffix
+    # R37 S6：覆盖状态写回大纲单元（完整/部分/未覆盖 + 来源材料/节标签）
+    coverage = _coverage_of(report, pack, has_material=has_material)
     path = _node_file_path(subject_id, unit.id)
     path.write_text(_frontmatter_md(doc), encoding="utf-8")
     from ..service.library import refresh_library, sync_content
 
     refresh_library()
-    report = sync_content(db)
+    out_report = sync_content(db)
     db.commit()
-    if not report.ok:
+    _record_coverage(db, subject_id, unit.id, coverage)
+    if not out_report.ok:
         return {"status": "failed", "node_id": unit.id, "path": str(path), "subject": subject_id,
-                "unit": unit_id, "note": "；".join(report.errors[:3])}
+                "unit": unit_id, "note": "；".join(out_report.errors[:3])}
     return {"status": "created", "node_id": unit.id, "path": str(path), "subject": subject_id,
-            "unit": unit_id, "note": f"出稿：{'AI' if use_ai else '启发式'}"}
+            "unit": unit_id, "coverage": coverage,
+            "note": (f"出稿：{'AI（教材锚定）' if use_ai and has_material else ('AI' if use_ai else '启发式')}"
+                     + (f"；覆盖状态：{coverage['status']}" if has_material else
+                        "；本内容无教材依据（该学科无引用材料）"))}
+
+
+def _source_refs(pack: dict, material_summaries: list[dict] | None) -> str:
+    """讲解尾部的来源标注（R37 用教材注入包的 sources；无包时退回 B3 的摘要口径）。"""
+    sources = list(pack.get("sources") or [])
+    if sources:
+        return "\n".join(f"- 教材《{s.get('title', '')}》· {s.get('section', '')}"
+                         + ("（按单元溯源）" if s.get("match") == "declared" else "（按关键词检索命中）")
+                         for s in sources[:8])
+    if material_summaries:
+        return "\n".join(
+            f"- 「{m.get('title', '')}」（{m.get('source', '本地')}"
+            + (f"，{m.get('url', '')}" if m.get("url") else "") + "）"
+            for m in material_summaries[:8]
+        )
+    return ""
+
+
+def _coverage_of(report, pack: dict, *, has_material: bool) -> dict:
+    """覆盖状态（S6）：完整 / 部分 / 未覆盖 + 可核查计数。"""
+    sources = list(pack.get("sources") or [])
+    facts = len(getattr(report, "facts", []) or [])
+    dropped_facts = len(getattr(report, "dropped_facts", []) or [])
+    dropped_ex = len(getattr(report, "dropped_exercises", []) or [])
+    if not has_material:
+        return {"status": "未覆盖", "material_bound": False, "grounded_facts": facts,
+                "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex,
+                "sources": [], "note": "本内容无教材依据（该学科没有引用材料，或材料未通过健康度检查）"}
+    if not getattr(report, "material_checked", False):
+        return {"status": "未覆盖", "material_bound": False, "grounded_facts": facts,
+                "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex,
+                "sources": sources,
+                "note": "本内容无教材依据（离线启发式出稿：未配置模型，未读教材；"
+                        "配置 LLM_API_KEY 后重新生成即可获得教材锚定内容）"}
+    if dropped_facts or dropped_ex:
+        status = "部分"
+        note = (f"教材锚定：{facts} 条事实句逐字出自教材；"
+                f"另有 {dropped_facts} 条事实句 / {dropped_ex} 道题因教材里找不到对应原文被丢弃（R37 S5）")
+    else:
+        status = "完整"
+        note = f"教材锚定：{facts} 条事实句与全部题目引文均逐字出自教材"
+    return {"status": status, "material_bound": True, "grounded_facts": facts,
+            "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex,
+            "sources": sources, "note": note}
+
+
+def _record_coverage(db, subject_id: str, unit_id: str, coverage: dict) -> None:
+    """把覆盖状态写回大纲单元 meta（S6）；写不进去（只读/结构问题）不阻塞出稿，但留痕。"""
+    import datetime as _dt
+
+    try:
+        coverage = dict(coverage)
+        coverage.setdefault("at", _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"))
+        doc = outline_store.get_outline(subject_id)
+        if doc is None:
+            return
+        unit = doc.by_id().get(unit_id)
+        if unit is None:
+            return
+        meta = dict(unit.meta or {})
+        meta["coverage"] = coverage
+        outline_store.patch_outline_unit(db, subject_id, unit_id, fields={"meta": meta})
+    except Exception as e:  # 覆盖账本写入失败不该让"内容已落盘"变成失败
+        import logging
+
+        logging.getLogger(__name__).warning("覆盖状态写回失败（%s/%s）: %s", subject_id, unit_id, e)
 
 
 def _ai_draft(
@@ -543,11 +658,17 @@ def _ai_draft(
     *,
     material_summaries: list[dict] | None = None,
     errors: list[str] | None = None,
+    material_text: str = "",
+    material_entries: list[str] | None = None,
 ) -> dict:
     """真模型学科化出稿（CALL_UNIT_CONTENT · light 档 · JSON schema 校验）。
 
     R35 S1/S2：出稿必须**同时产出** `taught_facts`（逐字取自讲解的事实句）、每题 `basis`
     （引用 fact_ids + 讲解原文引文）、`worked_examples ≥1`、以及带依据的 socratic `asks`。
+
+    R37 S3/S4（教材真源化）：``material_text`` 是**本单元对应教材章/节的完整正文**，
+    必须注入 prompt 并给出硬约束——讲解是该段的完整演绎（可换措辞/举例，不得省略要点、
+    不得加教材外事实）；`taught_facts[].text` 与 `basis.quote` 必须**逐字出自教材**。
     ⚠️ 新增输出字段三处同改（R36 §8 纪律）：`ai/calls.py` schema + 本 prompt + 往返用例。
     """
     from ..ai.calls import CALL_UNIT_CONTENT
@@ -587,13 +708,29 @@ def _ai_draft(
         "5) 讲解写了整类的性质时，**不要**出需要个体之间比较的题；\n"
         "6) `worked_examples` **至少 1 个**（示范如何合法作答）；`asks` 1–3 条，"
         "指代必须明确（禁止「这个概念/它」这类无指向的说法）；\n"
-        "7) `exercises` 3–5 道且**至少含 2 种题型**、题面互不相同；判断陈述明确可判；讲解简洁准确。"
+        "7) `exercises` 3–5 道且**至少含 2 种题型**、题面互不相同；判断陈述明确可判；讲解简洁准确。\n"
+        "**教材锚定硬要求（R37，违反即被服务端丢弃/整单元失败）**：\n"
+        "8) 有教材段落时，你的讲解必须是**该段教材的完整演绎**——逐个要点讲到（不得省略要点），"
+        "可以换措辞、举例、类比、衔接，但**不得引入教材没有陈述的事实/数字/结论**；\n"
+        "9) `taught_facts[].text` **必须逐字摘录自教材段落原文**（服务端会用引文尺子在教材原文里查；"
+        "抄写时不要改写、不要补字、不要合并两句）；\n"
+        "10) 每道题/每条 asks 的 `basis.quote` 也必须**逐字出自教材段落原文**"
+        "（而不是只出自你自己的讲解）；教材里找不到依据的题，服务端会**丢弃该题**；\n"
+        "11) 教材段落没讲到的内容**一律不写、不问**——宁可少讲，不得编造。"
     )
+    if material_text:
+        entries = "、".join(material_entries or []) or "（见下文）"
+        sys += f"\n**本单元对应的教材段落**（{entries}）：必须逐字引用其中的句子作为事实与依据。"
     user = (
         f"学科：{subject_id}\n单元：{unit.title}\n学习目标：" + "；".join(unit.objectives) +
-        f"\n概念标签：{'、'.join(unit.concept_tags)}\n引用材料摘要：\n{mats}\n请起草本单元学习内容。"
-        + (f"\n[上一轮未通过自动校验]\n{chr(10).join(errors[:6])}" if errors else "")
+        f"\n概念标签：{'、'.join(unit.concept_tags)}\n引用材料摘要：\n{mats}\n"
     )
+    if material_text:
+        user += ("\n===== 教材段落（**权威真源**：讲解与题目只能由它出，不得引入其外的事实）=====\n"
+                 + material_text + "\n===== 教材段落结束 =====\n")
+    user += "请起草本单元学习内容。"
+    if errors:
+        user += (f"\n[上一轮未通过自动校验]\n" + "\n".join(errors[:6]))
     out = provider.chat_json(
         CALL_UNIT_CONTENT,
         [{"role": "system", "content": sys}, {"role": "user", "content": user}],
