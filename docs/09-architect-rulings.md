@@ -723,3 +723,82 @@ R27 前落库）正是该结构——用户验收 R27 新流程的**第一个动
 
 **文档同步**：本裁决；docs/13 §3 已随批更新。
 
+## R32 · 立心（身份级去数学中心化）验收裁决 + 清理与改名执行记录（2026-09-10）
+
+> **编号澄清**：docs/15 §7C 曾拟把本批裁决编为 R31，但 R31 已被「R30 验收裁决」占用（见上节）。
+> 故**本批裁决起用 R32**；此后 docs/15 中的「R31 裁决」一律读作 R32。
+
+**背景**：R31 指定的下一批 = 立心清理（文档为主 + 代码内文案/注释可改，**逻辑不动**）+
+工作目录改名 `MathFeynman` → `YanHui`。立心三条精神基调见 docs/15 §6、README「演进与立心」。
+
+### 1. 架构侧独立复跑（不采信汇报）
+
+| 项 | 实测 | 与记录比对 |
+|---|---|---|
+| `pytest backend/tests` | **325 passed + 2 skipped / 327 collected，exit 0**（130.48s，离线） | 与 R31 基线逐位一致 ✅ |
+| `content validate` | **ok，26 节点 / 54 练习** | 与 docs/13 §4 一致 ✅ |
+| roadmap `audit()` 五学段 | **27 / 31 / 81 / 59 / 60；环 0 / 前向前置 0 / 锚点缺失 0 / boss 无主 0 / 内容不变式违规 0** | 与 R31 记录一致 ✅ |
+| 前端 `tsc --noEmit` | exit 0 | ✅ |
+
+**环境修复（属改名余波，非缺陷）**：`.venv` 在目录改名后重建时**漏装 dev 依赖**——`pytest` 不在环境中
+（`No module named pytest`），基线不可复跑。已按 pyproject 补齐：`pytest 9.1.1` / `pytest-cov 7.1.0`
+（运行时依赖 29 项本已齐全）。**记录为改名后的标准收尾步骤。**
+
+### 2. 立心与清理验收
+
+1. **身份级去数学中心化主体已完成**（提交 `92b6ff9`）：产品定义（README/docs/01）、**运行时 LLM 角色**
+   （`ai/drafting.py` 出稿 prompt、`ai/prompts.py` ContextBlock）、包描述（`pyproject.toml`）均已去数学中心。
+2. **代码内文案/注释清理（本批未提交部分）**：后端 5 文件（`ai/gateway.py`、`api/subjects.py`、
+   `domain/graph.py`、`outline/generate.py`、`service/path.py`）+ 前端 5 文件
+   （`ExercisePanel`、`SubjectSwitcher`、`DashboardPage`、`OutlinePage`、`SubjectsPage`）
+   + docs 4（02/06/07/13），**逐条复核确认零逻辑变更** ✅。
+   要点：`math preset` 硬编码文案 → 「预置学科」；guided 步骤文案去掉"设未知数/列方程"的数学专属措辞；
+   `SubjectSwitcher` 的"数学"改为取学科 `label`；graph 学段错误文案补"（通用学科即所属分组非法）"。
+3. **历史裁决 R1–R30 保持原样**，未改写（决策链证据口径，符合 docs/15 §7A-3）。
+4. 缺陷：本批未完成「代码内全量 math-only 措辞清扫」——残留面（如 `MathInput` 组件命名、数学专属
+   guided 文案、`docs/03` 图谱/总序 math-preset 标签）**列 R33 或后续清理批**，不阻塞本批验收。
+
+### 3. 工作目录改名执行记录（`MathFeynman` → `YanHui`）
+
+- ① 目录改名已执行；`_dsh-local/start-dsh.ps1` 的 `$Workspace` 已同步为 `D:\DeepseekHarness\YanHui`；
+  仓库内**唯一**残留绝对路径是 `.runtime/EULER_TICKET_R30.md` 首行的旧路径（**该文件 git 忽略、不随批入库**）。
+- ② `.venv` 已重建（`pyvenv.cfg` 指向 `D:\DeepseekHarness\YanHui\.venv`）；泄漏项见 §1（本轮已补 pytest）。
+- ③ 旧库名：`backend/data/mathfeynman.db`（真实进度：user_nodes 26 / sessions 3 / attempts 31 /
+  subjects 2 / concepts 113）仍在盘上。**根因**：`.env` 的 `MF_DB_PATH` 仍写旧名 → `db.py`
+  `_migrate_legacy_db_path()` 的"新名不存在才迁移"前置不成立 → 迁移永不触发；
+  代码默认值（`config.py`）与文档（NOTES §0）其实均已是 `backend/data/yanhui.db`。
+  **处置**：`.env`（git 忽略）+ `.env.example`（入库）同步为 `yanhui.db`，迁移交给既有代码路径自动完成
+  （**须停后端后重启**，避免改名时旧进程占着 WAL/SHM）——见 §4。#2。
+- ④ 前端 `node_modules` / `vite` 缓存随目录搬移正常（`dist` 为 9/10 改名后产物）。
+- ⑤ git 远端与镜像不受影响（`.git` 随目录搬移）。
+
+### 4. 遗留与派工
+
+**R33 批（交 Euler，小，纯文档/测试路径一致性 + 配置口径统一）**
+1. 文档旧路径同步：`docs/02-architecture.md` 目录树中 `颜回（YanHui）/` 含全角括号，改为
+   `YanHui/`；`docs/15 §7B` 的执行清单改为**已完成**并保留勘察结论（作改名手册）。
+2. `.env.example` 的 `MF_DB_PATH` 由 `backend/data/yanhui.db` 保持（入库口径即新名）；
+   同步 `IMPLEMENTATION_NOTES` 的库路径说明；`.env`（本地）由用户侧同步或由 Euler 在停服后改。
+3. `backend/tests/conftest.py` 的 `MF_DB_PATH` 已隔离到临时根（无需改），仅复核。
+
+**用户动作（R33 真人验收清单，沿用 R31 转载）**
+- 真人浏览器走查：重开遗留会话 `s-f2decfcf.u01:a7689b7ebf`，走"首讲 → 补答 → 整合重讲"，
+  确认分数可见上升、得分条 / 缺口提示 / 额度徽标正确（R29 修复后不再 500）；
+- 真实 SearXNG 端到端（自托管后配 `MF_SEARCH_PROVIDER`/`MF_SEARXNG_URL`）；PDF 上传 UI；
+  math 停用/重启用 UI 演示；材料可追溯重生成。
+
+**架构侧已办（本批）**
+- DSH 会话存储事故的**预防动作**：`.dsh` 全量备份（robocopy 权威比对 Files 52886 / Mismatch 0 /
+  FAILED 0）、旧版 0.1.2 缓存**双改名屏蔽**（目录名 + `bin.js`→`bin.js.disabled-bak`，阻断启动器
+  "探 `bin.js` 存在性"的发现路径），并以启动器自身算法验证其唯一解析到 0.1.5。属会话基础设施，
+  不涉及仓库改动。
+
+### 5. 流程纪律新增（改名/升级类操作）
+
+**改名或切换 DSH 版本之前，必须先冻结并备份**（本批教训）：① 停服务；② `.dsh` 全量副本；
+③ 再改名/换版本；④ 改名后同步"文件内声明的路径"（`cwd`/`identity.cwd`）与启动脚本；
+⑤ 复跑基线。**三项高危操作（改工作目录名 / 切 DSH 版本 / 升级 DSH）禁止在同一时间窗内叠加。**
+
+**结论：立心与清理**（文档 + 代码内文案/注释，逻辑不动）**验收通过、放行**；
+改名执行记录如上，遗留项按 §4 派工。
+

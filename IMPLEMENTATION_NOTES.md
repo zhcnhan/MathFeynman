@@ -2059,3 +2059,44 @@ R29 引申 10，不降）；R10/R11/R17 费曼分支、R27 三条路径、R29 �
    因那属状态机语义变更、超出"深度补齐 + 类型校验"授权。
 5. `_ensure_flow_shape` 在 `_response` 每帧调用（幂等、O(键数)），未见性能影响；若后续 flow 体积
    显著增长可加"仅当结构变更才回写"的短路。
+
+---
+
+## 51. 立心批验收（R32）+ 架构侧会话续接（2026-09-10 · 颜回/架构师）
+
+> 本节由**架构侧**追加（非 Euler 实现记录）；Euler 的实现记录请从 **§52** 起顺延。
+
+**基线独立复跑（不采信汇报，2026-09-10）**
+- pytest **325 passed + 2 skipped / 327 collected，exit 0**（130.48s，离线）；
+  留档：`%TEMP%\yanhui-baseline-r32.txt`。与 R31 记录逐位一致 → 立心批**未影响任何行为**。
+- `content validate` **ok 26/54**；roadmap `audit()` 五学段 **27/31/81/59/60**，各错误项 0；
+  `npx tsc --noEmit` exit 0。
+
+**环境实况（改名余波，已修）**
+- `.venv` 在目录改名后重建时**漏装 dev 依赖**→ `No module named pytest`，基线不可复跑。
+  已补：`pip install -e "backend[dev]"` → pytest **9.1.1** / pytest-cov **7.1.0**。
+  运行时依赖（fastapi/uvicorn/sqlalchemy/pydantic/sympy/fsrs/PyYAML/pypdf 等 29 项）本已齐全。
+- `npm run build` 在本会话受限沙箱内失败于 `esbuild: spawn EPERM`（子进程管道被策略阻断）
+  → **环境限制，非代码问题**；`tsc --noEmit` 已独立通过，build 需在普通终端复核。
+- 后端服务当时在 8000 活跃（返回 200）→ 数据库改名/迁移**不可热做**，已列入 R33 工单停服执行。
+
+**立心批验收结论：通过、放行**（docs/09 R32）
+- 主体提交 `92b6ff9`（产品定义 + 运行时 LLM 角色 + 包描述 + README 立心）；
+- 代码内文案/注释清理：本批工作树 14 文件（后端 5 / 前端 5 / docs 4），**逐行复核零逻辑变更**
+  （唯一表达式 `preset?.label ?? "数学"` 为纯展示回退）；随本批提交；
+- 历史裁决 R1–R30 未改写（决策链证据口径）。
+
+**库路径遗留（R33 任务 B）**：真实库 `backend/data/mathfeynman.db` 仍在用（user_nodes 26 /
+sessions 3 / attempts 31 / subjects 2 / concepts 113）。根因＝`.env` 的 `MF_DB_PATH` 写旧名，
+使 `db.py::_migrate_legacy_db_path()` 的"新名不存在才迁移"前置不成立 → 迁移永不触发；
+代码默认值（`config.py`）与本文档 §0 其实均已是 `backend/data/yanhui.db`。
+
+**会话续接（架构师）**：本会话为 **颜回（YanHui 新任架构师）首棒**，续接记录见 docs/15 §8 #1；
+下一批 = R33（文档/配置一致性 + 库路径归一 + 真人验收清单），工单 `.runtime/EULER_TICKET_R32.md`。
+
+**会话基础设施事故留档（与本项目代码无关，仅纪律）**：DSH 0.1.2→0.1.5 升级 + 工作目录改名 +
+旧版误启动三事叠加，导致**旧会话 chat 正文丢失**（项目文件零损失）。预防已做：`.dsh` 全量备份
+（robocopy 权威比对 Files 52886 / Mismatch 0 / FAILED 0）+ 旧版 0.1.2 缓存**双改名屏蔽**
+（目录名 + `bin.js`→`bin.js.disabled-bak`，阻断启动器"探 `bin.js` 存在性"的发现路径），
+并以启动器自身算法验证唯一解析到 0.1.5。纪律见 docs/09 R32 §5。
+

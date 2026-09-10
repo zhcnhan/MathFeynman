@@ -20,24 +20,24 @@
 - 把关 Euler：每批回来先独立复跑（pytest/audit/validate/git），再给裁决（R 号）与放行。
 - 维护规则常青：docs 唯一事实源；错误必须中文；Euler 每里程碑 git 提交；范围内改动前先改文档。
 
-## 3. 当前状态（截至 2026-09-09 · Phase C 收尾）
-- 产品：通用费曼教练（docs/14）已过 Phase A（A1–A4，R19）与 Phase B（B1–B5，R23）；
+## 3. 当前状态（截至 2026-09-10 · 立心批已验收）
+- 产品：通用费曼教练（docs/14）已过 Phase A（A1–A4，R19）、Phase B（B1–B5，R23）、Phase C（C1–C6，R24）；
   数学=preset（总 Outline 258 单元）；品牌 YanHui（颜回）全科教练；中文化（docs/13 §2）生效。
-- **Phase C（C1–C5）已完成（Euler 汇报收尾中）**：C1 外部检索 provider 抽象（默认未启用 +
-  可配自托管 SearXNG；LLM 候选整理 + select 抓公开网页正文入库）；C2 pypdf PDF 分页/分节
-  入库；C3 学科停用 subject.enabled 过滤（图谱/仪表盘/地图/复习）+ 学科管理收敛 UI；C4 backlog
-  （heuristic 选项乱序+answer_index、PUT 405 复查留档）；C5 回归 + 真模型验收（行星科学 10 单元
-  AI 内容 + 材料可追溯来源）。实现记录：IMPLEMENTATION_NOTES §40–§44。
-- 基线：pytest **291 passed + 2 skipped（离线）**；audit 5 学段全绿；content validate 26/49；
-  git 提交链 PhaseC C1→C2→C3→C4→C5→（C6 收尾文档批）。docs/14 §8.1/§7、docs/06/07 已随批同步。
+- 费曼语义：**v3 混合制**（R27 规格 / R28 验收 / R29 热修 / R30 边缘带复评 / **R31 验收通过**）。
+- **立心批已完成并经 R32 验收**：身份级去数学中心化（提交 `92b6ff9`：产品定义 + 运行时 LLM 角色 +
+  包描述 + README 立心）+ 代码内文案/注释清理（14 文件未提交工作树，零逻辑变更）+ 工作目录改名
+  `MathFeynman` → `YanHui`。执行记录见 docs/09 R32 §3；流程纪律见 R32 §5。
+- 基线（**R32 架构侧独立复跑**）：pytest **325 passed + 2 skipped**（327 collected，exit 0）；audit
+  五学段全绿（27/31/81/59/60）；content validate 26/54；`npx tsc --noEmit` 通过；git 工作树待随本批提交。
 - **进行中/待办（最重要）**：
-  a) 裁决 Euler Phase C 汇报（C1–C6 独立汇报文本在用户手中）——预期出 R24 裁决（含 NOTES
-     §40–§44 疑点：检索 provider 扩展位、PDF 仅 pypdf 文本层、soft 移除清全量进度语义、
-     跨单元 AI 题面去重、405 未复现环境记录等）；
-  b) 真人浏览器验收清单（NOTES §44/§45 与 docs/13 §3）——含真实 SearXNG 端到端、PDF 上传 UI、
-     材料可追溯重生成、math 停用/重启用 UI 演示；
+  a) **R33 小批**（交 Euler）：文档/配置一致性收尾——docs/02 目录树路径、docs/15 §7B 标记完成、
+     库路径口径统一（`.env` 的 `MF_DB_PATH` 仍指旧名 `mathfeynman.db`，迁移未触发）；工单见
+     `.runtime/EULER_TICKET_R32.md`；
+  b) **真人浏览器验收（用户动作）**：遗留会话 `s-f2decfcf.u01:a7689b7ebf` 走"首讲 → 补答 → 整合重讲"；
+     真实 SearXNG 端到端、PDF 上传 UI、math 停用/重启用演示、材料可追溯重生成；
   c) 数学内容（roadmap 到段精核/内容懒生成）持续治理项照旧。
-- 待裁决空档：Phase C 疑点集中在本批汇报（NOTES §40–§44 各节"待架构裁决"）；新裁决从 **R24** 起。
+- 下一枚裁决编号：**R33**（R31 已被 R30 验收裁决占用；R32 已用于立心批验收）。
+
 
 ## 4. 常见口径（前车之鉴，直接沿用）
 - 错误响应体嵌套 `{detail:{error:{code,message 中文}}}`；500 不裸堆栈（docs/06/13）。
@@ -75,22 +75,47 @@
 最好把工作目录名也改掉。
 
 **A. 清理范围（用户 2026-09-10 定：文档为主 + 代码内文案/注释可改，逻辑不动）**
-1. 通读 README + docs/01–15，清除 math-only 时代残留表述与"数学默认"措辞，统一到通用教练口径；
+> **执行状态：已完成并经 R32 验收**（2026-09-10）。主体提交 `92b6ff9`；代码内文案/注释清理为
+> 未提交工作树 14 文件（逐条复核零逻辑变更）。残留面（数学专属措辞/组件命名）列后续清理批。
+1. 通读 README + docs/01–15，清除 math-only 时代残留表述与"数学默认"措辞，统一到通用教练口径；✅
 1b. **代码内文案/注释**（前后端界面文案、提示语、docstring/注释里"数学中心"残留）可同步改写，
-    但**不得改动任何逻辑、schema、常量语义**——判断标准：改后行为与测试结果完全不变；
-2. 导航与标题去数学中心化（如 README 导航、docs/01 产品定位、docs/07 UI 文案）；
-3. 历史裁决（R1–R30）**保持原样不改写**（它们是决策链证据），仅在必要处补"后续被 Rxx 取代"标注；
-4. 记录本次立心于本文件 §6 与 README 演进声明。
+    但**不得改动任何逻辑、schema、常量语义**——判断标准：改后行为与测试结果完全不变；✅（部分）
+2. 导航与标题去数学中心化（如 README 导航、docs/01 产品定位、docs/07 UI 文案）；✅
+3. 历史裁决（R1–R30）**保持原样不改写**（它们是决策链证据），仅在必要处补"后续被 Rxx 取代"标注；✅
+4. 记录本次立心于本文件 §6 与 README 演进声明。✅
 
 **B. 工作目录改名（用户定名：`D:\DeepseekHarness\MathFeynman` → `D:\DeepseekHarness\YanHui`）**
+> **执行状态：已完成**（2026-09-10），执行记录与核查见 docs/09 R32 §3；下列清单保留为**改名手册**。
 执行前必须勘察的风险清单（改名会动到运行环境，务必按序）：
 - ① 全仓 grep 绝对路径 `MathFeynman`（排除 `.venv`/`node_modules`/`.git`）→ 列出需同步的脚本/配置；
 - ② `.venv` 内含绝对路径（`pyvenv.cfg`、`Scripts\*.exe` shebang）→ 极可能需**删除重建 venv**；
+  **⚠️ 实测教训：重建后必须补 `pip install -e "backend[dev]"`，否则 pytest 缺失、基线不可复跑。**
 - ③ 本机脚本（`scripts\dev.ps1`、`.runtime\pids.txt`、`_dsh-local\start-dsh.ps1`、快捷方式）；
 - ④ **当前 DSH 会话与后台任务的 cwd 就是该目录** → 必须停服、并在会话外执行改名；
   改名后需重开会话/重新指定工作目录；
 - ⑤ git 远端与镜像不受影响（`.git` 随目录搬移；确认 git-mirror 配置无绝对路径）；
-- ⑥ 前端 `node_modules` 通常可随目录搬移，但需清 `vite` 缓存；数据库为相对路径（无碍）。
+- ⑥ 前端 `node_modules` 通常可随目录搬移，但需清 `vite` 缓存。**DB 是相对路径，但 `.env` 的
+  `MF_DB_PATH` 会覆盖代码默认名**——改名时务必同步该值，否则旧库名残留、迁移静默不触发（见 R32 §3）。
 - 验证：改名后跑 `pytest backend/tests`、`npm run build`、`scripts\dev.ps1` 冒烟 + 打开页面。
 
-**C. 产出**：如需正式化，出一枚 R31 裁决（立心 + 清理与改名执行记录）；实现细节仍交 Euler 执行。
+**C. 产出**：立心 + 清理与改名执行记录已正式化为 **docs/09 R32**（原拟编 R31，因 R31 已被 R30
+验收裁决占用而顺延）；实现细节仍交 Euler 执行（R33 工单见 `.runtime/EULER_TICKET_R32.md`）。
+
+## 8. 会话续接记录（架构师侧）
+
+### #1 · 2026-09-10 · 颜回（YanHui 新任架构师 · 首棒）
+- **用户身份确认**：项目主人（唯一中继：架构师 ⇄ Euler）。
+- **基线复核（独立复跑，不采信汇报）**：pytest **325 passed + 2 skipped / 327 collected，exit 0**；
+  content validate **26/54**；roadmap audit 五学段全绿（27/31/81/59/60）；`npx tsc --noEmit` exit 0。
+  与 docs/13 §4 及 R31 记录逐位一致。
+- **环境修复**：`.venv` 改名后重建漏装 dev 依赖 → `pytest` 缺失；已补 `pip install -e "backend[dev]"`
+  （pytest 9.1.1 / pytest-cov 7.1.0）。受限沙箱内 `npm run build` 因 esbuild 子进程 EPERM 失败
+  （环境限制，非代码问题），已记入 docs/13 §4。
+- **本会话架构侧交付**：docs/09 **R32**（立心验收 + 清理/改名执行记录 + 流程纪律）；
+  docs/13 §3/§4、docs/15 §3/§7 状态同步；`.runtime/EULER_TICKET_R32.md`（R33 派工）。
+- **会话基础设施事故留档**：DSH 0.1.2→0.1.5 升级 + 工作目录改名 + 旧版误启动叠加，导致**旧会话
+  chat 正文丢失**（项目文件零损失，仅过程流水）。已做预防：`.dsh` 全量备份（robocopy 权威比对
+  Files 52886 / Mismatch 0 / FAILED 0）+ 旧版 0.1.2 缓存**双改名屏蔽**（目录名与 `bin.js` 双改，
+  阻断启动器"探 `bin.js` 存在性"的发现路径），并以启动器自身算法验证唯一解析到 0.1.5。
+  纪律见 R32 §5：**改工作目录名 / 切 DSH 版本 / 升级 DSH 三件事禁止同一时间窗叠加，且先备份 `.dsh`。**
+

@@ -28,7 +28,7 @@
 ## 2. 行为公约（沿用至今，必须遵守）
 - docs 是唯一事实源；与代码冲突以 docs 为准并记录；改动架构决策=不可变清单，需先改
   README/docs 评审（架构侧/用户批准）。
-- 红线：判题只走 sympy；LLM 输出必过 schema 校验；domain 零 LLM 依赖；`content/stages/`
+- 红线：判题只走学科 L1 判题器（math=sympy）；LLM 输出必过 schema 校验；domain 零 LLM 依赖；`content/stages/`
   既有节点与锚点 id **不得改动**；每阶段跑全量回归 + content validate；测试/生成不留
   残留文件（stages/_drafts 事后必净）。
 - 进度与疑点：全部写入 IMPLEMENTATION_NOTES.md（进度节 + "待架构裁决"节），不靠对话记忆；
@@ -42,7 +42,11 @@
   新增/改动端点都要满足；sample 级测试锁定。
 
 ## 3. 当前活动工单（新实例的第一个任务）
-> **R30 已实现（本会话交付）：F6 边缘带复评 + F5/F4/R29 引申/F2 全部落地，待架构侧验收。**
+> **R30 已验收通过（R31，2026-09-10）**：F6 边缘带复评 + F5/F4/R29 引申/F2 全部通过、已放行。
+> **立心批（身份级去数学中心化 + 文档清理 + 工作目录改名）已由 R32 验收通过**（2026-09-10）：
+> 主体提交 `92b6ff9`；代码内文案/注释清理为**未提交工作树**（14 文件，逐条复核零逻辑变更）。
+> **下一批 = R33（小批）**：文档/配置一致性收尾 + 用户真人验收清单；规格见 docs/09 R32 §4
+> 与 `.runtime/EULER_TICKET_R32.md`。
 > 提交链：443efb0（后端账本/双提交）→ bfd5bea（UI）→ a3dbddc（协议）→ 65282e9/8927a20（R28 裁决）
 > → fe9902d（R29 热修 + 回归用例）→ b1c1b05（R30 规格）
 > → **4f7990b（F6）→ 23fc603（F5）→ 49e5149（F4）→ f66af5f（R29 引申 flow 自愈）→ f8c856d（F2 行尾）**。
@@ -75,10 +79,15 @@
 - 测试内容根已隔离（conftest 会话级临时副本）；真模型冒烟需 `MF_ALLOW_LIVE_AI=1`。
 - `.env`（仓库根，git 忽略）：LLM_API_KEY 等；`MF_AUTO_EXTEND=1` 控制全自动续关；
   `LLM_MAX_TOKENS_PER_DAY=0` 不限额。
-- 当前基线（最近核实，2026-09-10 R30 收尾）：pytest **325 passed + 2 skipped**
-  （327 collected；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
+- 当前基线（**架构侧于 R32 独立复跑确认，2026-09-10**）：pytest **325 passed + 2 skipped**
+  （327 collected，exit 0，130.48s；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
   均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60）；
   content validate **26/54**（真实库，随运行期 auto 增补；测试 hermetic 基线 13 人工节点不变）；
-  前端 `npx tsc --noEmit` + `npm run build` 通过；git 仓库不含 data/、_drafts、resume/。
-  R30 前基线为 306+2（本批 +19 = F6 7 / F5 2 / flow 自愈 10）。
-  品牌：YanHui（颜回）全科教练。当前工单见 §3（R30 已实现，待架构侧验收 + 用户真人复看）。
+  前端 `npx tsc --noEmit` 通过（`npm run build` 在受限沙箱内会因 esbuild 子进程 EPERM 失败，
+  属环境限制而非代码问题，需在普通终端复核）；git 仓库不含 data/、_drafts、resume/。
+  R30 前基线为 306+2（R30 批 +19 = F6 7 / F5 2 / flow 自愈 10）。
+- 工作目录已改名：`D:\DeepseekHarness\YanHui`（旧名 MathFeynman；执行记录见 docs/09 R32 §3）。
+- `.venv` 改名后重建时曾漏装 dev 依赖（pytest 缺失）→ 已补装 `pytest 9.1.1`/`pytest-cov 7.1.0`
+  （`pip install -e "backend[dev]"`）。**改名/重建 venv 后必跑这一步，否则基线不可复跑。**
+- 品牌：YanHui（颜回）全科教练。当前工单见 §3（R32 已验收，下一批 R33）。
+
