@@ -1,0 +1,65 @@
+{
+  "schema": "yanhui.anchor_baseline/1",
+  "note": "人工内容锚点基线（排除 *_auto.md）：节点 id → 练习 id 列表；只增不改需架构侧批准",
+  "source": "content/stages（排除 *_auto.md）",
+  "node_count": 13,
+  "exercise_count": 30,
+  "nodes": {
+    "high.0201": [
+      "s1",
+      "s2"
+    ],
+    "middle.0101": [
+      "ex1",
+      "ex2",
+      "ex3"
+    ],
+    "middle.0102": [
+      "ex1",
+      "ex2",
+      "ex3",
+      "ex4"
+    ],
+    "middle.0103": [
+      "g1",
+      "g2"
+    ],
+    "middle.0104": [
+      "e1",
+      "e2"
+    ],
+    "middle.0199": [
+      "b1",
+      "b2"
+    ],
+    "middle.0201": [
+      "e1",
+      "e2"
+    ],
+    "middle.0202": [
+      "e1",
+      "e2"
+    ],
+    "primary.0101": [
+      "e1",
+      "e2",
+      "e3"
+    ],
+    "primary.0102": [
+      "e1",
+      "e2"
+    ],
+    "primary.0103": [
+      "e1",
+      "e2"
+    ],
+    "primary.0104": [
+      "e1",
+      "e2"
+    ],
+    "primary.0199": [
+      "b1",
+      "b2"
+    ]
+  }
+}
