@@ -606,7 +606,17 @@ class SessionService:
         if passed:
             f["passed"] = True
             events.append({"type": "feynman_passed", "score": f["last_combined"]})
-            return self._master_if_ready(db, sess, node, events)
+            # R27：通过时同样回传本轮评分卡（复盘/UI 展示"这一轮是怎么过的"）
+            return self._master_if_ready(
+                db, sess, node, events,
+                extra_payload={
+                    "verdict": "pass",
+                    "dimension_scores": card,
+                    "evidence_penalty": evidence_penalty,
+                    "strategy": decision.strategy,
+                    "strategy_reason": decision.reason,
+                },
+            )
         # 未过：命中边缘区间 → 下轮升 think（R12 触发 a）
         if (
             decision.strategy == ai_tier.FAST
@@ -955,7 +965,14 @@ class SessionService:
             )
         return weighted / total_w, card
 
-    def _master_if_ready(self, db: Session, sess: models.Session, node: NodeDoc, events: list[dict]) -> dict[str, Any]:
+    def _master_if_ready(
+        self,
+        db: Session,
+        sess: models.Session,
+        node: NodeDoc,
+        events: list[dict],
+        extra_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """练习 + 费曼都达标 → mastery 判定 → mastered + FSRS 首次排程。"""
         p = sess.flow_json["practice"]
         f = sess.flow_json["feynman"]
@@ -969,7 +986,7 @@ class SessionService:
         )
         if not verdict.passed:
             events.append({"type": "mastery_not_yet", "missing": verdict.missing})
-            return self._response(db, sess, events=events)
+            return self._response(db, sess, events=events, extra_payload=extra_payload or {})
 
         lib = get_library()
         mark_mastered(db, self.user_id, node.id, lib.graph)
@@ -1023,7 +1040,7 @@ class SessionService:
             db,
             sess,
             events=events,
-            extra_payload=extra,
+            extra_payload={**(extra_payload or {}), **extra},
         )
 
     # ------------------------------------------------------------------

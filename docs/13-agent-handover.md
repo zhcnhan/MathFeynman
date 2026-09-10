@@ -42,24 +42,27 @@
   新增/改动端点都要满足；sample 级测试锁定。
 
 ## 3. 当前活动工单（新实例的第一个任务）
-> 历史批次（R1–R24、docs/14 Phase A A1–A4、Phase B B1–B5、Phase C C1–C5）已完成并 git 提交
-> （基线 pytest 291 passed + 2 skipped（离线默认）、audit 5 学段全绿、content 26/49）；
-> 详见 IMPLEMENTATION_NOTES §9–§45、docs/09 R1–R27。最近前端热修 1126dfc（SessionPage hook 顺序）。
+> 历史批次（R1–R24、docs/14 Phase A A1–A4、Phase B B1–B5、Phase C C1–C5、**R27 费曼追问语义 v3**）
+> 已完成并 git 提交（基线 pytest 305 passed + 2 skipped（离线默认）、audit 5 学段全绿、
+> content 26/54）；详见 IMPLEMENTATION_NOTES §9–§47、docs/09 R1–R27。
 
-1. **R27 费曼追问语义 v3（混合制）—— 本批唯一工单**（docs/09 R27 全规格 + docs/05 §5 v3）：
-   ① 两类提交分离（feynman_submit=完整稿 / feynman_answer=补答）；删除 R25 合并稿拼接；
-   ② 评分对象改革：transcript=本轮文本 + previously_acknowledged 上下文；
-      evidence 必须逐字出自本轮文本（服务端包含校验，违规标记/降级）；
-   ③ 新增缺口账本 ledger（维度历轮最高分 + 缺口清单）与补答轻量评估（gap_check，
-      只更新缺口所属维度）；追问定向 unmet_gaps；
-   ④ 轮次预算：整体稿 ≤3（首讲+≤2 终验）、补答 ≤2；额度尽未过 → relearn（_feynman_reset 沿用），
-      R10/R11/R17 分支语义不得回归（409/回炉/清零）；
-   ⑤ UI：费曼视图双提交入口 + 实时得分条（维度账本分+缺口提示+进度条）；
-   ⑥ 测试：三条集成路径 + evidence 纪律校验；全量 pytest 不降（291+2 离线）+ 前端 build；
-      数据回归（行星科学 u01 真人再走，答追问分数须可见上升）；错误中文化绝对规则不变。
-   实现记录追加 IMPLEMENTATION_NOTES §46+，git 提交标注 R27。
-2. 后续派发视用户验收与需求：docs/14 §7 待细化项、数学内容持续治理（roadmap 到段精核）。
-3. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"；涉及 docs/02/03/05/06/07/14 的语义
+1. **R27 费曼追问语义 v3（混合制）—— ✅ 已实现并验收**（docs/09 R27 全规格 + docs/05 §5 v3 +
+   本 NOTES §46 后端实现 / §47 真模型回归）：
+   ① 两类提交分离（`feynman_submit`=完整稿 / `feynman_answer`=补答）；R25 合并稿拼接已删除；
+   ② 评分对象 = 本轮文本 + `previously_acknowledged`；evidence 服务端**归一化包含校验**（违规降级标记）；
+   ③ `service/feynman_ledger.py` 缺口账本（维度历轮最高分 + 缺口清单）+ `feynman_gap_check`
+      补答评估（调用点 13，light，只更新缺口所属维度）；追问定向 `unmet_gaps`（一次一个）；
+   ④ 预算：整体稿 ≤3、补答 ≤2；额度尽/3 次未过 → relearn（`_feynman_reset` 含账本清零）；
+      R10/R11/R17 分支语义经回归锁定（409/回炉/清零）；
+   ⑤ UI：费曼视图双提交入口 + 实时得分条（账本维度分 + 缺口提示 + 综合分/门槛进度 + 额度徽标）；
+   ⑥ 测试：`backend/tests/test_feynman_v3.py` ×11 函数 / 14 用例（三条集成路径 + evidence 纪律 +
+      账本不降级 + 补答不越权 + 已认可上下文）；全量 pytest 305+2 离线；前端 tsc/build 通过；
+      真模型走查（行星科学 u01）实测：首讲 0.0 → 答追问 0.4 → 整合终验 0.863 pass。
+2. **待架构裁决（本轮新增，NOTES §46 疑点）**：evidence 校验取"归一化包含"而非严格逐字（LLM 排版
+   差异）；降级系数 0.5 不归零；预算按次数计；离线启发式分档仅影响无 key 演示；`_enter_feynman`
+   重复定义缺陷已修（原 R17 防御实际未生效）。
+3. 后续派发视用户验收与需求：docs/14 §7 待细化项、数学内容持续治理（roadmap 到段精核）。
+4. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"；涉及 docs/02/03/05/06/07/14 的语义
    变更在实现时顺带同步。
 
 ## 4. 环境速查（新人必读）
@@ -68,9 +71,9 @@
 - 测试内容根已隔离（conftest 会话级临时副本）；真模型冒烟需 `MF_ALLOW_LIVE_AI=1`。
 - `.env`（仓库根，git 忽略）：LLM_API_KEY 等；`MF_AUTO_EXTEND=1` 控制全自动续关；
   `LLM_MAX_TOKENS_PER_DAY=0` 不限额。
-- 当前基线（最近核实，2026-09-09 Phase C 收尾）：pytest **291 passed + 2 skipped**
-  （293 collected；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
+- 当前基线（最近核实，2026-09-09 R27 收尾）：pytest **305 passed + 2 skipped**
+  （307 collected；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
   均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60）；
-  content validate **26/49**（真实库，随运行期 auto 增补；测试 hermetic 基线 13 人工节点不变）；
-  git 仓库不含 data/、_drafts、resume/。品牌：YanHui（颜回）全科教练。当前工单见 §3
-  （Phase A/B/C1–C5 完成 → 架构裁决/真人验收待收尾）。
+  content validate **26/54**（真实库，随运行期 auto 增补；测试 hermetic 基线 13 人工节点不变）；
+  前端 `npx tsc --noEmit` + `npm run build` 通过；git 仓库不含 data/、_drafts、resume/。
+  品牌：YanHui（颜回）全科教练。当前工单见 §3（R27 已完成并验收 → 待用户真人复看 + 架构裁决疑点）。

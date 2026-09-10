@@ -46,7 +46,7 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/session/start` | body `{node_id}` → 创建/恢复会话，返回状态机当前步与首批内容（讲解稿演绎结果可选异步）。**R18 总序门禁**：无既有会话而新建时校验蓝图总序（docs/09 R18）；越级 → `409 invalid_state`，detail 含"请先完成：<前置条目标题>"。既有会话恢复 / 练习·费曼续走 / 复习不受门禁影响 |
-| POST | `/session/step` | body `{session_id, action, payload}`；action ∈ `ask_question / next / submit_exercise / request_hint / feynman_submit / feynman_answer / finish / quit`（`next` = 阶段前进：讲解→例题→练习，见 docs/09 R1）。返回：下一步 UI 状态 + 新内容 + 状态机事件流 |
+| POST | `/session/step` | body `{session_id, action, payload}`；action ∈ `ask_question / next / submit_exercise / request_hint / feynman_submit / feynman_answer / finish / quit`（`next` = 阶段前进：讲解→例题→练习，见 docs/09 R1）。**R27 双提交分离**：`feynman_submit` = 完整稿（首讲/整合重讲）→ 整体评分；`feynman_answer` = 补答（只答当前追问，payload `answer`）→ 轻量缺口补答评估。返回：下一步 UI 状态 + 新内容 + 状态机事件流 |
 | GET | `/session/{id}` | 恢复会话全状态 |
 
 ### 练习与判题（幂等，供前端直接调用或经由 step）
@@ -91,6 +91,35 @@
 ```
 
 前端**无状态判断逻辑**：所有"下一步显示什么"由后端状态机裁决（防止前端逻辑分支漂移）。
+
+### 2.0 费曼阶段 payload（R27 v3 混合制，docs/09 R27）
+
+费曼阶段的 `payload` 恒带**缺口账本视图**（前端实时得分条数据源）：
+
+```jsonc
+"ledger": {
+  "dimensions": [{"key": "correctness", "score": 0.88, "best": 0.88, "latest": 0.88,
+                  "weight": 0.4, "evidence_quote": "…", "comment": "…", "updated_round": 1}],
+  "combined": 0.69,      // 实时综合分 = Σ(w·账本维度最高分)/Σw
+  "threshold": 0.7,
+  "gaps": [{"key": "evidence", "description": "还差：说出任意一种观测/探测方法", "score": 0.1}]
+},
+"combined": 0.69, "threshold": 0.7,
+"evals_done": 1, "eval_budget": 3,       // 整体稿评分：首讲 + ≤2 次终验
+"answers_done": 0, "answer_budget": 2,   // 补答：≤2（须有未答缺口）
+"next_action": "answer" | "submit",      // 有定向追问 → answer；否则 submit（交整合完整稿）
+"followup_question": "…", "followup_gap": {"key": "evidence", "description": "…"}
+```
+
+- `verdict`：`fail`（完整稿未达标，附本轮 `dimension_scores`）/ `gap`（补答结果，附
+  `gap_filled`、`gap_key`、`gap_update`）/ `pass`（由 `mastered` + `feynman_passed` 事件体现）
+  / `deferred`（评分服务不可用，进人工复核）。
+- `dimension_scores[].evidence_valid`：服务端**包含校验**结论（引文必须逐字出自本轮提交文本）；
+  `false` 时该维度分数已降级（×0.5），并带 `evidence_reason`。
+- **通过判定**：只有完整稿（`feynman_submit`）评分 ≥ threshold 才 pass → mastery；
+  补答只涨账本与展示进度，不能单独过关（R27 §5）。
+- 事件：`feynman_followup`（定向追问，带 `target_gap`）、`feynman_gap_filled` /
+  `feynman_gap_open`、`feynman_evidence_flagged`、`feynman_relearn`（额度尽/3 次未过回炉）。
 
 ### 2.1 流式协议（R12-b，SSE 可选）
 

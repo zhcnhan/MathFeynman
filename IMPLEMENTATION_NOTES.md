@@ -1760,3 +1760,142 @@ content validate 26/49 全绿；audit 5 学段不变；npm run build 通过（�
 4. docs/14 §7 其余待细化项（大纲 schema 升级迁移、标签归一化更细、题目交互块与信息架构、
    里程碑/首领单元语义等）维持"未决/待细化"清单，不在本批范围。
 
+---
+
+## 46. R27 费曼追问语义 v3（混合制）：后端实现（2026-09-09）
+
+**开机复核**（docs/13 §1）：HEAD=`187f0d0`（docs/09 R27 裁决）、工作树干净、
+pytest **291 passed + 2 skipped**（离线；2 skip=真模型冒烟/PhaseC live）、
+`content validate` **ok=True nodes=26 exercises=54**（真实库；NOTES 记的 49 为上一轮快照，
+本轮新增 auto 内容 5 题）、audit 5 学段全绿。
+
+**规格**：docs/09 R27 六点裁决 + docs/05 §5（v3 已由架构侧更新）。要点：补答与完整稿分离、
+删 R25 合并稿拼接、evidence 硬校验、缺口账本 + 定向追问、宽预算（整体稿 ≤3 / 补答 ≤2）、
+通过仍需完整稿、R10/R11/R17 分支语义不回归。
+
+**改动清单**
+1. `ai/calls.py`：新增 `GapCheckIn/GapCheckOut`（补答轻量评估）+ 调用点 **13**
+   `feynman_gap_check`（**light** 档：学生答完要立刻看到涨分）；`FeynmanEvaluateIn` 增
+   `previously_acknowledged`（账本已认可摘要）；`FeynmanFollowupIn` 增 `unmet_gaps`（定向追问）。
+2. `ai/gateway.py`：
+   - 离线启发式评分重构为**分维分档**（`offline_feynman_scores`）：correctness/example 类维度
+     按"核心概念覆盖 × 篇幅（+依据）"给 0.3/0.55/0.7/0.75/0.85/0.88/0.95 明确档；
+     own_words 按"讲全程度"；**evidence 维度单独按依据类表述给分**（缺依据即低分，缺口真实存在）；
+     self_correction 0.5 / 0.7（有自纠表述）。保证三条验收路径离线可驱动，且引文恒为本轮子串。
+   - `offline_gap_check`：补答启发式（只判目标缺口维度；`gap_filled` + 单条 `dimension_updates`）。
+   - `OpenAICompatibleGateway`：`feynman_evaluate` 传 `previously_acknowledged`；
+     `feynman_followup` 提示词改为**定向 unmet_gaps 第一项**（禁自由发问）；
+     `feynman_gap_check` 新方法（extra_bans 明确"只允许该维度一条 + evidence 必须逐字引
+     student_answer + 未答对则空数组"）；协议 `AiGateway` 增该方法。
+3. `service/feynman_ledger.py`（新，336 行）：账本 + evidence 纪律的单一数据源——
+   - `normalize_ledger`（旧会话自愈 + 补齐 rubric 维度）、`candidate_acknowledged`；
+   - `merge_card`（维度取 max；evidence **归一化包含校验**失败 → `evidence_valid=false` +
+     分数 ×0.5 降级 + `evidence_reason`）、`update_dimension`（补答只写缺口维度）；
+   - `combined`（Σw·账本最高分/Σw）、`weakest`（权重×缺失幅度最大）、`extract_gaps`（缺口清单，
+     本轮已达标即消失、历史未评到则保留）、`mark_gap_attempt`（同一缺口可再追一次）、`gap_view`。
+   - 归一化剔除空白 + 中英标点 + `…`/`．`（截断标记不能算引文内容——实测踩坑，见疑点 1）。
+4. `service/session.py`：
+   - `new_flow().feynman` 增 `followup_gap/answers_done/ledger`；`_feynman_reset` 一并清零（R17 语义超集）；
+   - 常量 `MAX_FEYNMAN_EVALS=3` / `MAX_FEYNMAN_ANSWERS=2`（`MAX_FEYNMAN_ROUNDS` 保留 = 整体稿预算）；
+   - `_act_feynman`（`feynman_submit`）**重写**：评分对象 = 本轮完整稿（**删除 R25 合并稿拼接**）；
+     传 `previously_acknowledged`；合并账本 → 实时综合分；提取缺口；`passed` 由账本综合分判定；
+     额度规则 = 整体稿 3 次满 **或**（补答 2 次尽且无剩余缺口）→ relearn（`_relearn_explain`，
+     R17 清除零）；否则定向最弱缺口出追问；
+   - `_act_feynman_answer`（新）：只答当前追问 → gap_check → **只更新缺口所属维度**
+     （模型多给的键一律忽略）→ 账本 max → 答对即"缺口关闭 + 立即涨分"；**不判 pass**
+     （`next_action="submit"`，通过必须交完整稿）；无追问/额度尽 → 中文 409；
+   - `_feynman_followup` / `_card_of` / `_feynman_eval_rounds` 辅助；
+   - `_response`：费曼账本视图 + `combined/threshold/evals_done/answers_done/eval_budget/
+     answer_budget` **恒下发**（回炉/达标后仍可展示）；通过时也回传本轮评分卡；
+   - 修复既有缺陷：`_enter_feynman` **重复定义**（后者静默覆盖前者，R17 防御实际失效）——
+     合并为一份并保留 R17"进入前轮次已满即复位"防御。
+5. `docs/06`：`/session/step` 行补 R27 双提交语义 + 新增 **§2.0 费曼阶段 payload**（账本视图、
+   证据校验字段、通过判定、事件清单）；`docs/07 §2.3`：实时得分条/双提交入口/补答横幅/定向追问/
+   复盘区分完整稿与补答。
+6. 前端（另提交）：`api.ts` 增 `FeynmanLedger/FeynmanLedgerDim/FeynmanGap/FeynmanGapUpdate`；
+   `SessionPage.tsx` 的 `FeynmanView` 重写（双提交入口 + 得分条 + 缺口提示 + 引文校验提示）；
+   `index.css` 新增得分条样式；`FeynmanHistoryPage` verdict 文案区分完整稿/补答。
+
+**测试**：`backend/tests/test_feynman_v3.py`（新 ×11 函数 / **14 用例**，evidence 纪律为参数化 ×5）：
+- ① 首讲 0.0 → 答追问 → **账本维度分真实上升**（断言 `combined` 上升 + 缺口维度 best 上升 +
+  两轮 `(score, evidence_quote)` 不同 —— 直接锁死"两轮逐字同分"回归）；
+- ② 首讲未过 → 补答补缺口 → 整合重讲 ≥0.7 → `feynman_passed` + `node_mastered`；
+- ③ 补答①未对 → 终验②（跑题）→ 追问保留 → 补答②未对 → 终验③ → **回炉 relearn**
+  （stage=explain + `feynman_relearn`/`relearn_notice` + 轮次/账本清零）；
+- ④ evidence 纪律：离线评分卡 evidence 恒 ⊆ 本轮文本（参数化含空文本/改写引文）；
+  伪网关给出"上一轮引文" → `evidence_valid=false` + 分数 ×0.5 + 事件 `feynman_evidence_flagged`
+  + **不放过**；
+- ⑤ 补答只更新缺口维度（多给键被忽略）、账本不因更差一轮下降、`previously_acknowledged`
+  正确下发（首讲空、二轮含已认可维度）、无追问只能交完整稿、`feynman_gap_check` 注册为 light。
+`test_api_flow.py` 两处按 R27 语义更新：`test_feynman_fail_then_followup_answer_raises_ledger`
+（原 `..._followup_pass`：补答只涨账本 → 再交完整稿才 mastered；含 R10 不 500 断言）；
+R17 用例的二次提交改走完整稿（原用 `feynman_answer` 表达"重讲"，R27 下语义已分离）。
+
+**回归**：pytest **305 passed + 2 skipped**（离线；基线 291+2 → +14 用例，不降）；`content validate` 26/54 全绿；
+audit 5 学段全绿（27/31/81/59/60，前置缺失 0/锚点缺失 0/环 0/正向引用 0/内容不变式违规 0）；
+`npm run build`（tsc+vite）通过；真模型走查见 §47。
+
+**真模型数据回归（§47 详录）**：行星科学 `s-f2decfcf.u01` 实跑——首讲 0.0（4 维全 0，
+定向追问指向 correctness："太阳系里最主要的成员…怎么排布"）→ 答追问 correctness **0.0 → 1.0**，
+综合分 **0.0 → 0.4**（"答追问后分数可见上升"实测成立，不再重现 id=30/31 的 0.455 双轮同分）→
+整合终验 **0.863 pass**（correctness 1.0 / own_words 0.8 / evidence 0.85 / self_correction 0.6）→
+mastered。**R25 锚定 bug 在真模型下确认修复**。
+
+**疑点（挂待架构裁决）**
+1. evidence 校验口径 = **归一化包含**（去空白/中英标点/省略号后子串包含），而非严格 `in`：
+   真实模型引文常带排版差异（换行、全角/半角标点、截断 `…`），严格口径会大面积误降级；
+   归一化后仍能拦住"引用其它轮次/杜撰"（已用 case④ 锁定）。若要求"零容忍逐字"，需另裁。
+2. 降级系数 `EVIDENCE_PENALTY=0.5`（不归零）：语义 = "分低但认账、学生可见原因"，比直接归零
+   更利于教学；常量在 `feynman_ledger.py` 便于调参。
+3. 补答预算语义：补答**答不对不消耗追问机会**（缺口保留、可再追一次），但消耗补答次数；
+   两额度（整体稿 3 / 补答 2）都按"次数"计，未按"时间/内容量"计。
+4. 离线启发式分档（correctness/own_words 的 0.3–0.95 阶梯）为本批为"三条验收路径可离线驱动"
+   而定标；**真模型路径不受影响**（R4：离线仅降级兜底，真模型可用时不得抢占）。阈值调整只影响
+   无 key 演示体验。
+5. 修复了 `_enter_feynman` 重复定义（R17 防御曾失效）——属实现缺陷修正，语义与 R17 裁决一致，
+   未改架构口径，记录备查。
+6. `_master_if_ready` 增可选 `extra_payload`（通过时回传评分卡）——签名扩展向后兼容。
+
+---
+
+## 47. R27 真模型数据回归与验收（2026-09-09 · 本批收尾）
+
+**方法**：`_dsh-local/r27_live.py`（本地脚本，不入库）——真实 `content/` + 临时 DB +
+`.env` 的 DeepSeek key，走"练习直达 → 费曼首讲 → 定向追问 → 补答 → 整合终验"全链路。
+
+**实测输出（行星科学 `s-f2decfcf.u01`，内容 = 真实库 u01；维度权重 correctness .4 /
+own_words .2 / evidence .25 / self_correction .15，门槛 0.7）**
+
+| 步骤 | 结果 | 关键证据 |
+|---|---|---|
+| 首讲"我真的不知道怎么讲…" | `verdict=fail`，combined **0.0**，4 维全 0，evidence 均通过本轮校验 | 定向追问："请用你自己的话讲一讲——太阳系里最主要的成员是什么？它们相对于太阳是怎样排布和运动的？"；`followup_gap=correctness`，缺口描述来自评分 comment |
+| 答追问（完整答出结构+分类+方法） | `verdict=gap`，`gap_filled=true`，combined **0.0 → 0.4** | `dimension_updates=[{correctness: 1.0}]`；账本上涨维度 `{'correctness': (0.0, 1.0)}`；**不再两轮逐字同分** |
+| 整合终验（同稿完整重讲） | `verdict=pass`，combined **0.863 ≥ 0.7** → mastered，evals 2/3 | 评分卡 correctness 1.0 / own_words 0.8 / evidence 0.85 / self_correction 0.6，**四维 evidence 全部 `evidence_valid=true`**；事件 `feynman_passed` + `node_mastered` |
+
+**结论**：R27 三条验收路径（离线集成测试）+ 真模型数据回归全部成立；
+用户实测的"答追问分数不动、evidence 仍引首轮'我真的不知道'"**在真模型下已不复现**。
+
+**验收自证对照（用户工单 §3 逐条）**
+1. ① `test_r27_path1_answer_raises_ledger_dimension`：断言 `combined` 上升 + 缺口维度 best 上升
+   + 两轮 `(score, evidence_quote)` 不同（"绝不重现两轮逐字同分"）+ 补答不产生 mastered。
+2. ② `test_r27_path2_answer_then_integrated_submit_passes`：补答 gap_filled → 完整稿 ≥0.7 →
+   `feynman_passed` + `node_mastered` + `mastery.next_review_due_at` 有值（pass/mastered）。
+3. ③ `test_r27_path3_budgets_exhausted_relearn`：补答①②未对 + 终验③ <0.7 → stage=explain，
+   `feynman_relearn` + `relearn_notice`，`evals_done=0`/`answers_done=0`/gaps 清零。
+4. evidence 纪律：`test_r27_evidence_must_come_from_current_round_offline`（离线卡恒为本轮子串）
+   + `test_r27_evidence_discipline_downgrades_foreign_quote`（外来引文 → 降级 + 事件 + 不放过）。
+5. 既有分支回归：`test_feynman_fail_then_followup_answer_raises_ledger`（R10 不 500）、
+   `test_feynman_three_fails_relearn`（R11 3 轮/额度尽回炉）、
+   `test_feynman_relearn_then_relearn_again_submit_200`（R17 回炉后重进不再 409）全绿。
+6. 全量：pytest **305 passed + 2 skipped**（离线；基线 291+2 → +14 用例不降）；
+   `npx tsc --noEmit` 通过；`npm run build` 通过；content 26/54；audit 全绿。
+7. 真模型：上表（本环境 DeepSeek 可达，实测通过）。
+8. 错误中文化：新增/改动的对外错误均为中文（"费曼整体稿评分已达上限（首讲 + 2 次终验），请重新
+   学习后再来"、"当前没有待补答的追问：请直接提交完整讲解（整合重讲）由整体评分判定。"、
+   "补答次数已达上限（2 次），请提交整合后的完整讲解。"、"补答太短（少于 10 字）…"），
+   `test_errors_zh.py` 与 `test_r27_no_followup_question_means_submit_only`（断言 409 文案含中文）锁定。
+
+**收尾**：docs/06 §2.0、docs/07 §2.3、docs/13 §3/§4 基线同步；本 NOTES §46–§47；
+git 提交链（后端 → 前端 UI → 文档/NOTES）均标注 R27；工作树干净、无残留（`_dsh-local/` 已 git 忽略）。
+
+
