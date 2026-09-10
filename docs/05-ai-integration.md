@@ -60,9 +60,11 @@ MVP 调用点一览（后续按需增补，规则同）：
 | 4 | `hint_on_error` | light | 题目、学生错答、sympy 诊断（哪步不符） | `{hint_md, never_solution: true}` | 仅展示；禁止输出完整解答 |
 | 5 | `explain_solution_step` | light | 例题步骤文本 | `{step_explanation_md}` | 仅展示 |
 | 6 | `feynman_evaluate` | heavy | 节点 feynman.rubric、学生口述全文、任务 prompt | 见 §5 输出 schema + `confidence?` | service 按 rubric 权重合成分数 |
-| 7 | `feynman_followup` | heavy | 学生口述、上一轮评分摘要、socratic_followups 主题 | `{question_md}` | 仅展示（最多 2 轮追问） |
+| 7 | `feynman_followup` | heavy | 学生口述、上一轮评分摘要、socratic_followups 主题 | `{question_md, student_quote, missing, reteach}`（R35 S4） | 仅展示；`student_quote` 必须逐字出自学生原话（服务端校验），`reteach=true` 时**不发追问**（退回讲解） |
 | 8 | `classify_error` | light | 题目、正确答案过程、学生错答 | `{error_type}`（枚举见 03 §5） | 写入画像 |
 | 9 | `draft_content` | light | 节点规格 + 04 文档 schema 说明（骨架内嵌） | 完整 .md 草稿 | 校验全过 auto 入库 / high+ 进 `_drafts/` |
+| 14 | `challenge_exercise` | light | 讲解真源 + 白名单 + 已声明事实（**挑战题池**：允许超出讲解） | `{prompt_md, answer_hint_md, why_hard_md, difficulty}` | **R35 S3**：单独调模型生成；永不出现在默认流程；**完全不上算** |
+| 15 | `challenge_check` | light | 挑战题题面 + 学生作答 | `{correct, score, feedback_md, better_md}` | **只记复盘**（`attempts.kind="challenge"`），不写任何账本 |
 
 **调用策略（R12 落地）**：调用点 1/2/4/6/7 每次由 `ai/tier` 决策 `fast|think`（service 计算后随
 `strategy` 传给网关 → provider 选 light/heavy 模型）；`model_mode=deep` 全 think、`light` 关触发、
@@ -93,7 +95,13 @@ MVP 调用点一览（后续按需增补，规则同）：
 >   `basis`（`fact_ids` + 讲解原文引文）；服务端用 `content/citations.py` 校验（≥6 字归一化包含），
 >   不合规 → 重试 → 仍不合规**丢弃该题**（`content/answerability.py`，S5）；
 > - **讲解小思考**（调用点 1 `asked_to_confirm`）：复用 ContextBlock 的真源注入，每条须给出引文（S6）；
-> - **追问**（费曼流程）：必须先逐字引用学生刚说的话；学生无可引用内容 → 返回 `reteach`（S4）。
+> - **追问**（费曼流程，调用点 7）：必须先**逐字引用学生刚说的话**（`student_quote`，服务端包含校验）
+>   并指出"这句话缺了什么"（`missing`）；学生**无可引用内容**（如只写"我不知道"）→ 返回 `reteach`
+>   （退回讲解补讲）——**禁止硬造发散题**（S4，见 docs/06 §2.0.1）；socratic 主题只有在
+>   `socratic_basis` 逐字成立时才作为追问语料下发。
+> - **挑战题（调用点 14/15，S3）是唯一的例外**：它**必须**超出讲解（这就是"挑战"的定义）。
+>   `context_block` 的"禁止引入白名单之外"在该调用点被**显式豁免**，且**仅**在该调用点豁免；
+>   挑战题**完全不上算**（不进费曼账本 / mastery / 额度 / 掌握统计），只记复盘。
 > - 零基础假设：没教过的一律认为不会；**已教集合＝本单元已述 ∪ 前置单元已述**（`prereqs` 为空时只有本单元）。
 
 ## 5. 费曼流程与评分（Feynman Flow · R27 v3 混合制）

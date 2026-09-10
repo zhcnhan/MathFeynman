@@ -119,6 +119,17 @@
 6. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"（本批 5 条见 §50）；涉及
    docs/02/03/05/06/07/14 的语义变更在实现时顺带同步。
 
+> **R35（可答性 S1–S8）已全部落地，R35b 收尾批完成（Euler，2026-09-10 · 待架构侧验收）**：
+> S1–S8 的实现分四次提交落地——`§61`（S1/S2/S5/S6/S7 + A3 例题）→ `§62`（S6/S7 收口）→
+> `§63/§64/§65`（语义自检闸门 → 求值路径单一化 → 题面泄漏清零 + 30 模板补 `expect`/模板级 `basis` + P4 机器校验）
+> → **`§66`（模板 basis 引文语义精细化 + S3 挑战题双池 + S4 追问 `reteach` + docs 06/07/04/05 同步 + 融合对照表）**。
+> **基线（本批实测）**：pytest **394 collected / 392 passed + 2 skipped / 0 failed**、
+> `content validate` **ok 25/50**、audit 五学段 **27/31/81/59/60（ok=True）**、`tsc --noEmit` exit 0
+> （另 `vite build` exit 0）、`semantics_stats = {templates:30, violations:0, verified:30, unverified:0}`。
+> **下一步（R35 最终验收）**：**用户新建的 PDF 学科就绪后跑 A2 全链路审计（"不可答 = 0"）**
+> ——那是 R35 的最终验收，也是**非数学路径的第一次真考试**（架构侧 §17 收口，NOTES §58-1）。
+> 开工入口照旧：**本节 → `IMPLEMENTATION_NOTES §58`（挂账总表）→ `docs/09` R35/R35b §18 与 §66 相关裁决**。
+
 ## 4. 环境速查（新人必读）
 - 服务：`powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`（前端 5173 / 后端 8000）；
   停止 `scripts\stop.ps1`；日志 `.runtime/backend.err.log`。
@@ -127,18 +138,23 @@
   被劫持会指回 `mathfeynman.db` 并**静默新建空库**（R33 实测踩过；R34 已让 `dev.ps1` 显式定值 +
   读回校验兜底）。根因链见 docs/09 R33 §2。
 - 测试内容根已隔离（conftest 会话级临时副本）；真模型冒烟需 `MF_ALLOW_LIVE_AI=1`。
+- **可答性/模板体检审计（工具，不是测试）的手动门槛（docs/09 R35 §11 裁定，长期有效）**：
+  `backend/tests/audit_answerability.py`（零基础学生模型逐题判 `answerable`；**选择题必须把 `options`
+  一并喂给"学生"**）与 `backend/tests/audit_template_semantics.py`（模板语义体检）——
+  ① **每次改动生成器后**必须手动跑一轮全库审计；② **发版前**跑一轮；③ **日常 CI 只跑离线结构性校验**
+  （答案可答性单测 + `content validate`）。两者文件名**不带 `test_` 前缀**（pytest 不收集、不随 CI），
+  需网络与 LLM_API_KEY。跑法：`$env:MF_ALLOW_LIVE_AI=1; .\.venv\Scripts\python backend/tests/audit_answerability.py`。
 - `.env`（仓库根，git 忽略）：LLM_API_KEY 等；`MF_AUTO_EXTEND=1` 控制全自动续关；
   `LLM_MAX_TOKENS_PER_DAY=0` 不限额。
-- 当前基线（**Euler 于 R34-fin 复跑确认，2026-09-10 · 数据清空后**）：pytest **325 passed + 2 skipped**
-  （327 collected，exit 0；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
-  均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60，**未受清空影响**）；
-  content validate **ok 25 节点 / 48 练习**（＝清空后保留的 math 内容 + 12 个 `*_auto.md`；
-  清空前为 26/54，差＝已硬删的行星科学内容）；前端 `npx tsc --noEmit` 通过
-  （`npm run build` 在受限沙箱内会因 esbuild 子进程 EPERM 失败，属环境限制而非代码问题，需在普通终端复核）；
+- 当前基线（**Euler 于 R35b §66 收尾批复跑确认，2026-09-10**）：pytest **392 passed + 2 skipped**
+  （394 collected，exit 0；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
+  均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60）；
+  content validate **ok 25 节点 / 50 练习**；前端 `npx tsc --noEmit` + `vite build` 均通过；
   git 仓库不含 data/、_drafts。
   > 注：**pytest 数字不随真实库清空变化**——`backend/tests/conftest.py` 在导入 app 之前就隔离了
   > `MF_DB_PATH`（临时库）与 `MF_CONTENT_ROOT`（会话级内容副本），真实库与测试完全隔离。
-  R30 前基线为 306+2（R30 批 +19 = F6 7 / F5 2 / flow 自愈 10）。
+  > 历史基线：R30 前 306+2 → R30 325+2 → R33 325+2 → R34-fin 325+2 → R35a 349+2 → R35b-P0 358+2
+  > → §13 373+2 → §14 376+2 → **§66 392+2**。
 - 工作目录已改名：`D:\DeepseekHarness\YanHui`（旧名 MathFeynman；执行记录见 docs/09 R32 §3）。
 - **数据库（R33 任务 B 已归一为 `backend/data/yanhui.db`，2026-09-10）**：
   - **清空后现状**（docs/15 §3.1 + NOTES §57.2e/§59.2）：`subjects 1`（math，**enabled=0 停用**）、

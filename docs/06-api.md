@@ -46,14 +46,21 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/session/start` | body `{node_id}` → 创建/恢复会话，返回状态机当前步与首批内容（讲解稿演绎结果可选异步）。**R18 总序门禁**：无既有会话而新建时校验蓝图总序（docs/09 R18）；越级 → `409 invalid_state`，detail 含"请先完成：<前置条目标题>"。既有会话恢复 / 练习·费曼续走 / 复习不受门禁影响 |
-| POST | `/session/step` | body `{session_id, action, payload}`；action ∈ `ask_question / next / submit_exercise / request_hint / feynman_submit / feynman_answer / finish / quit`（`next` = 阶段前进：讲解→例题→练习，见 docs/09 R1）。**R27 双提交分离**：`feynman_submit` = 完整稿（首讲/整合重讲）→ 整体评分；`feynman_answer` = 补答（只答当前追问，payload `answer`）→ 轻量缺口补答评估。返回：下一步 UI 状态 + 新内容 + 状态机事件流 |
-| GET | `/session/{id}` | 恢复会话全状态 |
+| POST | `/session/step` | body `{session_id, action, payload}`；action ∈ `ask_question / next / submit_exercise / request_hint / regen_explain / reissue_after_regen / feynman_submit / feynman_answer / challenge_start / challenge_begin / challenge_submit / challenge_cancel / challenge_abandon / finish / quit`（`next` = 阶段前进：讲解→例题→练习，见 docs/09 R1）。**R27 双提交分离**：`feynman_submit` = 完整稿（首讲/整合重讲）→ 整体评分；`feynman_answer` = 补答（只答当前追问，payload `answer`）→ 轻量缺口补答评估。**R35 S3 挑战题池**：`challenge_*` 五个动作（见 §2.2），**永不出现在默认流程**、不设额度/不计轮次/不影响任何进度。返回：下一步 UI 状态 + 新内容 + 状态机事件流 |
+| GET | `/session/{id}` | 恢复会话全状态（**不含**挑战题：挑战题只随 `challenge_*` 动作下发） |
 
 ### 练习与判题（幂等，供前端直接调用或经由 step）
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/exercises/check` | body `{exercise_id, params_seed, user_answer, session_id?}` → 该学科判题器结果（math=sympy）+ hint（不泄答案） |
 | POST | `/exercises/next` | body `{node_id, exclude_ids}` → 下一道题（模板渲染或 AI 变体） |
+| POST | `/exercises/unanswerable` | **R35 S7**：「这题我没法答（讲解里没有）」→ 复用 `feedback` 表加 `kind=answerability`（不建表）；**不计失败/不扣分**，进护栏统计；auto 内容走既有重生成闭环 |
+
+### 复盘（attempts 回看；**同一张表、同一套读法**，不新建存储）
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/history/feynman` | 费曼口述历史（逐字转写 + 评分卡，docs/07 §2.3） |
+| GET | `/history/challenge` | **R35 S3**：挑战题复盘（`attempts.kind="challenge"`；含 `verdict=abandoned` 的明确放弃记录）。仅复盘用，**不计入任何进度** |
 
 ### 复习
 | 方法 | 路径 | 说明 |
@@ -108,12 +115,14 @@
 "evals_done": 1, "eval_budget": 3,       // 整体稿评分：首讲 + ≤2 次终验
 "answers_done": 0, "answer_budget": 2,   // 补答：≤2（须有未答缺口）
 "next_action": "answer" | "submit",      // 有定向追问 → answer；否则 submit（交整合完整稿）
-"followup_question": "…", "followup_gap": {"key": "evidence", "description": "…"}
+"followup_question": "…", "followup_gap": {"key": "evidence", "description": "…"},
+"followup_quote": "…",                   // R35 S4：**逐字引用学生刚说的话**（服务端包含校验通过）
+"followup_missing": "…"                  // R35 S4：这句话缺了什么（学生视角）
 ```
 
 - `verdict`：`fail`（完整稿未达标，附本轮 `dimension_scores`）/ `gap`（补答结果，附
   `gap_filled`、`gap_key`、`gap_update`）/ `pass`（由 `mastered` + `feynman_passed` 事件体现）
-  / `deferred`（评分服务不可用，进人工复核）。
+  / `deferred`（评分服务不可用，进人工复核）/ **`reteach`（R35 S4：退回讲解补讲，见下）**。
 - `dimension_scores[].evidence_valid`：服务端**包含校验**结论（引文必须逐字出自本轮提交文本，
   且归一化后 **≥6 字**——极短引文视为无效，R30 F5）；
   `false` 时该维度分数已降级（×0.5），并带 `evidence_reason`。
@@ -124,9 +133,63 @@
   heavy 调用；复评失败保留首次、不 500）。两次分与采用结论写入 `attempts.meta.recheck =
   {used, first_combined, second_combined, taken}`；响应 `strategy` / `strategy_reason` 为**实际采用**那次
   （复评被采用时 `strategy_reason="edge_recheck=think"`）。
-- 事件：`feynman_followup`（定向追问，带 `target_gap`）、`feynman_gap_filled` /
-  `feynman_gap_open`、`feynman_evidence_flagged`、`feynman_relearn`（额度尽/3 次未过回炉）、
-  `feynman_edge_recheck`（`{first, second, taken}`；复评失败时 `second=null`）。
+- 事件：`feynman_followup`（定向追问，带 `target_gap`）、`feynman_reteach`（R35 S4：无可引用内容 →
+  退回讲解补讲，带 `reason`）、`feynman_gap_filled` / `feynman_gap_open`、`feynman_evidence_flagged`、
+  `feynman_relearn`（额度尽/3 次未过回炉）、`feynman_edge_recheck`（`{first, second, taken}`；
+  复评失败时 `second=null`）。
+
+### 2.0.1 追问纪律 `reteach`（R35 S4，docs/09 R35 §3 S4）
+
+**追问必须先逐字引用学生刚说过的话**，并指出"这句话缺了什么"（`followup_quote` / `followup_missing`）；
+学生**没有可引用的实质内容**（如只写"我不知道"）时**禁止硬造发散题**，返回：
+
+```jsonc
+"verdict": "reteach",
+"next_action": "reteach",
+"reteach": {
+  "reason": "no_quotable_content | quote_not_verbatim | missing_not_stated | model_says_reteach | question_empty",
+  "message_md": "📖 退回讲解补讲：…（中文说明，含「答不出不会逼你想」）",
+  "lecture_md": "讲解原文（当场可回看）",
+  "missing_dimensions": [{"key": "evidence", "description": "…"}]
+}
+```
+
+- **不消耗额度**：`reteach` 不增 `evals_done`/`answers_done`、不动账本（敷衍回答不该吃掉评分预算）；
+- **不翻转状态机**：阶段保持原样（练习已通过时"回到讲解"会**重新出题**并再次计入练习账目——
+  等于用一次敷衍回答污染练习记录）；改为随响应下发讲解原文 + `next_action="reteach"`；
+- socratic 主题**只有在 `socratic_basis` 逐字成立时**才作为追问语料下发（模板套话不得兜底）。
+
+### 2.2 挑战题池（R35 S3，docs/09 R35 §3 S3）
+
+**两个池**：核心题池（计入掌握与费曼）与**挑战题池（完全不上算）**。挑战题**永不出现在默认流程**，
+由「挑战一下」按钮**用户主动触发、单独调模型生成**（`challenge_exercise` 调用点）。
+
+```jsonc
+// 五个动作（POST /session/step）：
+// challenge_start    → 生成一道挑战题（payload 可带 think_deep）
+// challenge_begin    → 开始作答（纯 UI 状态推进，无任何后果）
+// challenge_submit   → 提交作答（payload {answer}）→ 单独判分
+// challenge_cancel   → 取消本次（丢掉这题，**不写 attempts**）
+// challenge_abandon  → 明确放弃（"我不会/我不感兴趣"，只记复盘）
+"challenge": {
+  "notice": "挑战题：需要讲解之外的知识，答不出不影响任何进度",   // UI 必须显式展示
+  "phase": "idle | offered | answering | graded",
+  "question": {"prompt_md": "…", "answer_hint_md": "…", "why_hard_md": "…", "difficulty": 3} | null,
+  "last": {"correct": true, "score": 0.6, "feedback_md": "…", "better_md": "…"} | null,
+  "asked": 1, "answered": 1,      // **仅展示计数**：不限额、不计轮次、不做任何门禁
+  "degraded": false,
+  "counts_nothing": true          // 契约位：前端不得据此渲染任何进度/分数影响
+}
+```
+
+- 事件：`challenge_offered` / `challenge_begin` / `challenge_graded` / `challenge_cancelled` /
+  `challenge_abandoned`。
+- **红线（实现即验收）**：挑战题作答后 **mastery / 费曼账本（含整体稿与补答额度）/ 掌握统计
+  四项均不变**，只写 `attempts.kind="challenge"`（复盘）。`/api/dashboard` 的 `today_done`
+  按 `models.PROGRESS_KINDS` 白名单统计，**挑战题不计入**。
+- **学科无关**：与核心题池走同一套链路（`context_block` 注入 + schema 校验 + 降级），
+  无任何学科分支；挑战题**允许且要求**超出讲解（这正是它与核心题池的区别）。
+- 生成与判分 = 两个独立调用点 `challenge_exercise` / `challenge_check`（均为 light 档）。
 
 ### 2.1 流式协议（R12-b，SSE 可选）
 
@@ -160,10 +223,12 @@ user_nodes   (user_id, node_id, state TEXT,           -- locked/available/learni
 sessions     (id TEXT PK, user_id, node_id, state TEXT,  -- 状态机当前步
               flow_json TEXT,           -- 会话内累积数据（练习计数、费曼轮次等）
               created_at, updated_at)
-attempts     (id INTEGER PK, session_id, node_id, kind TEXT,   -- exercise|feynman
+attempts     (id INTEGER PK, session_id, node_id, kind TEXT,   -- exercise|feynman|challenge
               exercise_id, params_json, user_input TEXT,
-              verdict TEXT,             -- correct|wrong|score|pass|fail|deferred
+              verdict TEXT,             -- correct|wrong|score|pass|fail|deferred|gap_filled|gap_open|abandoned
               error_type TEXT NULL, meta_json, created_at)
+              -- R35 S3：kind="challenge" = 挑战题（**只进复盘**）；进度统计一律按
+              -- `models.PROGRESS_KINDS`（exercise|feynman）白名单过滤，挑战题不计入今日完成等任何统计
 reviews      (user_id, node_id, state_json,            -- FSRS 状态
               due_at, last_rating, lapse_count, PK(user_id,node_id))
 ai_logs      (id INTEGER PK, call_name, model, tier, prompt_tokens, completion_tokens,

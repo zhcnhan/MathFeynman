@@ -2531,11 +2531,14 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
 
 > 供下一任 Euler 续接用：本节＝**当前所有未闭项**的单一入口。凡本节已裁决的项，实现时在此标注结果。
 
-1. **R35 全量规格（可答性 S1–S8）——下一批主战场**：见 `docs/09 R35` 与 `.runtime/EULER_TICKET_R35.md`；
-   **本批未实现**（R34-fin 只做合规确认）。
-   ⚠️ **需架构侧先澄清**：R35 §5 的 R35a 指向**行星科学 u01/u04**（补讲解/删越界题/补例题），
-   但该学科已按用户指令**硬删**（内容+大纲+材料+注册行）→ R35a 的作业对象已不存在，
-   需重新指定（新建学科复现？或改用 math 导入类内容？）。
+1. **R35 全量规格（可答性 S1–S8）——已全部落地**：S1–S8 的代码/内容/文档/用例见
+   §61（S1/S2/S5/S6/S7 + A3 例题）→ §62（S6/S7 收口）→ §63/§64/§65（语义闸门 → 求值单一化 →
+   题面泄漏/expect/basis/P4）→ **§66（S3 挑战题池 + S4 reteach + 引文精度 + 文档收尾）**。
+   ⚠️ R35 §5 原文指向的**行星科学 u01/u04**已按用户指令硬删（本项**不再待澄清**）：
+   R35 的最终验收 = **用户新建 PDF 学科就绪后跑 A2 全链路审计（不可答 = 0）**，
+   那是**非数学路径的第一次真考试**（架构侧 §17 亦如此收口）。
+   **审计脚本已入库**：`backend/tests/audit_answerability.py`、`audit_template_semantics.py`
+   （不带 `test_` 前缀 → 不被 pytest 收集、不随常规 CI；手动门槛见 docs/13 §4）。
 2. **真实 SearXNG 端到端**：需用户自托管实例后配 `MF_SEARCH_PROVIDER=searxng` / `MF_SEARXNG_URL`。
 3. **PDF 上传 UI 真人走查**；**材料可追溯重生成**（引用材料参与的单元重生成 + 来源可查）。
 4. **math preset 本体是否彻底清**：当前保留 25 个内容文件 + 258 单元大纲（仅 `enabled=0`）。
@@ -2549,19 +2552,37 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
 7. ~~**【R34-fin 发现】走查在真实库的痕迹是否清理**（§57.2e）~~ → **✅ 已闭（R36 L2，2026-09-10）**：
    已备份后清理：3 行 `nodes(enabled=0)` + 4 行走查 `ai_logs` **永久清除**；`user_nodes` 清为 0，
    但**每次后端启动会由 `sync_content` 重建**（引擎既有语义，非走查残留）→ 详见 **§59.2**。
-8. **R35 审计脚本要入库**（`docs/09 R35 §5` / 工单 §5 要求"审计脚本必须入库长期保留"）：
-   架构侧现存于 `_backups\r35-audit-20260910-170300\`；入库时机与路径待定（R35b 批一并做）。
+8. ~~**R35 审计脚本要入库**~~ → **✅ 已闭（R35b）**：`backend/tests/audit_answerability.py`
+   （零基础学生模型逐题判 `answerable`，选择题必须把 options 一并喂给"学生"）+
+   `backend/tests/audit_template_semantics.py`（28/30 模板体检）**已在库**，文件名不带 `test_` 前缀 →
+   pytest 不收集；手动门槛（改生成器后跑一轮 / 发版前跑 / 日常 CI 只跑离线校验）见 docs/13 §4。
 9. **【R36 D/P 新发现】math 预设大纲 15 处难度倒置**（§60.5 清单）：P1（先修难度 ≤ 后继）对
    `source=="roadmap"` 的预设大纲**豁免**（其顺序由 R18 总序 + roadmap audit 治理，改数学数据超本批授权）。
    待裁：**治理数据**（按 P1 修 roadmap difficulty/顺序）还是**确认长期豁免**？
-10. **【R36 D/P 新发现】P4（难度只能靠已教事实累积）目前只有 prompt 约束**：机器校验依赖 R35 的
-    `taught_facts/derivable`（S1/S2），**R35b 落地时一并接**（本批按用户要求明确登记，不假装已机器校验）。
+10. ~~**P4（难度只能靠已教事实累积）目前只有 prompt 约束**~~ → **✅ 已闭（R35b §65.4）**：
+    `answerability.check_progression()` 两条机器校验（引用必须已教 / 加难必须加事实）**已接生成端**，
+    含造错用例；已随可答性闸门一起跑（`outline/generate.py`）。
 11. **【R36 D/P 新发现】材料注入只做"分节摘要"**（PDF 按页 / Markdown 标题 / 段落兜底，每节 ≤400 字、
     总量 ≤`MF_OUTLINE_MATERIAL_MAX_CHARS`）：**未做语义级摘要**——大部头书籍注入的是"每节开头若干字"。
     若实际体验不佳，可加一次轻模型摘要（成本/复杂度上升，未裁定）。
-12. **【R36 D/P 新发现】AI 输出 schema 与 prompt 的字段一致性**是易漏点（§60.4：schema 漏声明
-    `materials` → pydantic 静默丢弃，单测用假 provider 测不出）。已加接线锁定用例；
-    **今后新增 AI 输出字段必须同时改 `ai/calls.py` 的 out schema + prompt + 一条 schema 往返用例**。
+12. **【长期纪律】AI 输出 schema 与 prompt 的字段一致性**是易漏点（§60.4：schema 漏声明
+    `materials` → pydantic 静默丢弃，单测用假 provider 测不出）。**今后新增 AI 输出字段必须同时改
+    `ai/calls.py` 的 out schema + prompt + 一条 schema 往返用例**。（本批挑战题两个调用点已照此办：
+    `test_challenge_callpoints_registered`。）
+13. **【R35b §66 待架构侧确认】`reteach` 不翻转 stage**（§66.3）：架构侧文档写"返回 `reteach`
+    （退回讲解补讲）"；若把 `stage` 翻回 `explain`，练习已通过的会话会**重新出题**并再次计入
+    practice 账目（等于用一次敷衍回答污染练习记录）。本批实现为：**阶段不动 + 随响应下发讲解原文 +
+    `next_action="reteach"`**。若架构侧坚持 stage 回退，请一并裁定"回退后不再出题"的配套改法。
+14. **【R35b §66 提升项】模板 basis 引文"是否真支撑该模板"仍需人读**：机器只能判
+    「逐字出自讲解」+「非开场白/过渡句」（`verify.opening_quote_warning`，**告警不拒绝**）。
+    本批 30 条已逐条改引支撑规则句（对照表见 §66.1），但**语义贴合度属人工判断**，
+    架构侧可抽读复验。
+15. **【R35b §66 新发现 · 待裁】挑战题在页面刷新/换页后不恢复**（§66.6-3）：挑战题**刻意不进默认
+    payload**（否则等于"出现在默认流程"）→ 刷新后面板消失，再点「挑战一下」会重新生成一道
+    （`asked` +1，旧题在 flow 里被覆盖）。若要"刷新后仍在"，需加一个显式读端点
+    （如 `GET /session/{id}/challenge`）——**未做**，因为那会把挑战题变成"半个默认流程"。
+    取舍请架构侧裁定（倾向：保持现状＝规格优先）。
+
 
 ---
 
@@ -3117,4 +3138,205 @@ seed=3: 求 5 和 7 的最小公倍数，其中 7 是 5 的倍数。   -> 模板
 | 模板级 basis | **复用 `content/citations.py`** 与 `BasisDoc`（与题/追问同一结构） | `test_template_basis_quote_must_be_verbatim` |
 | P4 机器校验 | 复用 `taught_facts`/`derivable` + 既有大纲 prereq（不新建"已学表"） | 2 条 P4 用例（含造错必报） |
 | 验证覆盖率统计 | **接 `service/guardrails.py`**（`semantics_stats()` 委托 `verify.library_stats()`） | `test_non_math_subject_is_marked_unverified_and_counted` |
+
+---
+
+## 66. R35b · §66 收尾批：模板 basis 引文精细化 + S3 挑战题双池 + S4 追问 reteach + 文档收尾（2026-09-10）
+
+> **工单**：R35b 收尾批（步骤 5–7）。**开机基线（架构侧独立复跑值）已逐项复现**：
+> pytest **376 passed + 2 skipped（378 collected）**、`content validate` **ok 25/50**、
+> audit 五学段 **27/31/81/59/60（ok=True）**、`tsc --noEmit` exit 0、
+> `guardrails.semantics_stats() = {templates:30, violations:0, verified:30, unverified:0, l1_subjects:['math']}`。
+> **提交**：`955724c`（任务1 引文精细化 + 告警断言）→ `7395b26`（S3+S4 引擎/前端/用例）→ 本节提交（文档收尾）。
+
+### 66.1 任务1 · 模板 basis 引文**语义精细化**（架构侧 §18 提升项）
+
+**病根**（架构侧实测）：30 条模板 → **仅 19 条不同引文**（最多重复 3 次），且大量引文是
+**开场白**（"同学们，今天学习…"）。引文校验 100% 通过（**不是幻觉**），但**引用不准**：
+开场白同样逐字出自讲解，却支撑不了任何模板。
+
+**做法**：逐条判定"**哪一句规则真正支撑这个模板**"，改引该句（**允许同节点同规则重复**）。
+**29/30 行被改写**（`primary.0104` 原文已是规则句，保持不动）。改后统计：
+
+| 指标 | 改前 | 改后 |
+|---|---|---|
+| 模板数 | 30 | 30 |
+| 不同引文数 | **19** | **26** |
+| 重复引文 | 9 组（最多 ×3） | **4 组（全部 ×2，且都同节点同规则）** |
+| 引文落在开场白（机器可判） | 未测 | **0** |
+| 引文逐字出自讲解 | 30/30 | 30/30 |
+
+**30 条对照表（新引文 → 判定理由）**
+
+| 节点·题 | 支撑该模板的规则句（引文） | 判定理由 |
+|---|---|---|
+| `middle.0102/ex1` ax+b=c | `1. **移项**：把不含未知数的项移到右边，**移项要变号**。` | 该题第一步就是移项（减 b） |
+| `middle.0102/ex2` ax-b=c | 同上（**同规则确实支撑两题**） | 减 b → 移到右边变 +b，同一句规则 |
+| `middle.0102/ex3` ax=c | `依据是**等式性质**：等式两边同时加/减同一个数，或同时乘/除以同一个**非零**数，等式仍成立。` | 无移项，只做"两边同除以系数" |
+| `middle.0201/e1` 相反数 | `**相反数**：只有符号不同的两个数，如 3 和 -3，它们在数轴上离 0 一样远。` | 题面问的就是相反数定义 |
+| `middle.0202/e1` 异号相加 | `**异号相加**：取绝对值大的符号，用大的绝对值减小的。` | 参数 b 恒负、a 恒正 → 恒为异号（同号规则不适用） |
+| `primary.0101/e1` a+b×c | `2. **没括号**：先**乘除**，后**加减**；` | 无括号题考的正是这条顺序 |
+| `primary.0101/e2` (a+b)×c | `1. **有括号**：先算括号里面的；` | 括号题考的是这条 |
+| `primary.0102/e1` 同分母加 | `**同分母分数加减**：分母不变，分子直接相加/相减。` | 题面即同分母加法 |
+| `primary.0103/e1` 异分母加 | `做法：**通分**——把两个分数化成**分母相同**的分数，再按同分母加减。` | 题面要求"先通分再算" |
+| `primary.0104/e1` 分数乘法 | `**分数乘法**：分子乘分子，分母乘分母` | **原文已是规则句**（未改） |
+| `primary.s01/ex1` 四舍五入 | `四舍五入：要保留到某一位，就看它后面一位，如果小于 5 就舍去，如果大于等于 5 就向前一位进 1。` | 题面即"四舍五入到百位" |
+| `primary.s01/ex2` 估算 | `估算时，先取近似数再计算。` | 题面即"看成整十数再相加" |
+| `primary.s02/ex1` 进位加 | `记住两条口诀：加法个位满十就进位，减法个位不够减就退位。` | 规则句覆盖两题（同句双引） |
+| `primary.s02/ex2` 退位减 | 同上 | 退位由该句后半明确支持 |
+| `primary.s03/ex1` a×b | `于是，数学家想了一个简便的方法，用乘法来表示“几个相同加数的和”。` | 乘法的定义句（不是首句"今天我们学习乘法"） |
+| `primary.s04/ex1` 求商 | `所以做有余数除法，只要找到“除数乘几最接近被除数、又不超过它”，那个几就是商，差就是余数。` | 题面问"每个盘子最多放几个完整的"= 商 |
+| `primary.s04/ex2` 求余数 | `余数就是“分到最后剩下的、不够再分一份”的数。` | 余数定义句 |
+| `primary.s09/ex1` 0.a+0.b | `计算小数加减法时，关键是要把小数点对齐，也就是相同数位对齐，然后按照整数加减法的方法计算，最后在结果中点上小数点，使小数点与上面的小数点对齐。` | 小数加法规则句 |
+| `primary.s10/ex1` a 的 b% | `百分数就是分母为 $100$ 的分数，求一个数的百分之几，就用这个数乘以对应的百分数。` | 求百分比的规则句（**剔掉"我们来总结一下："过渡语**，仍是逐字子串） |
+| `primary.s22/ex1` 分配律 | `乘法分配律：两个数的和与一个数相乘，可以先把它们分别与这个数相乘，再相加。` | 题面明确要求用分配律 |
+| `primary.s23/ex1` 按比例分（甲） | `按比例分配的关键是：先求总份数，再求一份是多少，最后求各部分是多少。` | 该规则支撑两题（同句双引） |
+| `primary.s23/ex2` 按比例分（乙） | 同上 | 同上 |
+| `primary.s27/ex1` LCM | `特别地，当 $b$ 是 $a$ 的倍数时，$a$ 和 $b$ 的最大公因数是 $a$，最小公倍数是 $b$。` | 题面条件="b 是 a 的倍数"，这句**正是该条件下的结论** |
+| `primary.s27/ex2` GCD | 同上 | 同句同时给出 GCD 结论 |
+| `primary.s11/ex1` 米→厘米 | `例如，3米=300厘米，因为1米=100厘米，3×100=300。` | 讲解里唯一直接给出"1米=100厘米"的句子 |
+| `primary.s11/ex2` 千克→克 | `1千克=1000克，1吨=1000千克。` | 直接给出千克与克的进率 |
+| `primary.s12/ex1` 找零 | `方法很简单：付出的钱减去商品的价格，就是找回的钱。` | 找零规则句 |
+| `primary.s13/ex1` m²→dm² | `相邻两个面积单位之间的进率是100。` | 面积单位进率规则句 |
+| `primary.s13/ex2` dm³→cm³ | `常用体积单位有立方厘米、立方分米、立方米，相邻两个体积单位之间的进率是1000。` | 体积单位进率规则句 |
+| `primary.s13/ex3` 升→毫升 | `所以，1升等于1000毫升。` | 直接给出升/毫升换算 |
+
+**新增体检断言（告警级，不当违规）**：`verify.opening_quote_warning(quote)` ——引文（去 Markdown
+前缀后）以 `同学们/大家好/今天/这节课/上节课/接下来/首先/我们/目标/本节/导入` 开头 → **finding 告警**，
+并入 `check_template` 的 findings（**不拒绝入库**）。理由与边界都写进代码注释：
+机械规则**分不干净**"过渡句"与"以『我们』开头的规则句"（如"我们把两个数同时除以公有的质因数"是真规则），
+故按架构侧口径"实现为告警即可"。用例：`test_opening_line_quote_is_warned_but_not_rejected`
+（造错必报，含正例）+ `test_library_template_basis_quotes_are_rule_sentences`（全库现状锁定）。
+
+**复验脚本**（入库外，`_dsh-local` 性质）：`.runtime/r35c_fix_basis.py`（改）/ `r35c_verify_basis.py`（验）
+→ 现况 **templates=30 distinct=26 duplicated=4 bad=0**（报告 `.runtime/r35c_basis_verify.txt`）。
+
+### 66.2 任务2 · S3 挑战题双池（「挑战一下」）
+
+**池的分界**：核心题池（内容库 `exercises`，计入掌握与费曼）/ **挑战题池（完全不上算）**。
+挑战题**永不出现在默认流程**——`GET /session/{id}`、`next`、练习帧、费曼帧的 payload **都没有**
+`challenge` 键；它只随 `challenge_*` 动作下发（用例 `test_challenge_actions_are_registered_outside_default_flow`）。
+
+**五个动作 + 单题三态**（`challenge_start / begin / submit / cancel / abandon`）：
+
+| 动作 | 语义 | 后果 |
+|---|---|---|
+| `challenge_start` | 「挑战一下」→ **单独调模型生成**（`challenge_exercise`） | 只写 flow 的 `challenge` 块 |
+| `challenge_begin` | 开始作答（纯 UI 状态推进） | **无**（不写任何记录） |
+| `challenge_submit` | 提交作答 → **单独判分**（`challenge_check`） | **只记复盘**（`attempts.kind="challenge"`） |
+| `challenge_cancel` | 取消本次（丢掉这题） | **无**（连 attempts 都不写） |
+| `challenge_abandon` | 明确放弃（"我不会/我不感兴趣"） | **只记复盘**（`verdict="abandoned"`） |
+
+**不设额度、不计轮次、不影响进度**：`asked`/`answered` 只是展示计数，代码里**没有任何一处**拿它们
+做门禁（连做 3 道挑战题后核心流程照样能过：`test_challenge_no_quota_and_core_flow_still_passes_afterwards`）。
+
+**UI 显式标注**：后端直出 `challenge.notice = "挑战题：需要讲解之外的知识，答不出不影响任何进度"`
+（+ `counts_nothing: true` 契约位），前端原样渲染、**不显示任何进度/额度/分数影响**（docs/07 §2.3.1）。
+
+**⚠️ 必交断言的实证——并查出一处真实污染**：断言"作答后**四项均不变**"时，
+`/api/dashboard` 的 `stats` 出现了差异：`today_done` 4 → 5。根因：该统计原本
+`count(Attempt) join Session` **不过滤 kind** → **挑战题被算进了"今日完成"**（用户可见的进度数字）。
+**已修**：`models.PROGRESS_KINDS = ("exercise","feynman")` 白名单（默认拒绝新 kind，而非"排除 challenge"黑名单），
+`dashboard.today_done` 按其过滤 + 注释点名 R35 S3 红线。**这正是"四不变"断言的价值**——
+一个看起来"只是复用 attempts 表"的改动，会从统计口径漏进用户可见进度。
+
+**"换个学科还成立吗？"**：挑战题链路无任何学科分支（同一 `context_block` 注入 + schema 校验 + 降级 +
+tier 决策）；用例 `test_challenge_works_for_non_math_subject` 在**自建非数学学科**上跑通
+"生成 → 提交 → 除 challenge 块外 flow 逐位不变"。
+
+**新增件与复用点**（详见 §66.4 融合对照表）：复用练习/判题/复盘链路与 attempts 表；
+新增的只有**两个 AI 调用点**（挑战题必须"单独调模型生成"、且要考讲解之外的知识，
+无法由核心题池渲染，也不能复用 explain/hint 的语义）——这是 docs/09 R35 S3 的明文要求。
+
+### 66.3 任务3 · S4 追问 `reteach`（逐字引用 + 退回讲解）
+
+**两层，不是两套机制**：
+
+1. **确定性前置**（`feynman_ledger.has_quotable_content`）：学生的完整稿去掉敷衍用语
+   （不知道/不会/不懂/没学过…）与纯填充词后**仍不足 6 字** → 判"没有可引用的实质内容"。
+   命中 → **直接返回 `reteach`**：**不调评分、不消耗整体稿额度**（`evals_done` 仍为 0）、账本不动。
+   用例 `test_dismissive_transcript_returns_reteach_without_burning_budget`（"我不知道"×5 →
+   `verdict="reteach"`，随后补讲仍能一次通过 → 证明额度没被吃掉）。
+2. **模型层的通用兜底**：`FeynmanFollowupOut` 增 `student_quote` / `missing` / `reteach` 三个字段
+   ——追问**必须逐字引用学生原话**（服务端用 `feynman_ledger.quote_valid` 做包含校验，**同一把引文尺子**）
+   并说清"这句话缺了什么"。四种不成立（模型自陈 reteach / 引文非逐字 / missing 空 / 正文空）
+   → 一律转 `reteach`，**绝不下发一条学生答不出的追问**。用例 4 条（含正例）。
+
+**`reteach` 响应**：`verdict="reteach"`、`next_action="reteach"`、`reteach{reason, message_md,
+lecture_md, missing_dimensions[]}` + 事件 `feynman_reteach`；离线路径同样满足（offline
+`feynman_followup` 从学生原话里取可引用片段，取不到即 reteach）。
+
+**⚠️ 一处实现决策（已登记 §58-13 待架构侧确认）**：**不把 stage 翻回 `explain`**。
+原因：练习已通过时"讲解→例题→练习"会**重新出题**并再次计入 practice 账目——等于用一次敷衍回答
+**污染练习记录**，与 S4 的目的（把学生送回讲解）背道而驰。改为"**阶段不动 + 随响应下发讲解原文
+（`reteach.lecture_md`）+ `next_action="reteach"`**"，学生当场就能看讲解、补讲后再交完整稿。
+
+**顺带收口 S4 的另一条**：socratic 模板**不得作为默认兜底**下发——
+`SessionService._backed_socratic(node)` 只保留 `socratic_basis` **逐字成立**的主题
+（复用 `answerability.check_basis`，不重写包含校验）；离线网关里"无缺口就丢一条 socratic"的兜底**已删**。
+`middle.0102` 等人工锚点（有 socratic 套话、无 basis）→ 下发语料为**空**（用例 `test_socratic_topics_require_basis`）。
+
+### 66.4 任务4 · 文档同步 + 融合对照表（含 S3/S4 行）
+
+- `docs/06`：`/session/step` 的 action 全集（含 5 个 `challenge_*`）、§2.0 追问新增
+  `followup_quote`/`followup_missing`、**§2.0.1 `reteach` 协议**、**§2.2 挑战题池协议**、
+  `/exercises/unanswerable`、新增**「复盘」端点表**（`/history/feynman`、`/history/challenge`）、
+  `attempts.kind` 与 `PROGRESS_KINDS` 白名单口径。
+- `docs/07`：§2.3 追问的"逐字引用 + 这句话缺什么"与 **reteach 卡片**、**§2.3.1 挑战题**
+  （入口/显式标注/三态/结果展示）、§5 UI 红线新增两条（挑战题不得进默认流程、不得渲染进度影响）。
+
+**融合对照表（R35 全量 · 每条新增件 → 复用点 → 断言）**
+
+| 新增件 | 复用点（禁新建平行机制） | 断言/用例 |
+|---|---|---|
+| `taught_facts` / `derivable` | 扩展既有概念层（`concept_id` 指向 `concepts` 注册表；事实句留节点内） | `test_r35_answerability.py`（含 `concept_id` 未注册即剔除） |
+| 前置知识判定 | 复用 `user_concepts` / 已掌握前置单元 | `check_progression` P4 用例 |
+| `basis` 引文校验（题/追问/小思考/模板） | **复用 `content/citations.py`**（单一实现，`MIN_QUOTE_CHARS=6`） | `test_template_basis_quote_must_be_verbatim` 等 |
+| 模板级 `basis`（规则句） | 复用 `BasisDoc` + `citations`；**不新建题目体系** | **§66.1**：30 条 + `test_library_template_basis_quotes_are_rule_sentences` |
+| 引文精度告警 | 复用 `check_template` 的 findings 通道（不新增拒绝条件） | `test_opening_line_quote_is_warned_but_not_rejected` |
+| S3 挑战题池 | **复用现有练习/判题/复盘链路**；挑战题池只是**标记位**（`attempts.kind="challenge"`），不新建题目体系与表 | `test_r35b_challenge.py` 全 7 条（四账不变 / 三态无后果 / 非数学学科） |
+| 挑战题"单独生成" | 复用 `CALLS` 注册表 + `context_block` 注入范式 + `chat_json` schema 校验/重试 + `ai/tier` 档位决策 | `test_challenge_callpoints_registered` + 上面 7 条 |
+| 挑战题判分 | 同上（无 rubric/无 L1 → **如实分界**：机器验不了，只能模型判；"无 L1 学科"的同一分界） | 同上 |
+| 挑战题复盘 | **复用 `attempts` 表 + 既有复盘读法**（同一 `_rows()` 实现，不新建表/存储） | `GET /history/challenge` 断言 + `test_challenge_submit_changes_nothing_but_review_log` |
+| 进度统计口径 | **复用 `models.PROGRESS_KINDS` 白名单**（`dashboard.today_done`）；不另立统计体系 | 同一用例的 `stats` 前后逐位相等断言 |
+| S4 追问逐字引用 | **复用引文尺子**（`feynman_ledger.quote_valid` → `content/citations`） | 4 条 reteach 用例（含非逐字引文必转 reteach） |
+| S4 `reteach` | 复用 R27 状态机与额度语义（**不消耗额度**）+ 复用 `lecture_cache`（不重生成讲解） | `test_dismissive_transcript_returns_reteach_without_burning_budget` |
+| socratic 有据才下发 | **复用 `answerability.check_basis`**（不写第二份包含校验） | `test_socratic_topics_require_basis` |
+| 前端挑战题按钮/标注 | 复用 SessionPage 的 action 分发 + `payload` 渲染范式（前端无判断逻辑） | `tsc --noEmit` + `vite build`；docs/07 §2.3.1 |
+| 面向用户文案 | 复用既有中文口径（`api/errors_zh.py`；所有新文案中文，含 `CHALLENGE_NOTICE`） | `test_errors_zh.py` 既有 + 新用例断言文案关键词 |
+
+**缺复用点的（只有一处，理由）**：**挑战题的两个 AI 调用点**（`challenge_exercise` / `challenge_check`）。
+**不能复用**既有调用点的理由：① S3 明文要求挑战题"**须单独调模型生成**"；
+② 语义相反——核心题池的硬约束是"**只能用已讲过的**"，挑战题**必须**超出讲解
+（`context_block` 的基础禁令在挑战题里被显式豁免，且这是唯一允许它的地方）；
+③ `explain_node`/`hint_on_error`/`feynman_evaluate` 的输出结构都不含"题目 + 作答提示 + 为什么它超出讲解"，
+硬套会造出"字段语义漂移"的第二含义。**除这两个调用点外，本批无新建机制**。
+
+### 66.5 回归与提交（实测，非汇报值推算）
+
+| 项 | 基线（架构侧） | 本批实测 |
+|---|---|---|
+| `pytest backend/tests` | 378 collected / 376+2 | **394 collected / 392 passed + 2 skipped / 0 failed / 0 error，exit 0**（**+16 用例**：挑战题 7 + reteach 7 + 引文精度 2） |
+| `content validate` | ok 25/50 | **ok 25 nodes / 50 exercises** |
+| audit 五学段 | 27/31/81/59/60 | **27/31/81/59/60，ok=True，错误项全 0** |
+| `tsc --noEmit` | exit 0 | **exit 0**（另跑 `vite build` **exit 0**） |
+| `guardrails.semantics_stats()` | violations 0 / verified 30 | **{templates:30, violations:0, verified:30, unverified:0, l1_subjects:['math']}**（逐位一致） |
+| 30 条模板 basis | 19 distinct / 有开场白 | **26 distinct / 重复仅 4 组 ×2（同节点同规则）/ 开场白 0 / 逐字 30/30** |
+
+**提交链**：`955724c`（任务1）→ `7395b26`（S3+S4 引擎/前端/用例）→ 本节（文档 + NOTES + §58）。
+**未污染真实内容库/用户库**：所有脚本用临时根/临时库；`.runtime/` 产物不入版控；`content/` 只改了
+19 个模板文件的 `basis.quote` 一行（`git show --stat 955724c` 可核）。
+
+### 66.6 疑点（已登记 §58）
+
+1. **`reteach` 不翻转 stage**（§58-13）：与文档字面"退回讲解"有出入，理由见 §66.3，请架构侧确认；
+2. **basis 引文的"语义贴合度"仍需人读**（§58-14）：机器只能判逐字 + 非开场白；
+3. **挑战题在页面刷新后不恢复**：挑战题**刻意不进默认 payload**（否则等于"出现在默认流程"），
+   故刷新/换页后面板消失，再点「挑战一下」会**重新生成一道**（`asked` 计数 +1，旧题在 flow 里被覆盖）。
+   若希望"刷新后仍在"，需要一个显式的 `GET /session/{id}/challenge` 之类端点——**未做**，
+   因为那会把挑战题变成"半个默认流程"，与本条规格相冲；**请架构侧裁定取舍**；
+4. **`has_quotable_content` 是语言层启发式**（§66.3 第 1 层）：去掉敷衍用语后仍不足 6 字才算"无可引用"，
+   个别"半敷衍"句子（如"我真的不会这道题，没学过"）可能落到第 2 层由模型判 reteach——
+   方向安全（多一次模型判定、结论仍是 reteach 或按原话追问），但**不是百分百确定**，如实登记。
+
 

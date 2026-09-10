@@ -44,6 +44,26 @@ content/
 > ```
 > 判定：`app/content/answerability.py`（引文尺子＝`app/content/citations.py`，≥6 字）。
 > 缺 `taught_facts` 的旧内容**不阻塞加载**，但**不得**通过可答性校验；生成端不合规的题**丢弃**（S5）。
+>
+> **R35 §12–§14 语义自检闸门 + 模板级依据（2026-09-10）**：
+> ```yaml
+> exercises:
+>   - id: ex1
+>     kind: template
+>     template:
+>       prompt: "已知 {b} 是 {a} 的倍数，求 {a} 和 {b} 的最小公倍数。"
+>       constraint: "b % a == 0"                 # 必须强制题面说出的每一个条件
+>       answer_expr: "b"
+>       basis: {quote: "特别地，当 b 是 a 的倍数时，最小公倍数是 b。"}  # §14：**支撑本模板的那句规则句**
+>       semantics:
+>         expect: "lcm(a, b)"                    # 独立算式（L1 插件据此独立验算；不得与 answer_expr 同文）
+>         requires: ["b % a == 0"]               # 题面陈述的条件（必须被 constraint 保证）
+>         domain: {nonneg: true, integer: true}  # 通用层领域谓词（**内容显式声明**，不猜题面关键词）
+> ```
+> 三层闸门（`app/content/verify.py`，**学科无关是第一原则**）：① 通用层领域谓词（所有学科）→
+> ② L1 验算插件（按学科注册，`math` 是第一个实例）→ ③ 无 L1 的学科**如实标注**"无独立验算"。
+> 另含题面泄漏（答案原样出现在提示/示例片段）与**引文精度告警**（`basis.quote` 不得是开场白/过渡句；
+> **告警不拒绝入库**，见 NOTES §66.1）。生成端入口：`pipeline.validate_semantics()`。
 
 ```yaml
 ---
