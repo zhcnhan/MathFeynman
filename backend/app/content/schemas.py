@@ -23,6 +23,34 @@ CHECK_MODES = (
 INTERACTIVE_MODES = ("workbench", "guided", "graph")
 
 
+# ---------- R35 可答性：声明式知识包 + 出题引文纪律 ----------
+class TaughtFact(BaseModel):
+    """本单元**显式陈述**的一条事实/关系句（封闭集合）。
+
+    `text` 必须**逐字出自讲解正文**（服务端用 `content/citations.py` 的同一把尺子校验）。
+    """
+
+    id: str
+    text: str
+
+
+class Derivable(BaseModel):
+    """本单元允许的**推理**：结论 + 所依据的事实 id + 明确规则（普适逻辑或本单元教过的规则）。"""
+
+    conclusion: str
+    premises: list[str] = Field(default_factory=list)
+    rule: str = ""
+
+
+class BasisDoc(BaseModel):
+    """一个问题的**依据**（R35 S2）：引用的已述事实 + 讲解原文引文；推理题另附前提与规则。"""
+
+    fact_ids: list[str] = Field(default_factory=list)
+    quote: str = ""
+    premises: list[str] = Field(default_factory=list)  # 仅推理题
+    rule: str = ""                                     # 仅推理题
+
+
 # ---------- 讲解/例题 ----------
 class ExplanationDoc(BaseModel):
     role: str = "教师讲解稿"
@@ -99,6 +127,8 @@ class ExerciseDoc(BaseModel):
     interactive: list[Literal["workbench", "guided", "graph"]] = Field(
         default_factory=lambda: ["workbench"]
     )
+    # R35 S2：核心题的依据（引文纪律）。缺失/不成立 → 该题按"不可答"处理（生成端丢弃）。
+    basis: Optional[BasisDoc] = None
 
     @field_validator("interactive")
     @classmethod
@@ -143,6 +173,8 @@ class FeynmanDoc(BaseModel):
     task_prompt: str
     rubric: RubricDoc
     socratic_followups: list[str] = Field(default_factory=list)
+    # R35 S2：与 socratic_followups **按下标对齐**的依据；缺失/不成立的那条不下发（S4：模板套话不得兜底）
+    socratic_basis: list[BasisDoc] = Field(default_factory=list)
     thinking: bool = False  # R12：内容标记 → 基础档 think（覆盖按学段的 fast 默认）
 
 
@@ -165,6 +197,9 @@ class NodeDoc(BaseModel):
     exercises: list[ExerciseDoc] = Field(default_factory=list)
     feynman: FeynmanDoc
     exercises: list[ExerciseDoc] = Field(default_factory=list)
+    # R35 S1：声明式知识包（旧内容可缺省；缺省者**不阻塞加载**，但不得通过可答性校验）
+    taught_facts: list[TaughtFact] = Field(default_factory=list)
+    derivable: list[Derivable] = Field(default_factory=list)
     # 正文（front-matter 之后的全部 Markdown）
     body_md: str = ""
 
@@ -189,6 +224,10 @@ __all__ = [
     "RubricDoc",
     "RubricDimension",
     "FeynmanDoc",
+    # R35
+    "TaughtFact",
+    "Derivable",
+    "BasisDoc",
     "LEVELS",
     "CHECK_MODES",
     "INTERACTIVE_MODES",

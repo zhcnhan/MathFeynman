@@ -277,6 +277,48 @@ CALL_OUTLINE_DRAFT = CallSpec(
 
 
 # ---------- 调用点 11：通用学科单元内容起草（docs/14 Phase B · B1） ----------
+class UnitContentBasis(BaseModel):
+    """R35 S2：一道题/一条小思考的**依据**（引用的已述事实 id + 讲解原文引文）。
+
+    ⚠️ 必须在 schema 里声明：pydantic 默认丢弃未声明字段，漏声明会让"模型给了依据、
+    服务端收到空"（R36 §8 立的纪律：schema 声明 + prompt 说明 + 一条往返用例，三处同改）。
+    """
+
+    fact_ids: list[str] = Field(default_factory=list)
+    quote: str = ""
+    premises: list[str] = Field(default_factory=list)  # 仅推理题
+    rule: str = ""                                     # 仅推理题
+
+
+class UnitContentFact(BaseModel):
+    """R35 S1：本单元显式陈述的事实句（`text` 必须逐字取自讲解）。"""
+
+    id: str = ""
+    text: str = ""
+
+
+class UnitContentDerivable(BaseModel):
+    """R35 S1：允许的推理（结论 + 依据的事实 id + 规则）。"""
+
+    conclusion: str = ""
+    premises: list[str] = Field(default_factory=list)
+    rule: str = ""
+
+
+class UnitContentWorkedExample(BaseModel):
+    """R35 A3：例题（示范"如何合法作答"）。"""
+
+    prompt: str = ""
+    solution_steps: list[str] = Field(default_factory=list)
+
+
+class UnitContentAsk(BaseModel):
+    """R35 S2/S6：运行时"🤔 小思考"，**必须带依据**（模板套话不再兜底）。"""
+
+    ask: str = ""
+    basis: UnitContentBasis | None = None
+
+
 class UnitContentExercise(BaseModel):
     """AI 起草输出的单道练习题（kind ∈ boolean/choice/fill，服务器组装为 NodeDoc 并校验）。"""
 
@@ -287,11 +329,16 @@ class UnitContentExercise(BaseModel):
     answer_index: int = 0              # choice（0 起）
     expected: str = ""                 # fill
     aliases: list[str] = Field(default_factory=list)
+    basis: UnitContentBasis | None = None  # R35 S2：无依据 → 服务端按"不可答"丢弃该题
 
 
 class UnitContentDraftOut(BaseModel):
     lecture: str = ""
     feynman_task: str = ""
+    taught_facts: list[UnitContentFact] = Field(default_factory=list)      # R35 S1
+    derivable: list[UnitContentDerivable] = Field(default_factory=list)    # R35 S1
+    worked_examples: list[UnitContentWorkedExample] = Field(default_factory=list)  # R35 A3
+    asks: list[UnitContentAsk] = Field(default_factory=list)               # R35 S2/S6
     exercises: list[UnitContentExercise] = Field(default_factory=list)
 
 

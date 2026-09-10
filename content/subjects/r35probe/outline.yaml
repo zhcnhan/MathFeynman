@@ -1,0 +1,27 @@
+subject: r35probe
+label: 探针
+schema_version: 1
+revision: 1
+status: active
+source: manual
+unit_id_scope: subject
+generated_at: '2026-09-10T09:58:54+00:00'
+updated_at: '2026-09-10T09:58:54+00:00'
+note: ''
+source_materials: []
+units:
+- id: r35probe.u01
+  title: 第一讲
+  objectives:
+  - 掌握甲概念
+  concept_tags:
+  - 甲
+  group: g
+  prereqs: []
+  difficulty: 1
+  requires_thinking: false
+  anchors: []
+  topic: ''
+  status: draft
+  meta: {}
+  materials: []

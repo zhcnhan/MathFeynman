@@ -2739,3 +2739,76 @@ check(quote, source, *, where=…) -> (bool, str)
 ③ 材料注入目前只做"分节摘要"（PDF 按页 / Markdown 标题 / 段落兜底），**未做语义级摘要**——
 若书很大，注入的是"每节开头 400 字"，必要时再接一次轻模型摘要（成本/复杂度上升，未做）。
 
+---
+
+## 61. R35a（第一次汇报）：可答性——生成端接入（S1/S2/S5 核心 + A3 例题）
+
+> 规格：`docs/09 R35` §2/§3 + `.runtime/EULER_TICKET_R35.md`（§3b 融合约束、§7 防冲突）。
+> **本批分两次汇报**（先内容后引擎）：本节＝**R35a**；R35b（S3 挑战题 / S4 追问 discipline /
+> S6 小思考 / S7 反馈入口 / 全库审计 / P4 机器校验 / 数学路径接入）**尚未做**，见 §61.5。
+
+### 61.0 开工前：R36 对照基线（工单强制动作）
+
+| 项 | R35 开工基线（=R36 验收值） | 本批后 |
+|---|---|---|
+| `pytest backend/tests` | **343 collected / 341 passed + 2 skipped / 0 failed，exit 0** | **351 collected / 349 passed + 2 skipped / 0 failed，exit 0**（+8 新用例） |
+| `content validate` | ok **25/48** | ok 25/48（不变） |
+| roadmap audit | **27/31/81/59/60**，错误项 0 | 不变 |
+| `npx tsc --noEmit` | exit 0 | exit 0 |
+
+（提交前工作树干净；R36 已全部提交 `adc0b89…b292c74`。）
+
+### 61.1 落地内容（S1/S2/S5 核心 + A3）
+
+| 件 | 实现 | 复用点（§3b 融合约束） |
+|---|---|---|
+| **S1 声明式知识包** | `content/schemas.py`：`TaughtFact{id,text}`、`Derivable{conclusion,premises,rule}` 挂到 `NodeDoc`；`text` 必须**逐字出自讲解**（`citations.check`）；`derivable` 的前提必须是已声明事实 id + 非空规则 | 判定器 `content/answerability.py`；引文尺子＝`content/citations.py`（**未写第二份包含校验**） |
+| **S2 出题引文纪律** | `ExerciseDoc.basis: BasisDoc{fact_ids,quote,premises,rule}`；`FeynmanDoc.socratic_basis`（与 `socratic_followups` **按下标对齐**）；推理题须 ≥2 条已述事实前提 + `rule`（且须落在本单元 `derivable` 内） | 同上；**出题/评分共用同一把尺子**（`feynman_ledger` 已委托 citations） |
+| **S5 自动质检** | `answerability.gate_node(doc)`：不合规的**核心题/追问一律丢弃并记中文原因**（不是让整份内容失败）；生成端把丢弃原因**回灌 prompt** 触发重生成（修生成器，不是改某题文案） | 丢弃计数（`report.dropped`）**待接 `service/guardrails.py`（TRIP_RATIO=0.3）**——R35b 接 |
+| **A3 例题约束** | `validate_generic_content` 新增"auto 出稿必须 `worked_examples ≥1`"；启发式与 AI 两条路径都产出例题 | 复用既有 `WorkedExampleDoc`（不新建结构） |
+| **A1 生成端接入** | `outline/generate.py`：AI 出稿 prompt 增 `taught_facts/derivable/worked_examples/asks(basis)` 要求（含"零基础假设/只问讲过的/不许个体比较"硬约束）；`build_node_doc` 落盘新字段；**删除硬编码的三条 socratic 模板套话**（"举实例/它与你学过的联系" 正是被审计判死的那三条）；`_frontmatter_md` 写出新字段 | 复用既有 `NodeDoc`/`ExerciseDoc`/`FeynmanDoc`；`asks` 走既有 `socratic_followups` 字段 |
+| **接线锁（R36 §8 纪律）** | `ai/calls.py`：`UnitContentBasis/Fact/Derivable/WorkedExample/Ask` + `UnitContentExercise.basis` + `UnitContentDraftOut.{taught_facts,derivable,worked_examples,asks}` **声明在 schema**（pydantic 默认丢未声明字段 → 漏声明会静默失效） | 三处同改：schema + prompt + 往返用例 `test_unit_content_call_schema_carries_answerability_fields` |
+
+### 61.2 审计脚本入库（§5）
+
+- 新增 **`backend/tests/audit_answerability.py`**（长期保留、不被 pytest 收集）：
+  零基础学生模型逐题判定；**选择题把 `options` 一并交给"学生"**（架构侧第一版假阳性坑）；
+  **`MF_ALLOW_LIVE_AI=1` 门槛**（否则直接拒绝运行，防误触真模型）；`--nodes` / `--limit` 可指定靶子；
+  报告写 `%TEMP%\mf_r35_audit_<时间戳>.json`（**文件名唯一不覆盖**，F1 纪律）；有不可答项 → 退出码 1。
+- 用法：`$env:MF_ALLOW_LIVE_AI=1; .\.venv\Scripts\python backend/tests/audit_answerability.py --nodes node_primary_s27_auto`
+  （**默认用临时库**、真实内容根——审计只读，不动用户数据）。
+
+### 61.3 回归自证（本批）
+
+- 新用例 **8 条** `backend/tests/test_r35_answerability.py`：事实来源校验 / 无据题丢弃（无 basis、引文不在讲解、
+  引文过短 <6 字、引用未知事实 id）/ 推理题 ≥2 前提 + 规则 / socratic 无据丢弃 / 旧内容不阻塞加载但不过校验 /
+  **启发式端到端**（落盘内容带知识包+依据+例题，重载后仍通过）/ **AI 端到端**（假 provider 给 1 道越界题
+  → 只丢那一题、其余入库）/ **schema 接线锁**。
+- 全量 **351 collected / 349 passed + 2 skipped / 0 failed，exit 0**（留档 `.runtime/r35_final.xml`）；
+  `content validate` 25/48、audit 五学段全绿、`tsc` exit 0。**既有 343 条用例无一改动**（兼容性由它们守住）。
+
+### 61.4 已知边界（本批如实登记）
+
+1. **数学/roadmap 路径（`content/pipeline.py` + `stub_drafter` + `ai/drafting.py`）本批未接入可答性** ——
+   它走的 `CALL_DRAFT_CONTENT` 出的是**整篇 .md 文本**（模板题为主），接入需同时改 stub/AI prompt/流水线
+   三级（§7 文件区域分工也要求"R35 加可答性校验"为独立函数），**留 R35b**。当前行为：数学 auto 内容
+   仍可入库但**没有** `taught_facts` → 若对它跑 `gate_node` 会判"未声明知识包"（口径一致，不矛盾）。
+2. **S6 🤔 小思考（`explain_node.asked_to_confirm`）本批未改** —— 留 R35b（含 `ExplainOut.asks_basis`）。
+3. **S3 挑战题 / S4 追问 `reteach` / S7 反馈入口 / 复习只考已教事实（S8 收尾）** —— 留 R35b。
+4. **真模型审计证据（A2/A4/A5）本批未跑** —— 审计脚本已入库，待 R35b 与用户新建 PDF 学科一并跑并贴证据。
+
+### 61.5 R35b 待办（下一任 Euler 直接照做）
+
+① `pipeline.validate_answerability`（独立函数）+ `stub_drafter`/`ai/drafting` 产出知识包与依据；
+② S6：`explain_node` prompt + `ExplainOut.asks_basis` + 校验丢弃（复用 `prompts.context_block`）；
+③ S3 挑战题双池（**不得**触碰费曼账本/额度/mastery）；④ S4 追问纪律（引用学生原话，无可引用 → `reteach`）；
+⑤ S7 反馈入口（**复用 `feedback` 表加一种 `kind`**）；⑥ 可答性问题率接 `guardrails.py`；
+⑦ **P4 机器校验**（R36 欠账：难度提升只能靠已教事实累积）；⑧ 全库审计 + A2/A4/A5 真模型证据；
+⑨ 融合对照表（§3b 验收项）+ docs/06、docs/07 同步。
+
+### 61.6 附：math 难度倒置口径澄清（R36 §9 架构侧复算 12 处 vs Euler 15 处）
+
+架构侧按"**同文件内**前置"口径复算得 12 处；Euler 的 15 处为**更宽口径**（含跨学段/内容节点引用，
+即 `college.c16←high.h47`、`college.c44←high.h06`、`ai.a11←college.c20` 这 3 条跨学段边）。
+校验器实现只比对**同文件内**前置 → **只会漏检、不会误拒**，与架构侧结论一致（**非缺陷**，登记备查）。
+

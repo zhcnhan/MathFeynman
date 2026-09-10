@@ -27,6 +27,24 @@ content/
 
 ## 2. 节点文件格式（.md：YAML front-matter + Markdown 正文）
 
+> **R35 可答性字段（2026-09-10，新增；旧文件缺省即可，不阻塞加载）**：
+> ```yaml
+> taught_facts:                    # S1 声明式知识包：本单元**显式陈述**的事实句（text 必须逐字出自讲解正文）
+>   - {id: f1, text: 恒星是由自身引力维持并自行发光的巨大球体。}
+> derivable:                       # S1 允许的推理（结论 + 依据的事实 id + 明确规则）
+>   - {conclusion: 太阳比地球更近, premises: [f1, f2], rule: 比较距离}
+> worked_examples:                 # A3：auto 出稿必须 ≥1（示范"如何合法作答"）
+>   - {prompt: 例：太阳是什么？, solution_steps: [太阳是一颗恒星。]}
+> exercises:
+>   - id: b1
+>     basis: {fact_ids: [f1], quote: 讲解原文里逐字出现的一句依据}   # S2 出题引文纪律（推理题另附 premises+rule）
+> feynman:
+>   socratic_followups: [太阳和地球哪个离我们更近？]
+>   socratic_basis: [{fact_ids: [f2], quote: 太阳是离地球最近的恒星。}]  # 与 followups **按下标对齐**
+> ```
+> 判定：`app/content/answerability.py`（引文尺子＝`app/content/citations.py`，≥6 字）。
+> 缺 `taught_facts` 的旧内容**不阻塞加载**，但**不得**通过可答性校验；生成端不合规的题**丢弃**（S5）。
+
 ```yaml
 ---
 id: middle.0102
