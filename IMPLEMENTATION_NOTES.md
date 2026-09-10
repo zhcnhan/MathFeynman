@@ -30,7 +30,8 @@
 ## 1. 待架构裁决疑点
 
 > 清理说明（Phase C C6）：本节早期条目已随 docs/09 裁决史（R1–R23）逐一闭合；**当前"待架构
-> 裁决"以各批次节内「疑点（挂待架构裁决）」为准**（最新：§40–§45 与 docs/14 §7 未决/待细化）。
+> 裁决"以各批次节内「疑点（挂待架构裁决）」为准**（最新：§48–§50 R30 五条 + §40–§45 与
+> docs/14 §7 未决/待细化）。
 > 早期 M3"无 key 冒烟未执行"记录已过时：配 LLM_API_KEY 后真模型冒烟（test_live_ai）与 Phase C
 > 真模型验收（test_phase_c_live，行星科学 10 单元 AI 内容）均已实测通过（§44）。
 
@@ -1905,3 +1906,156 @@ git 提交链（后端 → 前端 UI → 文档/NOTES）均标注 R27；工作�
 > 且其留档已被后一次覆盖。定性结论（答追问分数可见上升、R25 锚定 bug 已不复现）**成立**；
 > 数字以留档为准。**纪律**：真模型回归须每次写入独立留档文件（DB + stdout）并据实汇报；
 > 另注：两次运行同一稿件得分 0.863 vs 0.73（波动 0.13，后者仅高门槛 0.03）→ 阈值抖动见 R28 F6。
+
+---
+
+## 48. R30 F6：费曼终验边缘带复评（唯一新增功能 · 2026-09-10）
+
+**开机复核**（docs/13 §1）：HEAD=`b1c1b05`（docs/09 R30 规格）、工作树干净、
+pytest **306 passed + 2 skipped**（308 collected，exit 0；2 skip=真模型冒烟/PhaseC live）、
+`content validate` **ok 26 节点/54 练习**、audit 五学段全绿（27/31/81/59/60）、tsc+build 通过。
+
+**规格**：docs/09 R30 §F6（用户拍板）。问题：同一份整合稿两次真模型运行得 0.863 / 0.73（差 0.13），
+后者仅高门槛 0.03 → "同一篇讲解这次过、下次不过"（阈值抖动，R28 F6）。
+
+**改动清单**
+1. `ai/tier.py`：`FEYNMAN_RECHECK_LOW = 0.05` / `FEYNMAN_RECHECK_HIGH = 0.08`（便于调参）+
+   `feynman_recheck_band(combined, threshold)`——刻意与 R12 的"下一轮升 think"边缘区间
+   （−0.15/+0.10）分开：R12 决定**下一轮**档位，本函数决定**本轮已出分**是否复评。
+2. `service/feynman_ledger.py`：把"净化（evidence 校验/降级）"与"并入账本"拆开——
+   `clean_card(card, transcript=…)`、`card_combined(card)`（单轮加权综合分）、
+   `merge_clean_card(ledger, clean, round_no=…)`；`merge_card` 变为二者组合（旧签名不变、
+   测试口径不变）。**动机**：复评要先比较两次卡、再只并入采用那一次，若沿用 `merge_card`
+   会对已降级的卡二次 ×0.5。
+3. `service/session._act_feynman`：单轮评分完成后判断触发（三条件：落边缘带 + 本轮非 think +
+   本轮未复评过）→ 以 think 档**重跑 feynman_evaluate**（复用同一 `ctx`：同一份稿、同一 rubric、
+   同轮语境，含 `previously_acknowledged`）→ 取两次较高者：
+   - 采用复评 → `strategy="think"`、`strategy_reason="edge_recheck=think"`、`f["last_strategy"]` 同步；
+   - 复评抛 `AiCallError` → 保留首次结果（不 500、不换档位），事件带 `second: null`；
+   - `attempts.meta["recheck"] = {used, first_combined, second_combined, taken}`（**恒写入**，
+     未触发时 used=false / taken="first"），事件 `feynman_edge_recheck {first, second, taken}`；
+   - 账本仍按"采用那次"的卡 `merge_clean_card`（维度 max），通过判定口径不变（R30 F3：
+     账本累计分 ≥ 阈值）。
+   - **"本轮尚未复评过"由结构保证**：该分支在单次完整稿提交内只走一次，复评后 `rounds_done` 递增
+     → 同一轮不可能再次触发（无循环；每轮最多 1 次额外 heavy 调用，满足 §F6.5 成本纪律）。
+4. `tests/test_r30_edge_recheck.py`（新，**7 用例**＝R30 §6 六条 + 带外参数化）：
+   ① 带内 0.68 → 触发、复评 0.75 → 取高 **pass**（断言 `gw.calls == ["fast","think"]`、
+   `strategy=think`、事件 `taken=second`、meta 四字段、mastered）；
+   ② 带外 0.40（不过）/0.90（直接过）→ **不触发**（`calls == ["fast"]`、无事件、meta.used=false）；
+   ③ 首次即 think（`think_deep=true`）→ 不触发；
+   ④ 复评更低 0.68 → 0.60 → **取首次** 0.68、不 pass、`strategy` 仍 fast；
+   ⑤ 复评抛 `AiCallError` → 200 保留首次（事件 `second=null`、meta `second_combined=null`）；
+   ⑥ 每轮复评 ≤1 次：第 1 轮 fast+复评（2 次调用）→ 第 2 轮轮次≥2 本就 think → 0 次复评。
+5. 文档：docs/05 §5（流程第 4 步增"边缘带复评"）、docs/06 §2.0（payload 协议 + 事件清单）。
+
+**实测证据（离线桩：由临时 dump 脚本 `backend/tests/_r30_f6_evidence.py` 打印真实 payload/meta
+后即删；下表为逐字摘录）**
+
+| 场景 | 调用档位序列 | 结果 | 事件 / meta.recheck |
+|---|---|---|---|
+| 带内 0.68 → 复评 0.75 | `["fast","think"]` | verdict=**pass**, combined=**0.75**, strategy=think, mastered=true | `{first:0.68, second:0.75, taken:"second"}` / `{used:true, first_combined:0.68, second_combined:0.75, taken:"second"}` |
+| 带外 0.40 | `["fast"]` | verdict=fail, combined=0.40, 无复评 | `[]` / `{used:false, first_combined:0.4, second_combined:null, taken:"first"}` |
+| 带外 0.90 | `["fast"]` | verdict=pass, combined=0.90, 无复评 | `[]` / `{used:false, …taken:"first"}` |
+| 带内 0.68 → 复评 0.60 | `["fast","think"]` | verdict=fail, combined=**0.68**（取首次）, strategy=fast | `{first:0.68, second:0.6, taken:"first"}` |
+| 首次即 think（override） | `["think"]` | 无复评 | `[]` |
+| 复评抛错 | `["fast","think"]` | **HTTP 200**，保留首次 0.68 | `{first:0.68, second:null, taken:"first"}` |
+
+**回归**：pytest **325 passed + 2 skipped**（327 collected；基线 306+2 → +19 = F6 7 + F5 2 +
+R29 引申 10，不降）；R10/R11/R17 费曼分支、R27 三条路径、R29 老会话用例全绿；
+`content validate` 26/54；audit 五学段全绿；`npx tsc --noEmit` + `npm run build` 通过。
+
+## 49. R30 遗留收口：F5 evidence 最短门槛 / F4 文案 / R29 引申 flow schema 自愈 / F2 行尾治理
+
+### F5 · evidence 最短长度门槛（`23fc603`）
+- `feynman_ledger`：新增常量 `MIN_EVIDENCE_CHARS = 6`；`quote_valid` 在"归一化子串包含"之外
+  先判**归一化后长度 < 6 → 无效**（极短引文如"方程"能平凡通过包含校验，等于没有依据）；
+  新增 `quote_invalid_reason(quote, transcript, where=…)` 区分「过短」与「不在本轮文本中」
+  （错误全中文；`clean_card` / `update_dimension` 的 `evidence_reason` 同步）。
+- 用例：`test_r30_f5_evidence_min_length_threshold`（2/4/5 字判无效、6 字与含标点干扰的有效、
+  原因文案区分）+ `test_r30_f5_short_quote_downgraded_end_to_end`（桩给"极短但在文本中"的引文
+  → `evidence_valid=false` + ×0.5 + 事件 `feynman_evidence_flagged`）。
+
+### F4 · 补答未补上后的文案统一（前后端）
+- 事实口径：`_act_feynman_answer` 收尾清空 `followup` → "同一缺口可再追一次"实际**须先再交一次
+  完整稿**换取新追问（R28 F4）。
+- 后端 `_act_feynman_answer` note：`缺口保留在账本里——**再交一次完整讲解后，会针对该缺口再问**`
+  （`backend/app/service/session.py:834`）；前端 `EVENT_TEXT.feynman_gap_open` 同措辞
+  （`frontend/src/pages/SessionPage.tsx:26`）；顺带补 F6 事件横幅
+  `feynman_edge_recheck: "⚖️ 本次接近及格线，已用更认真的档位复核一遍（取较高分）"`。
+- 用例锁定：`test_r27_path3_budgets_exhausted_relearn` 增断言
+  `"再交一次完整讲解" in message` + `followup_question is None`。
+- 文档：docs/07 §2.3（含 F6 提示）、docs/05 §5 第 5 步。
+
+### R29 引申 · flow schema 演进的单一自愈入口
+- **审计结论**（"后加且用 `[]` 取值"的 flow 键）：R12 `lecture_cache`（缓存子键 `lecture_md`/
+  `strategy`/`explicit` 为后加）、R12 `regen_think_override`、R25 `regen_reissue_used`、
+  R27 `feynman.answers_done` / `followup_gap` / `ledger`（**R29 真实炸点**）、`feynman.last_scores` /
+  `last_combined` / `last_transcript` / `edge_think` / `last_strategy`。practice 子键自 M2 起就有、
+  但同样按 `[]` 取值（手工改坏/整块缺失即 500）。→ 全部收敛到 `_ensure_flow_shape`。
+- `service/session.py` 新增 `_ensure_flow_shape(flow)`（+ `_ensure_block` 与
+  `_PRACTICE_SHAPE`/`_FEYNMAN_SHAPE` 类型表）：整块缺失/非 dict → `new_flow()`；缺键 → 补当前默认
+  （**不覆盖已有值**）；错类型/非法取值（stage 越界、`streak` 变字符串、`ledger` 变数组…）→
+  **单键回退默认**；`ledger` 深结构复用 `feynman_ledger.normalize_ledger` 同一口径（不另写一套）；
+  lecture_cache 合法形态 = `None` 或含 `lecture_md(str)` 的 dict（脏缓存宁可重生成）。幂等。
+- 调用点（R29 教训：**自愈点必须在 `step()`**，不能只挂 `resume()`）：`step()` 入口、
+  `_act_feynman` / `_act_feynman_answer` 入口、`_ensure_invariants`（resume/老会话）、
+  `_response`（响应体是"永不下发半截结构"的最后一道闸）。原 R29 单点 `_backfill_feynman_keys`
+  已删除（行为被超集覆盖）；`test_r27_legacy_session.py` 不改一字仍全绿，证明热修未回退。
+- 用例 `tests/test_r30_flow_shape.py`（**10 用例**）：单元 5（整块缺失补默认、flow 非 dict、
+  缺键保进度、错类型逐键回退 + 合法 lecture_cache 保留、幂等）；HTTP 5（缺键/错类型/整块缺失
+  参数化提交不 500 且自愈落库；flow 整块改坏 → 回默认讲解阶段可继续学；practice 整块缺失 →
+  中文 409 而非 KeyError）。
+
+### F2 · 行尾治理（纯 EOL 独立提交）
+- `backend/app/service/session.py`：CRLF 1488 → **LF 1488**（`git diff --cached --ignore-cr-at-eol`
+  为**空**＝无功能 diff；`git ls-files --eol` 现为 `i/lf w/lf attr/text eol=lf`）。
+- 新增 `.gitattributes`：`*.py text eol=lf`、`*.ts text eol=lf`、`*.tsx text eol=lf`（docs 的
+  CRLF 维持现状，不在约束范围）→ 防"整文件伪 diff 覆写 blame"复发。提交后工作树干净，
+  另有 6 个历史 CRLF 的 `.py`（`app/__init__.py`/`ai/drafting.py`/`config.py`/`content/cli.py`/
+  `main.py`/`scripts/gen_content.py`）**未被本次改动**（git 状态仍干净，下次被触碰时自动按 LF 入库）。
+
+## 50. R30 验收自证与疑点（2026-09-10）
+
+**逐条自证**（对应工单 §4）
+1. F6 六条测试全绿：`backend/tests/test_r30_edge_recheck.py` **7 passed**
+   （`test_r30_f6_band_in_triggers_recheck_and_takes_higher` /
+   `test_r30_f6_out_of_band_never_rechecks[0.4-False]` / `[0.9-True]` /
+   `test_r30_f6_think_round_never_rechecks` / `test_r30_f6_lower_second_keeps_first` /
+   `test_r30_f6_recheck_error_keeps_first_result` / `test_r30_f6_at_most_one_recheck_per_round`）；
+   实测值见 §48 表格（带内触发→取 0.75 pass；带外 0.40/0.90→`calls==["fast"]`、无事件；
+   复评更低→取首次 0.68 不 pass）。
+2. 回归：R10/R11/R17 费曼分支（`test_api_flow.py`）+ R27 三条路径 + evidence 纪律 + R29 老会话
+   （`test_r27_legacy_session.py`）**全绿**（与上列同批跑完，0 failed）。
+3. 全量：`pytest backend/tests` = **327 collected / 325 passed + 2 skipped / 0 failed**（离线段；
+   基线 308 collected / 306+2）；`npx tsc --noEmit` exit 0；`npm run build` ✓ 1.03s；
+   `content validate` ok 26/54；audit 五学段 `ok=True`（27/31/81/59/60，前置缺失 0/锚点缺失 0/
+   环 0/内容不变式违规 0/正向引用 0）。
+4. F2：`session.py` LF（1488 行）且 `--ignore-cr-at-eol` diff 为空；F5 最短长度用例 2 条；
+   F4 文案证据＝后端 `session.py:834` 与前端 `SessionPage.tsx:26` 同措辞（"再交一次完整讲解后，
+   会针对该缺口再问"）+ docs/07 §2.3 同步。
+5. 真模型：本批**未跑**真模型（F6 触发前提是分数恰好落边缘带，桩控分数才能稳定覆盖六条路径；
+   真实评分波动本身见 R28 F6 留档）→ 按 F1 纪律，若后续要跑须另存唯一文件名（DB + stdout）。
+6. 错误全中文：新增/改动路径的对外错误未新增英文（复评失败不产生新错误分支，仅保留首次结果）；
+   evidence 新原因文案为中文。
+7. 工作树干净；提交链均标注 R30：`4f7990b`(F6) → `23fc603`(F5) → `49e5149`(F4) →
+   `f66af5f`(R29 引申) → `f8c856d`(F2) → 本文档提交。
+
+**疑点（挂待架构裁决）**
+1. **边缘带的"本轮综合分"取哪一分**：R30 §F6.2 写"本轮综合分落边缘带"，实现取**本轮评分卡的
+   加权综合分**（净化后，含 evidence 降级），而通过判定仍是**账本累计分**（R30 F3 维持）。
+   二者在"首讲/单轮"场景下同值（R28 F6 实测 0.73 亦是同值），但在"补答抬分后再终验"场景可能
+   不同（如账本 0.85 → 本轮卡 0.66 → 复评会触发、却已 pass）。当前口径：**按本轮卡判定与比较**
+   （更贴合"这一份稿评得准不准"的问题本身）。若要求"只在会因此不过线时才复评"，可加一条
+   `passed` 前置条件（一行改动）。
+2. **复评失败时的 `used` 语义**：实现为 `used=true, second_combined=null, taken="first"`
+   （＝"已尝试但未采用"），以便审计"花了这次 heavy 调用"。若裁决 `used` 应表示"复评结果被采用"
+   则需改成 false（同时失去失败留痕）。
+3. **边缘带复评与 R12 边缘升档叠加**：本轮 fast 落带内且复评仍不过 → 仍会置 `edge_think`（下轮
+   think）。即最坏情形"相邻两轮各一次 think 评分"（本轮复评 + 下轮升档）；单轮成本纪律
+   （≤1 次额外 heavy）满足，但跨轮相邻会连续 think。若要求去重（例如本轮已复评则不再升档），
+   需另行裁定。
+4. **practice 整块缺失无法恢复进度**：`_ensure_flow_shape` 只能补默认（练习未达标）→ 会话退化为
+   须重做练习并返回中文 409；未做"stage 一致性回退"（如 stage=feynman 但练习未达标 → 回 explain），
+   因那属状态机语义变更、超出"深度补齐 + 类型校验"授权。
+5. `_ensure_flow_shape` 在 `_response` 每帧调用（幂等、O(键数)），未见性能影响；若后续 flow 体积
+   显著增长可加"仅当结构变更才回写"的短路。

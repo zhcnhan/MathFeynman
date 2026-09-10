@@ -42,31 +42,32 @@
   新增/改动端点都要满足；sample 级测试锁定。
 
 ## 3. 当前活动工单（新实例的第一个任务）
-> **R27 费曼追问 v3 已实现并验收（R28）；架构侧热修 R29（老会话缺键 500）已入库。**
+> **R30 已实现（本会话交付）：F6 边缘带复评 + F5/F4/R29 引申/F2 全部落地，待架构侧验收。**
 > 提交链：443efb0（后端账本/双提交）→ bfd5bea（UI）→ a3dbddc（协议）→ 65282e9/8927a20（R28 裁决）
-> → fe9902d（R29 热修 + 回归用例）。基线 pytest **306 passed + 2 skipped**（架构侧复跑）、
+> → fe9902d（R29 热修 + 回归用例）→ b1c1b05（R30 规格）
+> → **4f7990b（F6）→ 23fc603（F5）→ 49e5149（F4）→ f66af5f（R29 引申 flow 自愈）→ f8c856d（F2 行尾）**。
+> 基线 pytest **325 passed + 2 skipped**（327 collected，离线；R30 前为 306+2）、
 > tsc/build 通过、content 26/54、audit 五学段全绿。
-> 详见 docs/09 R27（规格）/ R28（验收）/ R29（热修）/ **R30（本批规格）**、NOTES §46–§47。
+> 详见 docs/09 R27（规格）/ R28（验收）/ R29（热修）/ R30（本批规格）、NOTES §46–§50。
 
-1. **R30 F6（唯一新增功能）· 费曼终验边缘带复评**：完整稿评分落在边缘带
+1. **R30 F6（已实现）· 费曼终验边缘带复评**：完整稿评分落边缘带
    `[threshold−0.05, threshold+0.08]` 且本轮非 think、且本轮未复评过 → 用 **think 档复评一次**，
    取较高分入场；两次卡都记 `attempts.meta.recheck` + 事件 `feynman_edge_recheck`；
-   复评失败保留首次；**每次提交最多复评一次**。常量入 `ai/tier.py` 便于调参。
-   测试见 docs/09 R30 §6（6 条，离线桩）。
-2. **R30 其余项（下批一并做，均已拍板）**：
-   - F2 行尾治理：`session.py` 归一化回 LF（独立纯 EOL 提交）+ `.gitattributes`
-     （`*.py`/`*.ts`/`*.tsx text eol=lf`，docs 的 CRLF 维持）；
-   - F4 文案：补答未补上后需"再交一次完整讲解才会针对该缺口再追问"，前后端措辞统一；
-   - F5 加固：evidence 归一化后 <6 字视为无效（降级 + 标记），同步用例；
-   - R29 引申：flow schema 演进排查——所有"后加且用 `[]` 取值"的键收敛为单一
-     `_ensure_flow_shape` 自愈入口，补"缺键/错类型/整块缺失"三类老结构用例。
-3. **F3（已裁定，无需改码）**：通过判定维持"账本累计分（维度历轮 max）≥ 阈值"
-   （符合"答对认账"口径，用户点头）。
+   复评失败保留首次；**每次提交最多复评一次**。常量在 `ai/tier.py`。
+   测试 `backend/tests/test_r30_edge_recheck.py`（7 用例，离线桩）。
+2. **R30 其余项（已实现）**：
+   - F2 行尾治理：`session.py` 归一到 LF（纯 EOL 提交 `f8c856d`）+ `.gitattributes`
+     （`*.py`/`*.ts`/`*.tsx text eol=lf`）；
+   - F4 文案：补答未补上 → 前后端统一"再交一次完整讲解后，会针对该缺口再问"；
+   - F5 加固：evidence 归一化后 <6 字视为无效（降级 + 标记），用例 2 条；
+   - R29 引申：flow schema 演进收敛为单一自愈入口 `_ensure_flow_shape`（缺键/错类型/整块缺失），
+     用例 `backend/tests/test_r30_flow_shape.py`（10 条）。
+3. **F3（已裁定，无需改码）**：通过判定维持"账本累计分（维度历轮 max）≥ 阈值"。
 4. **F1 纪律**：真模型回归留档文件名唯一、不得覆盖；汇报数字取自留档。
 5. 真人浏览器验收（用户动作）：重启后端后打开遗留会话 `s-f2decfcf.u01:a7689b7ebf`
    （R29 修复后不再 500），走"首讲 → 补答 → 整合重讲"，确认分数可见上升、得分条/缺口提示/额度徽标正确。
-6. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"；涉及 docs/02/03/05/06/07/14 的语义
-   变更在实现时顺带同步。
+6. 疑点与口径冲突：记 IMPLEMENTATION_NOTES"待架构裁决"（本批 5 条见 §50）；涉及
+   docs/02/03/05/06/07/14 的语义变更在实现时顺带同步。
 
 ## 4. 环境速查（新人必读）
 - 服务：`powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`（前端 5173 / 后端 8000）；
@@ -74,9 +75,10 @@
 - 测试内容根已隔离（conftest 会话级临时副本）；真模型冒烟需 `MF_ALLOW_LIVE_AI=1`。
 - `.env`（仓库根，git 忽略）：LLM_API_KEY 等；`MF_AUTO_EXTEND=1` 控制全自动续关；
   `LLM_MAX_TOKENS_PER_DAY=0` 不限额。
-- 当前基线（最近核实，2026-09-09 R27 收尾）：pytest **305 passed + 2 skipped**
-  （307 collected；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
+- 当前基线（最近核实，2026-09-10 R30 收尾）：pytest **325 passed + 2 skipped**
+  （327 collected；2 skipped = 真模型冒烟 test_live_ai + Phase C 验收 test_phase_c_live，
   均需 `MF_ALLOW_LIVE_AI=1` 且配 LLM_API_KEY 才执行）；audit 5 学段全绿（27/31/81/59/60）；
   content validate **26/54**（真实库，随运行期 auto 增补；测试 hermetic 基线 13 人工节点不变）；
   前端 `npx tsc --noEmit` + `npm run build` 通过；git 仓库不含 data/、_drafts、resume/。
-  品牌：YanHui（颜回）全科教练。当前工单见 §3（R27 已完成并验收 → 待用户真人复看 + 架构裁决疑点）。
+  R30 前基线为 306+2（本批 +19 = F6 7 / F5 2 / flow 自愈 10）。
+  品牌：YanHui（颜回）全科教练。当前工单见 §3（R30 已实现，待架构侧验收 + 用户真人复看）。
