@@ -102,7 +102,7 @@
 | PUT | `/settings` | 改开关（body `{developer_mode}`）；**审计本身默认记录**，开关只决定界面入口是否出现 |
 | GET | `/ai-traces` | **AI 对话审计列表**（query `subject_id?/call_name?/outcome?/only_failed?/limit?/offset?`）：时间倒序、**失败与丢弃置顶**；每条含 时间/调用点/档位/模型/token/耗时/重试/结局/`trace_path`+`trace_chars`+三段预览+`prompt_versions`。**R44 A**：`trace_path` 的文件名形如 `<UTC 时间戳>-<调用点>[-NN].txt`（同一秒内对同一调用点的多次记录用 `-02`/`-03`… 序号，**每次调用各自独立成文件、绝不覆盖**；目标名被占用时换名并**记入总账**（`other` 类，中文原因）。契约本身未变） |
 | GET | `/ai-traces/{id}` | 单条完整对话：`full{system,user,response,parse_result,meta}`（**上=发给 AI 的完整内容，下=AI 返回的完整内容**，读全文文件；文件缺失 → `note` 如实说明 + 预览兜底）；**非流式** |
-| POST | `/ai-traces/cleanup` | 按保留期清理审计全文文件（body `{keep_days?}`）；**先记账（清理了哪几条）再删除**（不静默消失） |
+| POST | `/ai-traces/cleanup` | 按保留期清理审计全文文件（body `{keep_days?}`）；**先记账（清理了哪几条）再删除**（不静默消失）。**R48 B**：与启动/定时**同一实现**，响应与账目 `detail` 都带 `trigger`（`启动` / `定时` / `手动`），便于分辨"这次是谁清的"；其余字段与文案不变 |
 
 ## 2. `/session/step` 的响应协议（前后端契约要点）
 
