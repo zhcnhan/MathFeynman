@@ -418,7 +418,7 @@ def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
     for b in blocked:  # R39 §1：被挡下的材料**必须显性**（不是只在 prompt 里提一句）
         ledger.note(
             ledger.CAT_MATERIAL, f"材料《{b['title']}》",
-            "该材料**未被注入**（文本层健康度不合格，疑似扫描/图片版）：" + str(b["note"] or ""),
+            "这份材料没读（看起来是扫描件或图片版，程序读不到里面的文字）：" + str(b["note"] or ""),
             impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
             detail={"kind": "material_blocked", "title": b["title"]},
         )
@@ -448,7 +448,7 @@ def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
     for u in unmapped:
         ledger.note(
             ledger.CAT_MATERIAL, f"材料《{u['material']}》· {u['label']}",
-            (u.get("reason_zh") or "该章/节**未被注入任何批次**（不在任何材料块里）")
+            (u.get("reason_zh") or "这一章/节没读（它没有出现在任何一次读取里）")
             + ("：" + str(u.get("note") or "") if u.get("note") else ""),
             impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
             detail={"kind": "entry_not_injected", **u},
@@ -595,9 +595,9 @@ def resolve_budget(db, subject_id: str, *, batch_chars: int | None = None,
 
 
 SOURCE_LABELS_ZH = {
-    "request": "本次请求参数",
+    "request": "本次操作临时设的",
     "subject": "你设定的（本学科）",
-    "env": ".env 配置",
+    "env": "配置文件里设的",
     "builtin": "默认",
 }
 
@@ -677,11 +677,10 @@ def budget_view(db, subject_id: str) -> dict:
             "inject": [{"label": lb, "value": v} for lb, v in INJECT_TIERS],
         },
         # R42 A1：两个滑块各自的承诺（前端直接渲染，**不许**一句话糊两个滑块）
+        # **R52 B**：改成用户能看懂的人话（不再出现"注入/批次/覆盖账/丢弃"这类词）
         "promises_zh": {
-            "batch_chars": "调小「单次调用预算」→ 只是分更多批，**一个章节都不会少学**"
-                           "（丢弃恒空、覆盖账不变）",
-            "inject_max_chars": "「总注入上限」是**真上限**：超了就真的不再注入，"
-                                "但**每一处没进去的章节都会被明确列出 + 中文原因**",
+            "batch_chars": "一次读不完就分成几次读，**一章都不会少**。",
+            "inject_max_chars": "**读到上限就停**，没读到的章节都会明确列出来。",
         },
         "last_usage": {
             "used_chars": used,
@@ -690,16 +689,15 @@ def budget_view(db, subject_id: str) -> dict:
             "truncated": False,
             "dropped": [],
             "order_basis": order_basis(index),
-            "summary_zh": (f"共注入 {used:,} 字，分 {len(keep)} 批"
-                           if keep else "尚无材料可注入"),
+            "summary_zh": (f"共读了 {used:,} 字，分 {len(keep)} 次"
+                           if keep else "还没有可读的教材"),
             # R42 A2：因总注入上限未注入的章节数（**不许两处都没有**）
             "cap_skipped_count": int(cap.get("skipped_count") or 0),
             "cap_skipped_labels": list(cap.get("skipped_labels") or []),
             "cap_skipped_by_material": _cap_skips_by_material(skipped, index),
-            "note_zh": "调小「单次调用预算」只会分成更多批，**不会少学章节**（覆盖账不变）",
+            "note_zh": "调小只是分成几次读，**一章都不会少**。",
             "cap_note_zh": (
-                f"因「总注入上限」{int(cap.get('cap') or 0):,} 字已用完，本教材有 "
-                f"{int(cap.get('skipped_count') or 0)} 章/节**未纳入**（已在下方向你列明）"
+                f"总量已经读完，还有 {int(cap.get('skipped_count') or 0)} 章/节**没读**（下方向你列明）"
                 if int(cap.get("skipped_count") or 0) else ""),
         },
         "inject_cap": {
@@ -823,7 +821,7 @@ def _unmapped_entries(index: list[dict], blocks: list[dict]) -> list[dict]:
         if not m["text_health"]["healthy"]:
             out.append({"material": m["title"], "material_id": m["id"],
                         "label": "（整份材料）", "chars": len(m.get("body") or ""),
-                        "note": "该材料未通过文本层健康度检查，整份未注入"})
+                        "note": "这份材料像扫描件/图片版，读不到文字，整份没读"})
             continue
         for e in (m["structure"] or {}).get("entries") or []:
             if (str(m["id"]), str(e.label)) not in in_blocks:
@@ -979,8 +977,8 @@ def _cap_skip_entries(skipped: list[dict], index: list[dict]) -> list[dict]:
                 "label": str(src.get("label") or ""),
                 "chars": int(src.get("chars") or 0),
                 "reason": "总注入上限",
-                "reason_zh": "因「总注入上限」已用完，本章/节未注入",
-                "note": "该章/节因「总注入上限」已用完而**未注入**（按章/节边界整条停止，未截断正文）",
+                "reason_zh": "已经到「最多读多少」的上限了，这一章/节没读",
+                "note": "这一章/节因为到了总量上限而**没读**（到上限时整章停下，不会把一段话读一半）",
             })
     return out
 
@@ -996,7 +994,7 @@ def _cap_skips_by_material(skipped: list[dict], index: list[dict]) -> list[dict]
             bucket = buckets.setdefault(mid, {"material_id": mid, "title": title, "items": []})
             bucket["items"].append({"label": str(src.get("label") or ""),
                                     "chars": int(src.get("chars") or 0),
-                                    "reason_zh": "因「总注入上限」已用完，本章/节未注入"})
+                                    "reason_zh": "已经到「最多读多少」的上限了，这一章/节没读"})
     return list(buckets.values())
 
 
@@ -1264,7 +1262,7 @@ def unit_material_pack(db, subject_id: str, unit, *, batch_chars: int | None = N
         return {"text": "", "entries": [], "sources": [{"title": m["title"]} for m in index],
                 "binding_text": "", "covered": False, "no_materials": False,
                 "note": "；".join(m["text_health"]["note"] for m in index)
-                        or "该学科材料未通过文本层健康度检查（疑似扫描版）"}
+                        or "这份教材像是扫描件或图片版，程序读不到文字"}
     binding = "\n\n".join(f"《{m['title']}》\n{m['body']}" for m in healthy)
     picked: list[dict] = []
     sources: list[dict] = []
@@ -1573,18 +1571,18 @@ def coverage_ledger(db, subject_id: str) -> dict:
                             "chapter": e.chapter, "chars": e.chars, "sections": list(e.sections),
                             "pages": pages, "units": hit, "covered": covered,
                             "short": is_short,
-                            # R42：这一条"去哪了"（可解释性——不许凭空消失）
+                            # R42：这一条"去哪了"（可解释性——不许凭空消失）；R52 B：说人话
                             "not_injected_reason": (
-                                "总注入上限" if cap_skipped
+                                "到总量上限了" if cap_skipped
                                 else ("" if covered
-                                      else ("过短条目（已跳过/未成为单元）" if is_short
-                                            else "无单元映射/未注入"))),
+                                      else ("太短（已并入相邻单元或跳过）" if is_short
+                                            else "没有单元对应"))),
                             "reason_zh": (
-                                "因「总注入上限」未注入（覆盖账如实降）" if cap_skipped
+                                "因为设了总量上限，这一章/节没读" if cap_skipped
                                 else ("" if covered
-                                      else (f"过短条目（{int(getattr(e, 'chars', 0) or 0)} 字 < "
-                                            f"{short_cap} 字）：按规则跳过/未成为单元，**不计入未覆盖缺口**"
-                                            if is_short else "尚无单元映射到本章/节")))})
+                                      else (f"这一条太短（{int(getattr(e, 'chars', 0) or 0)} 字 < "
+                                            f"{short_cap} 字）：已并入相邻单元或跳过，**不算没出内容**"
+                                            if is_short else "还没有单元对应这一章/节")))})
     # R38 B1：按材料分组统计（覆盖账跨全部材料）
     by_material: list[dict] = []
     uncovered_by_material: list[dict] = []
@@ -1615,7 +1613,7 @@ def coverage_ledger(db, subject_id: str) -> dict:
             })
         if not m["text_health"]["healthy"]:
             uncovered_materials.append({"material_id": m["id"], "title": m["title"],
-                                        "kind": "健康度不合格（未纳入任何注入）",
+                                        "kind": "读不了（像是扫描件/图片版）",
                                         "note": m["text_health"]["note"]})
     unit_ledger = []
     for u in units:

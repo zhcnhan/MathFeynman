@@ -423,7 +423,7 @@ def draft_outline(
     if index and not any((m.get("text_health") or {}).get("healthy", True) for m in index):
         raise OutlineError(  # S7：不得静默生成"没读到书"的大纲
             "无法起草大纲：" + "；".join(b["note"] for b in blocked if b.get("note"))
-            or "该学科的材料未通过文本层健康度检查（疑似扫描/图片版），请先 OCR 或改用文本版。")
+            or "这份教材像是扫描件或图片版，程序读不到里面的文字。请换成文字版，或先做一次文字识别（OCR）。")
     usage = dict(mat_pack.get("usage") or {})
     usage.update({
         "count": int(mat_pack.get("count") or 0),

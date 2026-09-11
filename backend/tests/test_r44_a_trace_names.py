@@ -164,9 +164,10 @@ def test_r44_a3_retry_attempts_are_kept_separately(app_client, trace_dir):
     # 三次尝试各留一份，失败痕迹与最终成功**都在**
     for r, want_user in ((fail1, "尝试1"), (fail2, "尝试2"), (ok, "尝试3")):
         assert _user_segment(_body(r["trace_path"])) == want_user, r["trace_path"]
-    assert "结局：失败" in _body(fail1["trace_path"])
-    assert "结局：失败" in _body(fail2["trace_path"])
-    assert "结局：采纳" in _body(ok["trace_path"])
+    # R52 B：记录正文改人话（"结局" → "结果"），断言同步
+    assert "结果：失败" in _body(fail1["trace_path"])
+    assert "结果：失败" in _body(fail2["trace_path"])
+    assert "结果：采纳" in _body(ok["trace_path"])
     assert "重试次数：2" in _body(ok["trace_path"])
     rows = app_client.get("/api/ai-traces?subject_id=r44a3").json()["items"]
     assert len(rows) == 3 and len({r["trace_path"] for r in rows}) == 3

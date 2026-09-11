@@ -54,7 +54,7 @@ export default function MathInput({ exercise, disabled, onSubmit, hint, placehol
     try {
       return katex.renderToString(tex, { throwOnError: true, displayMode: false, strict: false });
     } catch {
-      setPreviewErr("输入无法预览——提交后后端会校验；答错记 notation 提示改法，不判错。");
+      setPreviewErr("现在没法预览你输入的内容，不过照样可以提交——答案对不对由系统判断，写法不标准也不会算错。");
       return "";
     }
   };

@@ -55,12 +55,12 @@ export default function LedgerPage() {
 
   return (
     <div>
-      <h1>总账（一切显性 · R39 铁则）</h1>
+      <h1>记录（它做了什么、为什么）</h1>
       <div className="card">
         <div className="dim" style={{ fontSize: 13 }}>
-          铁则：程序任何时候"没有按用户以为的方式使用他的输入/产出"，都必须被记录、并可见。
-          这里是一处看全部的地方——材料吸纳 / 生成与校验 / 模型调用 / 覆盖 / 其它（学科停用、内容被
-          纠错替换、复习降级回炉、提示词改动…）。就地提示在各学科页也有。
+          只要程序没有按你预期的方式使用你给的内容，这里都会留下一条记录，写明对象与原因。
+          这里能一次看全部：读书情况 / 出题与检查 / 问 AI 的情况 / 章节进度 / 其它
+          （学科停用、内容被纠错替换、重新学一遍、提示词改动…）。各学科页面上也会就近提示。
         </div>
         <div className="input-row" style={{ gap: 10, marginTop: 8, flexWrap: "wrap" }}>
           <label className="dim">学科</label>
@@ -106,10 +106,10 @@ export default function LedgerPage() {
       {data?.note && <div className="banner warn">{data.note}</div>}
 
       <div className="card">
-        <h2>账目（{data?.count ?? 0} 条，时间倒序）</h2>
+        <h2>记录明细（{data?.count ?? 0} 条，新的在前）</h2>
         {data && data.entries.length === 0 && (
           <p className="empty">
-            当前筛选下没有账目。这通常意味着：没有发生丢弃/截断/降级/失败（也可能是筛选条件太窄）。
+            当前筛选下没有记录。这通常说明一切正常（也可能是筛选条件太窄）。
           </p>
         )}
         {data && data.entries.length > 0 && (
@@ -124,7 +124,7 @@ export default function LedgerPage() {
                   {e.subject_id ? ` · 学科 ${e.subject_id}` : ""}
                   {e.unit_id ? ` · 单元 ${e.unit_id}` : ""}
                 </div>
-                <LedgerAlerts entries={[e]} title="账目" compact />
+                <LedgerAlerts entries={[e]} title="记录" compact />
               </div>
             ))}
           </div>

@@ -4,9 +4,9 @@
 export type ModelMode = "smart" | "light" | "deep";
 
 export const MODE_OPTIONS: { value: ModelMode; label: string; title: string }[] = [
-  { value: "light", label: "⚡ 快", title: "关闭自动升级触发，省时省钱（college/AI 仍用深度档）" },
-  { value: "smart", label: "自动", title: "默认：基础快模型，边缘分/轮次≥2/超纲答疑时自动切深度" },
-  { value: "deep", label: "🧠 深度", title: "全部环节使用深度推理模型" },
+  { value: "light", label: "⚡ 快", title: "一直用快模型：更省时间，难题也不换" },
+  { value: "smart", label: "自动", title: "默认：一般用快模型，遇到难题和纠错自动换更强的" },
+  { value: "deep", label: "🧠 深度", title: "一直用最强的模型：更慢，但更稳" },
 ];
 
 export function modeLabel(mode: ModelMode): string {

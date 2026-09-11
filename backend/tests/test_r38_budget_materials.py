@@ -386,10 +386,10 @@ def test_r38_b1_blocked_material_is_listed_explicitly_and_in_ledger(app_client):
         assert ledger["uncovered_materials"], "整份未纳入的材料必须显式列出"
         assert ledger["uncovered_materials"][0]["title"] == "扫描版（无文本层）"
         assert pack["usage"]["not_injected"], "未纳入的条目必须在用量报告里显式列出"
-        # 「必须显性」：账本里能看到中文原因（总账页/就地接口都能读）
+        # 「必须显性」：账本里能看到中文原因（总账页/就地接口都能读）；R52 B：文案改人话
         led = app_client.get(f"/api/subjects/{sid}/ledger").json()
         reasons = "；".join(str(e.get("reason", "")) for e in led["entries"])
-        assert "未被注入" in reasons and "健康度" in reasons, reasons
+        assert "没读" in reasons and "扫描" in reasons, reasons
     finally:
         app_client.delete(f"/api/subjects/{sid}?hard=true")
 
@@ -471,8 +471,8 @@ def test_r38_api_contract_has_current_values_and_last_usage(app_client):
         assert [t["label"] for t in b["tiers"]["batch"]] == ["省着用", "常规（默认）", "充裕", "不限"]
         lu = b["last_usage"]
         assert lu["used_chars"] > 0 and lu["batch_count"] >= 1
-        assert lu["summary_zh"].startswith("共注入")
-        assert "不会少学章节" in lu["note_zh"]
+        assert lu["summary_zh"].startswith("共读了")
+        assert "一章都不会少" in lu["note_zh"]
         assert b["materials"][0]["role_zh"] in ("主教材", "补充材料", "未标注")
     finally:
         app_client.delete(f"/api/subjects/{sid}?hard=true")

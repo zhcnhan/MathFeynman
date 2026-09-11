@@ -42,14 +42,14 @@ export default function FeedbackPage() {
     <div>
       <h1>内容反馈（纠错记录）</h1>
       <div className="dim">
-        说明：auto 内容（AI 生成）纠错会自动重生成替换；人工精写内容只记录待人工修订。
+        报错后：AI 生成的内容会自动重做替换；人工精写的内容只记下来等你修改。
         {items.length === 0 && " 当前没有记录。"}
       </div>
       {err && <div className="banner error">{err}</div>}
       <div className="card">
         <button className="btn" onClick={() => void load()}>刷新</button>
         <div className="dim" style={{ margin: "6px 0" }}>
-          auto 内容在待复核/失败状态可直接点「重试处理」：会按节点自动重生成替换并清零反馈；失败会写明原因，不再无限待复核。
+          「待复核」或「失败」的可以直接点「重试处理」：系统会重新生成并替换；失败会写明原因。
         </div>
         {items.map((f) => {
           const retryable = f.status === "pending" || f.status === "failed";

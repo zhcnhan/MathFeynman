@@ -18,16 +18,16 @@ const EVENT_TEXT: Record<string, string> = {
   exercise_wrong: "✗ 答错了，看看提示再试一次",
   practice_passed: "🎉 练习达标（连续 3 对）！进入费曼口述",
   practice_cap_reached: "本轮 5 题未达成 3 连对，请重读讲解后再试",
-  relearn_notice: "📖 回炉提示：请重读讲解稿",
+  relearn_notice: "📖 需要重学：请再读一遍讲解",
   feynman_passed: "🎉 费曼口述通过！",
   feynman_failed: "费曼未达标，按缺口提示补答或整合重讲",
   feynman_followup: "💡 已按你的最弱缺口给出定向追问",
-  feynman_gap_filled: "✅ 缺口已补上（账本涨分可见）",
-  feynman_gap_open: "缺口还没补上：再交一次完整讲解后，会针对该缺口再问",
-  feynman_evidence_flagged: "⚠️ 部分评分引文不在本轮文本中，已降级（防无据评分）",
+  feynman_gap_filled: "✅ 补上了，分数已更新",
+  feynman_gap_open: "还没补上：再完整讲一遍后，会针对这一点再问",
+  feynman_evidence_flagged: "⚠️ 有的评分引用了你这次没说过的话，已按更稳妥的方式重新评（不给没依据的分）",
   feynman_too_short: "口述太短，请完整讲一遍（≥20 字）",
   feynman_deferred: "评分暂不可用，已记录（可稍后人工复核）",
-  feynman_relearn: "费曼额度用尽仍未通过 → 回炉重学",
+  feynman_relearn: "费曼机会用完了还没通过，需要重新学一遍",
   feynman_edge_recheck: "⚖️ 本次接近及格线，已用更认真的档位复核一遍（取较高分）",
   feynman_answer_too_short: "补答太短，请具体回答追问里要你补讲的那一点",
   // R35 S4：无可引用内容 → 退回讲解补讲（不发无法回答的追问）
@@ -38,9 +38,9 @@ const EVENT_TEXT: Record<string, string> = {
   challenge_graded: "挑战题已判分（只记复盘，不影响任何进度）",
   challenge_cancelled: "已取消本次挑战（什么都没记）",
   challenge_abandoned: "已放弃这道挑战题（只记复盘）",
-  node_mastered: "🏆 节点已掌握，进入复习队列",
+  node_mastered: "🏆 这个知识点学会了，已排进复习",
   hint_given: "💡 已给出提示",
-  notation_error: "输入无法解析——请按提示改法（不计错）",
+  notation_error: "输入看不懂——照提示改一下写法就行（不算错）",
 };
 
 export default function SessionPage() {
@@ -200,7 +200,7 @@ export default function SessionPage() {
             }
             if (latest.status === "reviewed") {
               final = true;
-              setNotice("已标记复核（人工节点）。");
+              setNotice("已标记为人工复核。");
               return;
             }
             // pending / regenerating：继续等
@@ -210,7 +210,7 @@ export default function SessionPage() {
         }
         if (!final) {
           await refresh();
-          setNotice("仍在后台处理（预计 1–2 分钟内完成）。完成后重新进入本节点即可看到新题；结果也可在「费曼复盘/内容反馈」处查看。");
+          setNotice("还在后台处理，大约 1–2 分钟。完成后重新进入这里就能看到新题；也可以在「费曼复盘 / 内容反馈」里看结果。");
         }
         return;
       }
@@ -334,7 +334,7 @@ export default function SessionPage() {
         </div>
         <span className="badge">{STEP_LABEL[step]}</span>
         <ModelModeSwitch value={modelMode} onChange={(m) => void changeModelMode(m)} disabled={submitting} />
-        <button className="ghost" disabled={submitting} onClick={() => void reportContentIssue()} title="内容有误？提交纠错反馈（auto 内容会自动重生成替换）">
+        <button className="ghost" disabled={submitting} onClick={() => void reportContentIssue()} title="内容有问题？点这里反馈（AI 生成的内容会自动重做）">
           内容纠错
         </button>
       </header>
@@ -443,7 +443,7 @@ export default function SessionPage() {
         </main>
         <aside className="session-side">
           <div className="card">
-            <h2>本节点核心概念</h2>
+            <h2>这个知识点的核心概念</h2>
             {nodeMeta?.core_concepts?.map((c) => <span key={c} className="chip">{c}</span>)}
             {nodeMeta?.objectives && (
               <>
@@ -452,7 +452,7 @@ export default function SessionPage() {
               </>
             )}
             <h2>掌握进度</h2>
-            <p>完成「练习 3 连对 + 费曼通过」即掌握本节点并进入复习队列。</p>
+            <p>连续答对 3 题、再把费曼口述讲通过，就算学会了这个知识点，之后会定期提醒你复习。</p>
           </div>
         </aside>
       </div>
@@ -626,7 +626,7 @@ function FeynmanView({ payload, submitting, text, setText, onSubmit, onAnswerFol
             <div key={i} className="dim">
               <div className="dim-head">
                 <strong>{dimLabel(d.key)}</strong> {Math.round(d.score * 100)} 分 · 权重 {d.weight}
-                {d.evidence_valid === false && <span className="badge warn-badge">引文未通过校验</span>}
+                {d.evidence_valid === false && <span className="badge warn-badge">引用的原话对不上</span>}
               </div>
               <div className="quote">“{d.evidence_quote}”</div>
               <div className="comment"><MdMath text={d.comment} /></div>
@@ -731,7 +731,7 @@ function ChallengePanel({ view, answer, setAnswer, submitting, onBegin, onSubmit
         <div className={`banner ${last.correct ? "ok" : "warn"}`}>
           <div><TypeMd text={last.feedback_md} /></div>
           {last.better_md ? <div className="comment">参考思路：<TypeMd text={last.better_md} /></div> : null}
-          <div className="hint">本次记录只进复盘，不计入掌握/费曼账本/任何额度。</div>
+          <div className="hint">这次只是练手：不计入掌握进度，也不占费曼机会。</div>
         </div>
       )}
     </div>

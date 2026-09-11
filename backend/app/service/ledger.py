@@ -43,10 +43,11 @@ CAT_OTHER = "other"              # 其它（学科停用 / 内容被纠错替换
 CATEGORIES = (CAT_MATERIAL, CAT_GENERATION, CAT_MODEL_CALL, CAT_COVERAGE, CAT_OTHER)
 
 CATEGORY_LABELS_ZH: dict[str, str] = {
-    CAT_MATERIAL: "材料吸纳",
-    CAT_GENERATION: "生成与校验",
-    CAT_MODEL_CALL: "模型调用",
-    CAT_COVERAGE: "覆盖",
+    # **R52 B**：类别名改成用户一眼能懂的（界面上直接显示这些字）
+    CAT_MATERIAL: "读书情况",
+    CAT_GENERATION: "出题与检查",
+    CAT_MODEL_CALL: "问 AI 的情况",
+    CAT_COVERAGE: "章节进度",
     CAT_OTHER: "其它",
 }
 

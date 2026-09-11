@@ -141,7 +141,7 @@ def _next_name(entry_dir: Path, stamp: str, call_name: str) -> tuple[Path, str, 
         return entry_dir / name, base, (why or f"同秒同名次数过多（>{_MAX_NAME_TRIES}），已换名")
 
 
-NAMING_HEAD = "==== 本文件命名情况（R46 A）===="
+NAMING_HEAD = "==== 文件命名说明 ===="
 _COLLISION_FALLBACK = "同一秒内对同一调用点多次记录："
 
 
@@ -178,17 +178,18 @@ def _write_file(*, call_name: str, subject_id: str, unit_id: str, at: str,
     d.mkdir(parents=True, exist_ok=True)
     stamp = at.replace(":", "").replace("-", "").replace("+0000", "Z")
     meta = (
-        "==== 提示词监听 / AI 对话审计（R39 §3）====\n"
-        f"时间：{at}\n调用点：{call_name}\n学科：{subject_id or '（无）'}\n单元：{unit_id or '（无）'}\n"
-        f"档位：{tier}\n模型：{model}\n重试次数：{retries}\n"
-        f"耗时：{latency_ms} ms\ntoken：prompt={prompt_tokens} completion={completion_tokens}\n"
-        f"结局：{OUTCOME_LABELS_ZH.get(outcome, outcome)}\n提示词版本：{prompt_versions}\n"
-        f"解析/校验结果：{'通过' if parse_ok else '未通过'}｜{parse_result}\n"
-        f"system 字符数：{len(system)}\nuser 字符数：{len(user)}\n原始返回字符数：{len(raw)}\n"
+        "==== 本次调用的完整记录 ====\n"
+        f"时间：{at}\n用途：{call_name}\n学科：{subject_id or '（无）'}\n单元：{unit_id or '（无）'}\n"
+        f"模型档位：{tier}\n模型：{model}\n重试次数：{retries}\n"
+        f"用时：{latency_ms} ms\n用量：输入 {prompt_tokens} + 输出 {completion_tokens}\n"
+        f"结果：{OUTCOME_LABELS_ZH.get(outcome, outcome)}\n"
+        f"提示词版本：{prompt_versions}\n"
+        f"检查结果：{'通过' if parse_ok else '未通过'}｜{parse_result}\n"
+        f"system 字数：{len(system)}\nuser 字数：{len(user)}\nAI 原始回答字数：{len(raw)}\n"
     )
 
     def render(final_name: str, base_name: str, rename_reason: str) -> str:
-        """正文＝元信息 + **命名情况**（R46 A）+ 三段完整内容（分段标记与解析器一致）。"""
+        """正文＝元信息 + **命名说明** + 三段完整内容（分段标记与解析器一致）。"""
         return (
             meta
             # 命名情况放在 system 段**之前**：`_split_trace`/`_meta_block` 按 `==== … ====`

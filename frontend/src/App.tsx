@@ -46,8 +46,8 @@ export default function App() {
         <NavLink to="/review">复习</NavLink>
         <NavLink to="/feedback">内容反馈</NavLink>
         <NavLink to="/feynman-history">费曼复盘</NavLink>
-        {/* R39 §1：总账页（一切显性的"一处看全部"入口） */}
-        <NavLink to="/ledger">总账</NavLink>
+        {/* R39 §1：总账页（一切显性的"一处看全部"入口）——R52：界面一律说人话 */}
+        <NavLink to="/ledger">记录</NavLink>
         {devMode && <NavLink to="/ai-traces">AI 对话记录</NavLink>}
         <NavLink to="/settings">设置</NavLink>
       </nav>

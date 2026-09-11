@@ -32,7 +32,7 @@ export default function FeynmanHistoryPage() {
         <NavBar nav={nav} />
         <div className="crumbs"><Link to="/feedback">内容纠错记录（内容反馈）→</Link></div>
         <h1>费曼复盘</h1>
-        <p className="empty">还没有费曼口述记录 —— 完成一个节点的学习闭环后这里会回放你的每一次口述。</p>
+        <p className="empty">还没有费曼口述记录 —— 学完一个知识点（讲一遍并通过）后，这里会回放你的每一次口述。</p>
       </div>
     );
   }

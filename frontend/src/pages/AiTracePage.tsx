@@ -60,12 +60,11 @@ const OUTCOME_CLS: Record<string, string> = {
 function Meta({ d }: { d: TraceDetail }) {
   return (
     <div className="dim" style={{ fontSize: 12, marginBottom: 6 }}>
-      调用点：<strong>{d.call_label}</strong>（{d.call_name}） · 档位 {d.tier || "—"} · 模型 {d.model || "—"} ·
-      token {d.prompt_tokens}+{d.completion_tokens} · 耗时 {d.latency_ms} ms · 重试 {d.retries} 次 ·
-      结局 <span className={`badge ${OUTCOME_CLS[d.outcome] ?? ""}`}>{d.outcome_label}</span>
+      用途：<strong>{d.call_label}</strong> · 模型 {d.model || "—"} ·
+      用量 {d.prompt_tokens}+{d.completion_tokens} 字 · 用时 {d.latency_ms} ms · 重试 {d.retries} 次 ·
+      结果 <span className={`badge ${OUTCOME_CLS[d.outcome] ?? ""}`}>{d.outcome_label}</span>
       {d.subject_id ? ` · 学科 ${d.subject_id}` : ""}
       {d.unit_id ? ` · 单元 ${d.unit_id}` : ""}
-      <div>提示词版本：{d.prompt_versions || "—"} · 解析结果：{d.parse_result || "—"}</div>
     </div>
   );
 }
@@ -96,7 +95,7 @@ function Block({ title, text }: { title: string; text: string }) {
           <span className="dim">
             {"\n\n…（超出界面一次渲染上限，仅显示前 "}
             {FULL_RENDER_CAP.toLocaleString("zh-CN")}
-            {" 字；完整内容见审计文件：见上方路径）"}
+            {" 字；完整内容已保存成文件（位置见下方「检查结果与本次参数」）"}
           </span>
         )}
       </pre>
@@ -148,10 +147,10 @@ export default function AiTracePage() {
   };
 
   const cleanup = async () => {
-    if (!window.confirm("按保留期清理审计全文文件？（清理会记入总账，不会静默消失）")) return;
+    if (!window.confirm("清理过期记录？（清理会写进「记录」页，不会悄悄删）")) return;
     try {
       const r = await api.post<{ count: number; keep_days: number }>("/ai-traces/cleanup", {});
-      setMsg(`已清理 ${r.count} 个审计文件（保留期 ${r.keep_days} 天），清理动作已记入总账。`);
+      setMsg(`已清理 ${r.count} 份过期记录（保存 ${r.keep_days} 天），这次清理已写进「记录」页。`);
       await load();
     } catch (e) {
       setErr((e as Error).message);
@@ -160,10 +159,10 @@ export default function AiTracePage() {
 
   return (
     <div>
-      <h1>AI 对话记录（提示词监听 / 审计）</h1>
+      <h1>AI 对话记录</h1>
       <div className="banner warn" style={{ fontSize: 13 }}>
-        仅本地可见：这里记录发给 AI 的内容与 AI 的返回。**不流式**（加载完再看）；长文本默认收起、展开即完整。
-        审计全文不得包含 API Key（已做遮蔽）。目录：{data?.trace_dir ?? "—"}（保留期 {data?.keep_days ?? "—"} 天）。
+        只存在你本机：这里能看到每次发给 AI 的内容和它的回答。文字较长，默认收起，展开就是完整原文。
+        记录里不会出现 API Key（已自动遮掉）。保存 {data?.keep_days ?? "—"} 天。
       </div>
       {err && <div className="banner error">{err}</div>}
       {msg && <div className="banner ok">{msg}</div>}
@@ -172,7 +171,7 @@ export default function AiTracePage() {
         <div className="input-row" style={{ gap: 10, flexWrap: "wrap" }}>
           <label>
             <input type="checkbox" checked={onlyFailed} onChange={(e) => setOnlyFailed(e.target.checked)} />{" "}
-            只看失败 / 丢弃
+            只看出错的
           </label>
           <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
             <option value="">全部学科</option>
@@ -181,22 +180,21 @@ export default function AiTracePage() {
             ))}
           </select>
           <select value={callName} onChange={(e) => setCallName(e.target.value)}>
-            <option value="">全部调用点</option>
+            <option value="">全部用途</option>
             {(data?.call_sites ?? []).map((c) => (
               <option key={c.name} value={c.name}>{c.label}</option>
             ))}
           </select>
           <button className="ghost" onClick={() => void load()}>刷新</button>
-          <button className="ghost" onClick={() => void cleanup()}>按保留期清理</button>
+          <button className="ghost" onClick={() => void cleanup()}>清理过期记录</button>
         </div>
         <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
-          共 {data?.total ?? 0} 条调用记录（默认记录，不靠开关决定"要不要留证据"）。
-          列表按时间倒序，**失败与丢弃置顶**。
+          共 {data?.total ?? 0} 次。程序一直在记（不需要手动开开关）；出错的排在最前面。
         </div>
       </div>
 
       <div className="card">
-        {(data?.items ?? []).length === 0 && <p className="empty">尚无调用记录。</p>}
+        {(data?.items ?? []).length === 0 && <p className="empty">还没有记录。</p>}
         {(data?.items ?? []).map((t) => (
           <div
             key={t.id}
@@ -215,13 +213,13 @@ export default function AiTracePage() {
               <span className={`badge ${OUTCOME_CLS[t.outcome] ?? ""}`}>{t.outcome_label}</span>
               {t.is_failure && <span className="badge error">需要关注</span>}
               <span className="dim" style={{ fontSize: 12 }}>
-                {t.tier || "—"} · {t.model || "—"} · token {t.prompt_tokens + t.completion_tokens} · {t.latency_ms} ms ·
-                重试 {t.retries} · 全文 {t.trace_chars.toLocaleString("zh-CN")} 字
+                {t.model || "—"} · 用了 {t.prompt_tokens + t.completion_tokens} 字 · {t.latency_ms} ms ·
+                重试 {t.retries} 次 · 记录 {t.trace_chars.toLocaleString("zh-CN")} 字
               </span>
-              <button className="ghost" onClick={() => void open(t.id)}>查看完整对话</button>
+              <button className="ghost" onClick={() => void open(t.id)}>看完整对话</button>
             </div>
             {t.error && (
-              <div className="dim" style={{ fontSize: 12, color: "#b3261e" }}>错误：{t.error}</div>
+              <div className="dim" style={{ fontSize: 12, color: "#b3261e" }}>问题：{t.error}</div>
             )}
           </div>
         ))}
@@ -230,23 +228,25 @@ export default function AiTracePage() {
       {detail && (
         <div className="card" style={{ borderColor: detail.is_failure ? "#b3261e" : "#90caf9" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h2 style={{ margin: 0 }}>完整对话 #{detail.id}</h2>
+            <h2 style={{ margin: 0 }}>这一次的完整对话 #{detail.id}</h2>
             <button className="ghost" onClick={() => setDetail(null)}>收起</button>
           </div>
           <Meta d={detail} />
           {detail.note && <div className="banner warn">{detail.note}</div>}
-          <div className="dim" style={{ fontSize: 12, wordBreak: "break-all" }}>
-            审计文件：{detail.trace_path || "（无）"} {detail.file_exists ? "" : "（文件不可读/已清理）"}
-          </div>
-          <h3 style={{ margin: "8px 0 0" }}>上 · 发给 AI 的完整内容</h3>
-          <Block title="system" text={detail.full.system} />
-          <Block title="user" text={detail.full.user} />
-          <h3 style={{ margin: "10px 0 0" }}>下 · AI 返回的完整内容</h3>
-          <Block title="原始返回（未解析）" text={detail.full.response} />
+          <h3 style={{ margin: "8px 0 0" }}>发给 AI 的内容</h3>
+          <Block title="角色与总纪律" text={detail.full.system} />
+          <Block title="这次具体怎么干活" text={detail.full.user} />
+          <h3 style={{ margin: "10px 0 0" }}>AI 的回答</h3>
+          <Block title="原始回答（未加工）" text={detail.full.response} />
           <details style={{ marginTop: 8 }}>
-            <summary>解析 / 校验结果与元数据</summary>
+            <summary>检查结果与本次参数</summary>
             <pre style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{detail.full.parse_result}</pre>
             <pre style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{detail.full.meta}</pre>
+            {/* 排查时才需要：记录文件在哪（平时收在折叠里，不打扰普通用户） */}
+            <div className="dim" style={{ fontSize: 12, wordBreak: "break-all" }}>
+              本次记录存放位置：{detail.trace_path || "（没有单独存文件）"}
+              {detail.file_exists ? "" : "（文件已不可读或已清理）"}
+            </div>
           </details>
         </div>
       )}

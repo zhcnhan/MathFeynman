@@ -167,11 +167,11 @@ export default function SubjectsPage() {
       </div>
 
       <div className="card" style={{ marginTop: 12 }}>
-        <h2>新建学科（自定义 · docs/14 通用教练）</h2>
+        <h2>新建学科</h2>
         <div className="input-row" style={{ margin: "6px 0" }}>
           <input placeholder="学科名称（必填）" value={label}
                  onChange={(e) => setLabel(e.target.value)} style={{ padding: 7, borderRadius: 8, border: "1px solid #c5cdd6" }} />
-          <input placeholder="学科 id（小写字母数字连字符；留空自动）" value={subjectId}
+          <input placeholder="学科代号（小写字母/数字/短横线；留空自动生成）" value={subjectId}
                  onChange={(e) => setSubjectId(e.target.value)} style={{ padding: 7, borderRadius: 8, border: "1px solid #c5cdd6", width: 280 }} />
         </div>
         <div className="input-row" style={{ margin: "6px 0" }}>

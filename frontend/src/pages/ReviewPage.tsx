@@ -84,9 +84,9 @@ export default function ReviewPage() {
         rating,
       });
       if (r.action === "relearn") {
-        setLastResult(`节点已降级回炉重学：${r.reason ?? ""}`);
+        setLastResult(`这个知识点要重新学一遍：${r.reason ?? ""}`);
       } else {
-        setLastResult(`已排程：下次复习约 ${Math.round(r.interval_days ?? 0)} 天后（${r.next_due_at ?? "-"}）`);
+        setLastResult(`已排好：下次复习约 ${Math.round(r.interval_days ?? 0)} 天后（${r.next_due_at ?? "-"}）`);
       }
       setCurrent(null);
       setExercise(null);
@@ -137,7 +137,7 @@ export default function ReviewPage() {
                   </button>
                 ))}
               </div>
-              <p className="dim">忘记/困难 累计 2 次会把节点打回「学习中」重新掌握。</p>
+              <p className="dim">同一处连续两次选「忘记」或「困难」，就会打回「学习中」重新学一遍。</p>
             </div>
           )}
           {fb?.verdict === "wrong" && <button className="ghost" disabled={busy} onClick={() => setExercise(null)}>换一题</button>}

@@ -218,8 +218,9 @@ def test_r42_a3b_coverage_ledger_explains_where_skipped_chapters_went(app_client
         for lab in cov["inject_cap"]["skipped_labels"]:
             e = by_label[lab]
             assert e["covered"] is False
-            assert e["not_injected_reason"] == "总注入上限"
-            assert "总注入上限" in e["reason_zh"]
+            # R52 B：文案改人话（机器可读的 reason 仍是"总注入上限"，只有给用户看的 reason_zh 变了）
+            assert e["not_injected_reason"] == "到总量上限了"
+            assert "设了总量上限" in e["reason_zh"] and "没读" in e["reason_zh"]
         # 逐材料分组也带该信息
         bm = cov["by_material"][0]
         assert bm["cap_skipped_count"] >= 1 and bm["cap_skipped"]
@@ -248,7 +249,7 @@ def test_r42_a3_coverage_and_budget_view_report_the_loss_truthfully(app_client, 
         assert view["inject_cap"]["skipped_count"] == usage["inject_cap"]["skipped_count"]
         assert view["last_usage"]["cap_skipped_count"] == usage["inject_cap"]["skipped_count"]
         assert view["last_usage"]["cap_skipped_count"] > 0
-        assert "未纳入" in view["last_usage"]["cap_note_zh"] and "总注入上限" in view["last_usage"]["cap_note_zh"]
+        assert "没读" in view["last_usage"]["cap_note_zh"] and "总量" in view["last_usage"]["cap_note_zh"]
         assert view["not_injected"], "预算视图也要给未纳入清单"
         assert view["last_usage"]["per_material"][0]["cap_skipped_count"] > 0, "逐材料也要能看出被跳过"
     finally:

@@ -79,11 +79,11 @@ export default function SettingsPage() {
       {err && <div className="banner error">{err}</div>}
       <div className="grid">
         <section className="card">
-          <h2>模型模式（R12）</h2>
+          <h2>模型模式</h2>
           <ModelModeSwitch value={modelMode} onChange={(m) => void changeModelMode(m)} />
           <p className="dim">
-            自动 = 基础快模型 + 边缘分/轮次≥2/超纲答疑自动升深度；⚡ 快 = 关闭自动升级（college/AI 仍深度）；
-            🧠 深度 = 全部深度。讲解/评分卡会标注本次所用档位，会话页头部可即时切换。
+            自动 = 一般内容用快模型，难题和纠错自动换更强的；⚡ 快 = 一直用快模型；
+            🧠 深度 = 一直用最强模型。讲解和评分卡会标出这次用的是哪一档，学习页顶部随时能切换。
           </p>
           <h2>讲解偏好</h2>
           <label>解释深度（1 直觉类比 → 5 严格推导）</label>
@@ -125,31 +125,31 @@ export default function SettingsPage() {
           )}
         </section>
         <section className="card">
-          <h2>提示词（R39 §2）</h2>
+          <h2>提示词（可以自己改）</h2>
           <p className="dim" style={{ fontSize: 13 }}>
-            程序里用到的**所有**发往模型的提示词都可以在这里改，并随时恢复默认。
-            改动立即生效；删掉必填占位符/硬约束会被**中文拒存**。
+            程序每次问 AI 用的话都在这里，可以自己改，也能一键恢复默认。改完下一次就生效；
+            删掉必须留的内容会被拒绝保存（会有中文说明）。
           </p>
           <p>
             <Link className="button-link" to="/prompts">打开「提示词」页 →</Link>
           </p>
-          <h2>开发者 / 调试（R39 §3）</h2>
+          <h2>高级：查看 AI 对话记录</h2>
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input
               type="checkbox"
               checked={!!app?.developer_mode}
               onChange={(e) => void toggleDev(e.target.checked)}
             />
-            开启「AI 对话记录」（提示词监听 / 对话审计）
+            开启「AI 对话记录」（排查问题用，平时可以不开）
           </label>
           <p className="dim" style={{ fontSize: 12 }}>
-            注意：审计**默认记录**（不靠本开关决定“要不要留证据”），本开关只控制界面入口是否出现。
-            全文落本地文件（{app?.ai_trace?.dir ?? "—"}），库内只存路径 + 预览 + 字符数；
-            界面**不流式**、加载完再看；失败与丢弃项在列表里**置顶并红色标记**。
+            这个开关只决定侧栏里是否出现「AI 对话记录」入口；程序**一直在记录**每次问 AI 的完整内容，
+            方便出问题时回看。记录存在本地文件里（{app?.ai_trace?.dir ?? "—"}），页面上看的时候不是边生成边刷；
+            出错和没用上的内容会排在前面、标红。
             {app?.ai_trace && (
               <>
                 <br />
-                审计目录：{app.ai_trace.dir}（保留期 {app.ai_trace.keep_days} 天；清理会记入总账）
+                记录保存 {app.ai_trace.keep_days} 天后自动清理（清理会写进「记录」页）。
               </>
             )}
           </p>

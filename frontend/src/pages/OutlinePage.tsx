@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
-import MaterialBudgetPanel from "../components/MaterialBudgetPanel";
+import MaterialBudgetPanel, { charsText } from "../components/MaterialBudgetPanel";
 import LedgerAlerts, { LedgerEntry } from "../components/LedgerAlerts";
 
 type Unit = {
@@ -436,7 +436,7 @@ export default function OutlinePage() {
         // math preset regenerate = 已直接派生落盘（非候选）→ 刷新展示
         setCandidate(null);
         await load();
-        setMsg("大纲已重新生成并落盘（revision 递增）");
+        setMsg("大纲已重新生成（版本号 +1）");
       }
     } catch (e) {
       setErr(String(e));
@@ -493,11 +493,11 @@ export default function OutlinePage() {
       const r = await api.post<{ status: string; node_id: string; note?: string; coverage?: { status: string }; ledger?: LedgerEntry[] }>(`/subjects/${id}/units/${uid}/content`);
       setLastUnitLedger(r.ledger ?? []);
       if (r.status === "uncovered") {
-        setErr(`单元 ${uid} 未出稿：${r.note || "教材未覆盖此单元"}`);
+        setErr(`「${uid}」还没出内容：${r.note || "教材里没有找到对应这一单元的内容"}`);
       } else if (r.status === "failed") {
-        setErr(`单元 ${uid} 出稿失败：${r.note || "未通过内容校验"}`);
+        setErr(`「${uid}」出内容失败：${r.note || "内容没有通过检查"}`);
       } else {
-        setMsg(`单元 ${uid} 内容：${r.status === "exists" ? "已在库（幂等）" : `已生成（source:auto${r.coverage ? ` · 教材覆盖：${r.coverage.status}` : ""}）`}`);
+        setMsg(`「${uid}」${r.status === "exists" ? "之前已经生成过，不用重复生成" : "已生成"}${r.coverage ? ` · 教材依据：${r.coverage.status}` : ""}`);
       }
       await load();
     } catch (e) {
@@ -508,12 +508,12 @@ export default function OutlinePage() {
   };
 
   const resetProgress = async () => {
-    if (!window.confirm(`确认显式重置「${subject?.label}」学科进度？概念层与内容掌握将清空。`)) return;
+    if (!window.confirm(`确认清空「${subject?.label}」的学习进度？已掌握的内容会被重置。`)) return;
     setBusy(true);
     setErr("");
     try {
       const r = await api.post<{ nodes_reset: number }>(`/subjects/${id}/progress/reset`, { mode: "all" });
-      setMsg(`进度已重置（清空 ${r.nodes_reset} 个内容节点掌握）`);
+      setMsg(`已清空学习进度（${r.nodes_reset} 个知识点回到未学）`);
       await load();
     } catch (e) {
       setErr(String(e));
@@ -552,7 +552,7 @@ export default function OutlinePage() {
         <>
           <h1>
             {subject.label}{" "}
-            <span className="badge">{isPreset ? "预置学科（roadmap 治理）" : "自定义学科"}</span>
+            <span className="badge">{isPreset ? "系统自带的学科" : "自定义学科"}</span>
           </h1>
           <div className="dim">{subject.id} · {subject.description}</div>
         </>
@@ -574,8 +574,8 @@ export default function OutlinePage() {
         </div>
 
         <div className="dim" style={{ margin: "4px 0" }}>
-          引用材料（{materials.length}）：**教材＝权威真源**——大纲由书的目录派生、单元讲解与题目只从
-          教材正文出（服务端逐字校验，教材里查不到的题会被丢弃、查不到的事实句会让整单元不出稿）。
+          教材（{materials.length} 份）：**一切以教材为准**——大纲按书的目录排，讲解和题目只用教材里的原话，
+          服务端会逐字核对：教材里查不到的题不会用，查不到依据的内容整个单元都不会生成。
         </div>
 
         {/* 联网候选清单（C1：provider 抽象 + 勾选入库） */}
@@ -712,10 +712,10 @@ export default function OutlinePage() {
         <h2>大纲起草与审阅</h2>
         {isPreset ? (
           <div className="dim">
-            预置学科大纲按其课程蓝图（roadmap）派生治理（docs/14 §5）。当前版本：
-            v{outline?.revision ?? "-"} · {outline?.units?.length ?? 0} 单元。
+            系统自带学科的大纲按官方课程安排生成。当前：第 {outline?.revision ?? "-"} 版 ·{" "}
+            {outline?.units?.length ?? 0} 个单元。
             <button style={{ marginLeft: 10 }} disabled={busy} onClick={() => draft(true)}>
-              由 roadmap 重新派生（regenerate）
+              按课程安排重新生成
             </button>
           </div>
         ) : (
@@ -733,70 +733,69 @@ export default function OutlinePage() {
                 ))}
               </select>
               <button className="primary" disabled={busy} onClick={() => draft(false)}>
-                {outline ? "重新起草（丢弃当前稿）" : "AI 起草大纲"}
+                {outline ? "重新起草（会丢掉当前这份）" : "让 AI 起草大纲"}
               </button>
             </div>
             <div className="dim">
-              起草仅生成候选（不落盘）；审阅后点“采纳”（大纲版本 revision+1）。无 LLM_KEY 时为离线启发式候选。
+              起草只是先给一份候选，不会直接覆盖；你看过之后点「采纳」才会生效（版本号 +1）。
+              没有配 AI 时会用内置的简单办法先排一版。
               {/* R42 B3：`count` 语义的 UI 说明（避免用户以为"我填了 20 却出 46"是 bug） */}
               {materials.length > 0 && (
                 <>
                   <br />
-                  ⚠️ <strong>「单元数」只在没有教材时生效</strong>：本学科有引用材料时，
-                  **单元数由书的章节结构决定**（每个章/节至少 1 个单元），
-                  所以实际单元数可能多于/少于你选的数量——这是**按书出稿**，不是 bug。
+                  ⚠️ <strong>「单元数」只在没有教材时有用</strong>：有教材时，
+                  **单元数是按书的章节来的**（每章/每节至少一个单元），
+                  所以实际会多于或少于你选的数量——这是**照着书排**，不是出错。
                 </>
               )}
               {materials.length > 0
-                ? `起草会**先读懂教材**（当前 ${materials.length} 份）：按章/节地图注入完整正文（默认不设预算，
-                   书太大按章分批），由书的目录派生单元——每个章节都必须映射到单元，未映射的按教材目录补齐；
-                   每个单元的依据（材料 + 章节标签）由服务端逐字校验。`
-                : "（当前无引用材料：起草只按学科简介进行，会在覆盖账本里显式标注「本内容无教材依据」。）"}
+                ? `起草时会先读教材（当前 ${materials.length} 份），完全按书的章节来排单元：每个章节都会对应到单元，没人用的章节按目录补齐。`
+                : "（还没有教材：只能按你写的简介排，生成的内容会标注「没有教材依据」。）"}
             </div>
           </>
         )}
         {candidate && (
           <div className="card" style={{ borderColor: "#90caf9" }}>
-            <h2>起草候选（{candidate.source === "ai" ? "AI" : "启发式（离线）"} · 未落盘）</h2>
+            <h2>起草候选（{candidate.source === "ai" ? "AI 生成" : "内置办法生成"}，还没生效）</h2>
             {candidate.problems?.length > 0 && (
-              <div className="banner warn">候选提示：{candidate.problems.slice(0, 5).join("；")}</div>
+              <div className="banner warn">需要留意：{candidate.problems.slice(0, 5).join("；")}</div>
             )}
             {candidate.coverage && (
               <div className={candidate.coverage.uncovered.length ? "banner warn" : "banner ok"}>
-                教材覆盖：已覆盖节 {candidate.coverage.covered} / {candidate.coverage.total}
+                章节进度：已有内容 {candidate.coverage.covered} / {candidate.coverage.total} 节
                 {candidate.coverage.uncovered.length > 0
-                  ? `；未覆盖：${candidate.coverage.uncovered.join("、")}`
-                  : "（未覆盖清单为空）"}
+                  ? `；还没有内容：${candidate.coverage.uncovered.join("、")}`
+                  : "（每一节都有内容）"}
               </div>
             )}
             {/* R38 A1 必显 + **R42 A1/A4**：本轮实际注入总量/批次数 + 两个滑块的生效值与来源 +
                 因总上限未纳入的章节数（就地可见，可展开） */}
             {candidate.material_usage && candidate.material_usage.count > 0 && (
               <div className="dim" style={{ fontSize: 12, margin: "4px 0" }}>
-                本轮材料注入：共 <strong>{candidate.material_usage.used_chars.toLocaleString("zh-CN")}</strong> 字 ·
-                分 <strong>{candidate.material_usage.batches ?? 0}</strong> 批 ·
-                单次预算 {candidate.material_usage.batch_chars === 0 ? "不限" : `${(candidate.material_usage.batch_chars ?? 0).toLocaleString("zh-CN")} 字符`} ·
-                总上限 {candidate.material_usage.inject_max_chars === 0 ? "不限" : `${(candidate.material_usage.inject_max_chars ?? 0).toLocaleString("zh-CN")} 字符`} ·
-                顺序依据：{candidate.material_usage.order_basis ?? "导入顺序"}
+                这次读书：共 <strong>{charsText(candidate.material_usage.used_chars)}</strong> ·
+                分 <strong>{candidate.material_usage.batches ?? 0}</strong> 次读完 ·
+                每次读多少 {candidate.material_usage.batch_chars === 0 ? "不限" : charsText(candidate.material_usage.batch_chars ?? 0)} ·
+                最多读多少 {candidate.material_usage.inject_max_chars === 0 ? "不限" : charsText(candidate.material_usage.inject_max_chars ?? 0)} ·
+                阅读顺序：{candidate.material_usage.order_basis ?? "导入顺序"}
                 {candidate.material_usage.context_valve?.applied && (
-                  <> · 安全阀：本书较大，已自动分批（不截断、不漏章节）</>
+                  <> · 书比较大，已自动分次读（不截掉正文、不漏章节）</>
                 )}
                 {!!candidate.material_usage.inject_cap?.skipped_count && (
                   <>
                     <br />
                     <span style={{ color: "#b3261e" }}>
-                      因「总注入上限」已用完，本教材有{" "}
-                      <strong>{candidate.material_usage.inject_cap.skipped_count}</strong> 章/节**未纳入**
-                      （已注入 {(candidate.material_usage.inject_cap.used_chars ?? 0).toLocaleString("zh-CN")} 字；
-                      按章/节边界停止，未截断）：
+                      总量已经读完，还有{" "}
+                      <strong>{candidate.material_usage.inject_cap.skipped_count}</strong> 章/节**没读**
+                      （已读 {charsText(candidate.material_usage.inject_cap.used_chars ?? 0)}；
+                      到上限时整章停下，不会读一半）：
                       {(candidate.material_usage.inject_cap.skipped_labels ?? []).join("、")}
                     </span>
                   </>
                 )}
               </div>
             )}
-            {/* R39 §1：本次起草的**就地**账目（驳回重生成/降级/材料未纳入…） */}
-            <LedgerAlerts entries={candidate.ledger} subjectId={id} title="本次起草记录（一切显性）" compact />
+            {/* R39 §1：本次起草的**就地**记录（驳回重生成/降级/材料未纳入…） */}
+            <LedgerAlerts entries={candidate.ledger} subjectId={id} title="本次起草记录" compact />
             {(candidate as any).notes?.length > 0 && (
               <div className="dim" style={{ fontSize: 12 }}>{(candidate as any).notes.join("；")}</div>
             )}
@@ -830,39 +829,40 @@ export default function OutlinePage() {
         <div className="card">
           <div className="session-head">
             <h2 style={{ margin: 0 }}>
-              大纲 v{outline.revision}（{outline.status}/{outline.source}）· schema v{outline.schema_version}
+              大纲 第 {outline.revision} 版 · {outline.status === "active" ? "使用中" : outline.status === "draft" ? "草稿" : outline.status} ·{" "}
+              {outline.source === "ai" ? "由 AI 生成" : "手工/系统生成"} · 格式版本 {outline.schema_version}
             </h2>
             {progress && (
               <span className="badge pass">已掌握概念 {progress.concepts_mastered}</span>
             )}
             {!isPreset && (
               <span>
-                <button className="ghost" disabled={busy} onClick={resetProgress}>重置学科进度</button>
+                <button className="ghost" disabled={busy} onClick={resetProgress}>清空本学科学习进度</button>
               </span>
             )}
           </div>
           {outline.note && <div className="dim">{outline.note}</div>}
           {materialTitles(outline.source_materials, materials).length > 0 && (
             <div className="banner ok" style={{ margin: "6px 0" }}>
-              本大纲依据的材料（{materialTitles(outline.source_materials, materials).length}）：
+              这份大纲依据的教材（{materialTitles(outline.source_materials, materials).length} 份）：
               {materialTitles(outline.source_materials, materials).map((t) => `《${t}》`).join("、")}
             </div>
           )}
           {coverage && coverage.has_materials && (
             <div className="card" style={{ borderColor: coverage.uncovered.length ? "#e6a23c" : "#90caf9", margin: "8px 0" }}>
               <h2 style={{ margin: "0 0 4px" }}>
-                教材覆盖账本 · 已覆盖节 {coverage.covered} / {coverage.total}
+                章节进度 · 已有内容 {coverage.covered} / {coverage.total} 节
                 {typeof coverage.page_covered === "number" && coverage.page_total ? (
                   <span className="dim" style={{ fontSize: 13 }}>
-                    {" "}（页级：{coverage.page_covered}/{coverage.page_total} 页已有对应单元，可下钻）
+                    {" "}（按页算：{coverage.page_covered}/{coverage.page_total} 页已对应到单元）
                   </span>
                 ) : null}
               </h2>
               <div className="dim" style={{ fontSize: 12 }}>
-                教材结构：
+                书的结构：
                 {coverage.materials.map((m) => `${m.title}（${m.structure_kind}：${m.structure_note}）`).join("；")}
-                {coverage.multi_material ? ` · 共 ${coverage.materials.length} 份材料（已合并成一份章节地图）` : ""}
-                {coverage.order_basis ? ` · 顺序依据：${coverage.order_basis}` : ""}
+                {coverage.multi_material ? ` · 共 ${coverage.materials.length} 份（已合成一份章节地图）` : ""}
+                {coverage.order_basis ? ` · 阅读顺序：${coverage.order_basis}` : ""}
               </div>
 
               {/* R38 B1：**按材料分组**的覆盖统计（跨全部材料；未覆盖清单按材料分组） */}
@@ -871,11 +871,11 @@ export default function OutlinePage() {
                   <thead>
                     <tr className="dim">
                       <th style={{ textAlign: "left" }}>材料</th>
-                      <th>角色</th>
-                      <th>已覆盖节 / 总节</th>
+                      <th>用途</th>
+                      <th>已有内容 / 总节数</th>
                       <th>字数</th>
                       <th>页数</th>
-                      <th>因总上限未纳入</th>
+                      <th>到上限没读</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -909,52 +909,52 @@ export default function OutlinePage() {
               {/* R42 A3：因「总注入上限」未纳入（覆盖账如实降 —— 不许"没喂却算覆盖"） */}
               {!!coverage.inject_cap?.configured && (coverage.inject_cap.skipped_count > 0) && (
                 <div className="banner warn" style={{ marginTop: 6 }}>
-                  因「总注入上限」{(coverage.inject_cap.cap ?? 0).toLocaleString("zh-CN")} 字已用完，
-                  本教材有 <strong>{coverage.inject_cap.skipped_count}</strong> 章/节**未纳入**（覆盖账已如实降）：
+                  这本书的「最多读多少」已经读完（{charsText(coverage.inject_cap.cap ?? 0)}），
+                  还有 <strong>{coverage.inject_cap.skipped_count}</strong> 章/节**没有读**：
                   <ul className="plain" style={{ margin: "4px 0 0 12px" }}>
                     {(coverage.inject_cap.skipped_by_material ?? []).map((g) => (
                       <li key={g.material_id}>
                         《{g.title}》：
-                        {g.items.map((it) => `${it.label}（${it.chars.toLocaleString("zh-CN")} 字）`).join("、")}
+                        {g.items.map((it) => `${it.label}（${charsText(it.chars)}）`).join("、")}
                       </li>
                     ))}
                   </ul>
                   <div className="dim" style={{ fontSize: 12 }}>
-                    这些章节**没有被喂给模型**，因此**不算覆盖**；调大「总注入上限」或设为 0（不限）
-                    后重新起草即可纳入（想更省又不想丢章节 → 调小「单次调用预算」）。
+                    没读过的章节**不会被编造内容**，所以它们算「还没内容」；把「最多读多少」调大或设成不限、
+                    再重新起草就能读上（想更省又不想漏章节 → 把「每次读多少」调小）。
                   </div>
                 </div>
               )}
 
               {coverage.uncovered.length === 0 ? (
-                <div className="badge pass">未覆盖清单为空：书的每个章/节都有对应单元</div>
+                <div className="badge pass">书的每一章/每一节都已经有内容了</div>
               ) : (
                 <>
                   {/* R38 B1：未覆盖清单**按材料分组**显式列出（不是只在 prompt 尾部提一句） */}
                   {coverage.uncovered_by_material && coverage.uncovered_by_material.length > 0 ? (
                     coverage.uncovered_by_material.map((g) => (
                       <div className="banner warn" key={g.material_id} style={{ marginTop: 4 }}>
-                        《{g.title}》（{g.role_zh}）未覆盖 {g.items.length} 条：
-                        {g.items.map((x) => `${x.label}（${x.chars.toLocaleString("zh-CN")} 字）`).join("、")}
+                        《{g.title}》（{g.role_zh}）还有 {g.items.length} 节没有内容：
+                        {g.items.map((x) => `${x.label}（${charsText(x.chars)}）`).join("、")}
                       </div>
                     ))
                   ) : (
                     <div className="banner warn">
-                      未覆盖清单（{coverage.uncovered.length}）：{coverage.uncovered.join("、")}
+                      还没有内容的章节（{coverage.uncovered.length}）：{coverage.uncovered.join("、")}
                     </div>
                   )}
                   <div className="dim" style={{ fontSize: 12 }}>
-                    教材有而内容没覆盖的部分**不会被编造**，请补充/调整单元后重新生成大纲；
-                    这些未覆盖项也已写入总账（
-                    <Link to={`/ledger?subject_id=${id}&category=coverage`}>就地看着</Link>）。
+                    教材里有、但还没出内容的部分**不会被编造**。补充或调整单元后重新生成大纲即可；
+                    这些也都记在了
+                    <Link to={`/ledger?subject_id=${id}&category=coverage`}>记录页</Link>。
                   </div>
                 </>
               )}
-              {/* R42 A3：未纳入清单（三种原因都列出来——健康度不合格 / 未进批次 / 总注入上限） */}
+              {/* R42 A3：没读清单（三种原因都列出来——读不了 / 没排上 / 到上限） */}
               {coverage.not_injected && coverage.not_injected.length > 0 && (
                 <details style={{ marginTop: 6 }}>
                   <summary className="dim">
-                    未纳入注入清单（{coverage.not_injected.length}，含原因）
+                    没读的章节（{coverage.not_injected.length}，含原因）
                   </summary>
                   <ul className="plain" style={{ margin: "4px 0 0 12px", fontSize: 12 }}>
                     {coverage.not_injected.map((x, i) => (
@@ -968,26 +968,26 @@ export default function OutlinePage() {
               )}
               {/* R42 B1 + R44 P2：过短条目**两种去处都写明**（别让人以为"过短＝一律被跳过"）——
                   ① 已并入相邻单元（留在该单元依据材料里）；② 已跳过（过短），未成为单元（下列即此类）。
-                  两种去处都不计入未覆盖缺口，且都在总账留了中文原因。 */}
+                  两种去处都不算「没出内容」，且都在记录页留了中文原因。 */}
               {!!coverage.skipped_short?.count && (
                 <details style={{ marginTop: 6 }}>
                   <summary className="dim">
-                    过短条目（{coverage.skipped_short.count} 条走「跳过」；另有若干条已「并入相邻单元」）
-                    —— 两种去处都不计入未覆盖缺口
+                    太短的条目（{coverage.skipped_short.count} 条被跳过；另有几条已并进相邻单元）
+                    —— 两种都不算「没出内容」
                   </summary>
                   <div className="dim" style={{ fontSize: 12, margin: "4px 0 0 12px" }}>
-                    过短条目（&lt; {coverage.skipped_short?.min_chars} 字）有两种去处：
-                    <strong>① 已并入相邻单元</strong>——它留在了那个单元的依据材料里
-                    （在下方"逐单元覆盖状态"里显示"并入过短条目 N"）；
-                    <strong>② 已跳过（过短），未成为单元</strong>——下列即此类的全部。
-                    两种去处都在总账留了中文原因（
-                    <Link to={`/ledger?subject_id=${id}&category=other`}>就地看着</Link>）。
+                    太短的条目（不到 {coverage.skipped_short?.min_chars} 字，多是标题或目录行）有两种去处：
+                    <strong>① 并进相邻单元</strong>——它留在了那个单元的依据里
+                    （在下面"每个单元的情况"里显示"并入过短条目 N"）；
+                    <strong>② 直接跳过</strong>——下面列出的就是这一类。
+                    两种都在
+                    <Link to={`/ledger?subject_id=${id}&category=other`}>记录页</Link>写明了原因。
                   </div>
                   <ul className="plain" style={{ margin: "4px 0 0 12px", fontSize: 12 }}>
                     {(coverage.skipped_short.items ?? []).map((x, i) => (
                       <li key={`${x.material_id ?? x.material}-${x.label}-${i}`}>
                         {x.material} · {x.label}（{x.chars} 字 &lt; {coverage.skipped_short?.min_chars} 字）
-                        —— 已跳过（过短），未成为单元
+                        —— 太短，跳过了
                       </li>
                     ))}
                   </ul>
@@ -995,12 +995,12 @@ export default function OutlinePage() {
               )}
               {coverage.uncovered_materials && coverage.uncovered_materials.length > 0 && (
                 <div className="banner error" style={{ marginTop: 4 }}>
-                  整份未纳入的材料（{coverage.uncovered_materials.length}）：
+                  整份都没读的教材（{coverage.uncovered_materials.length}）：
                   {coverage.uncovered_materials.map((m) => `${m.title}（${m.kind}）`).join("、")}
                 </div>
               )}
               <details style={{ marginTop: 6 }}>
-                <summary className="dim">逐单元覆盖状态（{coverage.units.length}）</summary>
+                <summary className="dim">每个单元的情况（{coverage.units.length}）</summary>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <tbody>
                     {coverage.units.map((u) => (
@@ -1013,14 +1013,14 @@ export default function OutlinePage() {
                         <td style={{ padding: "4px" }} className="dim">
                           {u.sources.length > 0
                             ? u.sources.map((s) => `${s.title} · ${s.section}`).join("；")
-                            : "无教材依据"}
-                          {u.grounded_facts > 0 && ` · ${u.grounded_facts} 条事实句逐字出自教材`}
-                          {u.dropped_exercises > 0 && ` · 丢弃 ${u.dropped_exercises} 题`}
+                            : "没有教材依据"}
+                          {u.grounded_facts > 0 && ` · ${u.grounded_facts} 条要点逐字取自教材`}
+                          {u.dropped_exercises > 0 && ` · ${u.dropped_exercises} 道题没用上`}
                           {/* R42 B4：章内该节级依据（比"整章"更精确；取不到就不显示，不编造） */}
                           {u.basis_section && (
                             <div style={{ fontSize: 12 }}>
-                              📍 依据（章内该节）：{u.basis_section}
-                              {u.basis_quote && <span title={u.basis_quote}> · 引文：{u.basis_quote.slice(0, 60)}…</span>}
+                              📍 依据（这一节）：{u.basis_section}
+                              {u.basis_quote && <span title={u.basis_quote}> · 原文：{u.basis_quote.slice(0, 60)}…</span>}
                             </div>
                           )}
                         </td>
@@ -1045,7 +1045,7 @@ export default function OutlinePage() {
                           <td style={{ padding: "6px 4px", width: 130 }} className="dim">{u.id}</td>
                           <td style={{ padding: "6px 4px" }}>
                             <strong>{u.title}</strong>
-                            {u.status === "reviewed" && <span className="badge pass">转正</span>}
+                            {u.status === "reviewed" && <span className="badge pass">已定稿</span>}
                             {(() => {
                               const c = coverage?.units.find((x) => x.unit_id === u.id);
                               if (!c || c.status === "未知") return null;
@@ -1060,19 +1060,19 @@ export default function OutlinePage() {
                             {u.meta?.difficulty_raised && (
                               <span className="badge deferred"
                                     title={u.meta.difficulty_raised.reason_zh}>
-                                难度被抬高 {u.meta.difficulty_raised.from}→{u.meta.difficulty_raised.to}
+                                难度调高了 {u.meta.difficulty_raised.from}→{u.meta.difficulty_raised.to}
                               </span>
                             )}
                             {/* R42 B1：过短条目已并入本单元（覆盖账可解释"它去哪了"） */}
                             {!!u.meta?.absorbed_short?.length && (
                               <span className="badge"
                                     title={u.meta.absorbed_short.map((x) => `${x.label}（${x.chars} 字）`).join("、")}>
-                                并入过短条目 {u.meta.absorbed_short.length}
+                                并入 {u.meta.absorbed_short.length} 条过短内容
                               </span>
                             )}
                             {u.materials && u.materials.length > 0 && (
                               <div className="dim" style={{ fontSize: 12 }}>
-                                依据：{u.materials.map((r) => `《${r.title}》${r.section ? " · " + r.section : ""}`).join("；")}
+                                来自：{u.materials.map((r) => `《${r.title}》${r.section ? " · " + r.section : ""}`).join("；")}
                               </div>
                             )}
                           </td>
@@ -1099,10 +1099,10 @@ export default function OutlinePage() {
                             {!isPreset && (
                               <>
                                 <button style={{ padding: "4px 10px" }} onClick={() => genContent(u.id)} disabled={busy}>
-                                  懒生成内容
+                                  生成内容
                                 </button>{" "}
                                 <button style={{ padding: "4px 10px" }} onClick={() => learnUnit(u.id)} disabled={busy}
-                                  title={pv?.open ? "开始学习此单元" : "未解锁（需先完成前置单元）"}>
+                                  title={pv?.open ? "开始学习这个单元" : "还没解锁（要先学完前面的单元）"}>
                                   开始学习
                                 </button>
                               </>

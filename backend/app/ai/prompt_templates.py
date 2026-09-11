@@ -310,17 +310,17 @@ def _specs() -> dict[str, PromptSpec]:
     out: list[PromptSpec] = [
         PromptSpec(
             "explain_node", "讲解演绎",
-            "把已注入的官方讲解稿演绎成面向该学生的讲解，并给出 1-3 个带依据的引导确认。",
+            "把教材里的讲解改写成适合这个学生的讲法，再给 1-3 个有依据的确认问题。",
             S_EXPLAIN, U_EXPLAIN,
             system_required_placeholders=CB_PLACEHOLDERS,
             system_required_tokens=("输出 JSON",),
             user_required_placeholders=("fact_hint", "node_title"),
             user_required_tokens=("lecture_md", "asked_to_confirm", "asks_basis", "输出 JSON"),
-            notes="占位符由程序注入；改动会影响生成的讲解与提问。",
+            notes="花括号由程序填内容；改这里会影响讲什么、问什么。",
         ),
         PromptSpec(
             "answer_question", "答疑",
-            "回答学生就当前节点提出的问题；超范围要显式说明。",
+            "回答学生关于当前知识点的问题；超出范围就直说。",
             S_EXPLAIN, U_ANSWER,
             system_required_placeholders=CB_PLACEHOLDERS,
             system_required_tokens=("输出 JSON",),
@@ -329,17 +329,17 @@ def _specs() -> dict[str, PromptSpec]:
         ),
         PromptSpec(
             "hint_on_error", "错题提示",
-            "答错后给方向性提示（硬约束：禁止给完整解答）。",
+            "答错以后只给一点方向，不给完整答案。",
             S_EXPLAIN, U_HINT,
             system_required_placeholders=CB_PLACEHOLDERS,
             system_required_tokens=("输出 JSON",),
             user_required_placeholders=("prompt", "mode", "student_answer", "judge_detail"),
             user_required_tokens=("hint_md", "输出 JSON"),
-            notes="system 里含「绝对禁止给出完整解答」的硬约束，建议保留。",
+            notes="里面写了「绝对不许给完整解答」，建议保留。",
         ),
         PromptSpec(
             "feynman_evaluate", "费曼评分",
-            "按 rubric 逐维打分；每个维度必须给逐字引用学生原话的证据。",
+            "按几个方面打分，每一方面都要引用学生的原话作证据。",
             S_EXPLAIN, U_FEYNMAN_EVAL,
             system_required_placeholders=CB_PLACEHOLDERS,
             system_required_tokens=("输出 JSON",),
@@ -350,7 +350,7 @@ def _specs() -> dict[str, PromptSpec]:
         ),
         PromptSpec(
             "feynman_followup", "费曼定向追问",
-            "针对最弱缺口生成一条追问，必须逐字引用学生原话。",
+            "针对最薄弱的一点追问一句，要引用学生的原话。",
             S_EXPLAIN, U_FEYNMAN_FOLLOWUP,
             system_required_placeholders=CB_PLACEHOLDERS,
             system_required_tokens=("输出 JSON",),
@@ -360,7 +360,7 @@ def _specs() -> dict[str, PromptSpec]:
         ),
         PromptSpec(
             "feynman_gap_check", "缺口补答评估",
-            "只判目标缺口是否补上，只更新该维度分数。",
+            "只看刚才那一点补上没有，只更新那一项的分数。",
             S_EXPLAIN, U_GAP_CHECK,
             system_required_placeholders=CB_PLACEHOLDERS,
             system_required_tokens=("输出 JSON",),
@@ -370,7 +370,7 @@ def _specs() -> dict[str, PromptSpec]:
         ),
         PromptSpec(
             "classify_error", "错因分类",
-            "把错答归入固定枚举（不判对错）。",
+            "把答错的原因归到一个类别里（不判对错）。",
             S_CLASSIFY, U_CLASSIFY,
             system_required_tokens=("error_type", "arithmetic_slip", "unknown", "输出 JSON"),
             user_required_placeholders=("prompt", "correct_solution", "student_answer"),
@@ -378,7 +378,7 @@ def _specs() -> dict[str, PromptSpec]:
         ),
         PromptSpec(
             "generate_practice_variant", "练习题变体（未启用）",
-            "MVP 不启用（docs/08 §1）；保留模板以便将来开启。",
+            "暂时用不上，模板先留着，将来要用再打开。",
             S_EXPLAIN,
             '输出 JSON：\n{{"param_values":{{}},"prompt_md":"…"}}\n节点：{node_id}',
             system_required_placeholders=CB_PLACEHOLDERS,
@@ -388,7 +388,7 @@ def _specs() -> dict[str, PromptSpec]:
         ),
         PromptSpec(
             "explain_solution_step", "解题步骤讲解",
-            "对单步解题给出解释（轻量调用点）。",
+            "解释解题的某一步。",
             S_EXPLAIN, '输出 JSON：\n{{"step_explanation_md":"…"}}\n步骤：{step_text}',
             system_required_placeholders=CB_PLACEHOLDERS,
             system_required_tokens=("输出 JSON",),
@@ -397,7 +397,7 @@ def _specs() -> dict[str, PromptSpec]:
         ),
         PromptSpec(
             "challenge_exercise", "挑战题生成",
-            "单独出一道超出讲解的挑战题（不上算、不进默认流程）。",
+            "另外出一道更难的挑战题（不计入掌握，也不进默认流程）。",
             S_EXPLAIN, U_CHALLENGE,
             system_required_placeholders=CB_PLACEHOLDERS,
             system_required_tokens=("输出 JSON",),
@@ -406,7 +406,7 @@ def _specs() -> dict[str, PromptSpec]:
         ),
         PromptSpec(
             "challenge_check", "挑战题判分",
-            "只判挑战题作答，结果只进复盘。",
+            "只判挑战题答得对不对，结果只进复盘。",
             S_EXPLAIN, U_CHALLENGE_CHECK,
             system_required_placeholders=CB_PLACEHOLDERS,
             system_required_tokens=("输出 JSON",),
@@ -414,8 +414,8 @@ def _specs() -> dict[str, PromptSpec]:
             user_required_tokens=("correct", "score", "feedback_md", "输出 JSON"),
         ),
         PromptSpec(
-            "draft_content", "内容草稿（P1）",
-            "按规格起草单个内容节点的草稿。",
+            "draft_content", "内容草稿",
+            "按给定的规格起草一节内容的草稿。",
             "[角色] 你是学科内容作者。\n" + JSON_DISCIPLINE,
             '输出 JSON：\n{{"draft_md":"…"}}\n规格：{spec}',
             system_required_tokens=("输出 JSON",),
@@ -424,7 +424,7 @@ def _specs() -> dict[str, PromptSpec]:
         ),
         PromptSpec(
             "outline_draft", "大纲起草",
-            "读教材（有材料时）起草学科大纲：单元＝书的目录，逐单元标注材料溯源。",
+            "先读教材，再按书的目录排出学科大纲（每个单元都注明来自书的哪一节）。",
             _outline_system(), U_OUTLINE_DRAFT,
             system_required_placeholders=("material_discipline",),
             system_required_tokens=("units", "title", "objectives", "concept_tags", "group",
@@ -433,12 +433,12 @@ def _specs() -> dict[str, PromptSpec]:
                                         "chapter_map_block", "entries_block", "batch_note",
                                         "material_block", "errors_block"),
             user_required_tokens=("units", "title", "materials", "输出 JSON"),
-            notes="含「教材＝权威真源」硬约束与 materials 溯源纪律；建议保留。"
-                  "（{material_discipline} 是程序按「本次有没有教材」注入的教材纪律块）",
+            notes="里面写了「一切以教材为准」的要求，建议保留。"
+                  "（{material_discipline} 是程序按本次有没有教材自动填进去的一段）",
         ),
         PromptSpec(
             "unit_content_draft", "单元内容起草",
-            "按教材段落起草单元讲解、事实句、例题、小思考与练习题。",
+            "按教材段落起草这一单元的讲解、要点、例题、小思考和练习题。",
             _unit_content_system(), U_UNIT_CONTENT,
             system_required_placeholders=("material_discipline",),
             system_required_tokens=("lecture", "taught_facts", "derivable", "worked_examples",
@@ -446,11 +446,11 @@ def _specs() -> dict[str, PromptSpec]:
             user_required_placeholders=("subject_id", "unit_title", "objectives", "concept_tags",
                                         "mats", "material_block", "errors_block"),
             user_required_tokens=("lecture", "taught_facts", "exercises", "输出 JSON"),
-            notes="含可答性（R35）与教材锚定（R37）硬要求；删掉会让内容被服务端整单元丢弃。",
+            notes="里面写了「讲得清、答得上」和「必须依据教材」的要求；删掉会让整个单元作废。",
         ),
         PromptSpec(
             "search_candidates", "联网候选整理",
-            "从检索原始结果中挑出相关候选（url 必须取自原始结果）。",
+            "从搜索结果里挑出相关的几条（网址必须来自原始结果）。",
             "[角色] 你是资料检索助手。\n" + JSON_DISCIPLINE,
             U_SEARCH_CANDIDATES,
             system_required_tokens=("输出 JSON",),

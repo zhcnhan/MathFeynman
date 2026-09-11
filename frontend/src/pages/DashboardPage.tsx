@@ -132,7 +132,7 @@ export default function Dashboard() {
               </button>
             </div>
           ) : (
-            <p className="empty">全部掌握或暂无内容。{dash.stats.mastered === 0 && "请先为库添加内容节点。"}</p>
+            <p className="empty">全部掌握或暂无内容。{dash.stats.mastered === 0 && "请先给这个学科导入教材或添加内容。"}</p>
           )}
           <h2>今日复习</h2>
           {dash.due_reviews.length === 0 ? (

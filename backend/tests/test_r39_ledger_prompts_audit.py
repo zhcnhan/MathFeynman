@@ -159,10 +159,11 @@ def test_r39_ironclad_1_material_not_absorbed_is_in_ledger(app_client, ai_provid
         entries = r.json().get("ledger") or []
         hits = [e for e in entries if e["category"] == "material"]
         assert hits, "材料未纳入必须在就近账目里可见"
-        assert any("未被注入" in e["reason"] and "健康度" in e["reason"] for e in hits), hits
-        assert all(e["category_label"] == "材料吸纳" for e in hits)
+        assert any("没读" in e["reason"] and "扫描" in e["reason"] for e in hits), hits
+        # R52 B：类别名改成用户能懂的（材料吸纳 → 读书情况）
+        assert all(e["category_label"] == "读书情况" for e in hits)
         # 总账页通道同样能看见
-        assert _ledger(app_client, sid, "material"), "总账页必须能筛到材料吸纳类别"
+        assert _ledger(app_client, sid, "material"), "总账页必须能筛到「读书情况」类别"
     finally:
         app_client.delete(f"/api/subjects/{sid}?hard=true")
 

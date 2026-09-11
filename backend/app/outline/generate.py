@@ -708,7 +708,7 @@ def _coverage_of(report, pack: dict, *, has_material: bool) -> dict:
     if not has_material:
         return {"status": "未覆盖", "material_bound": False, "grounded_facts": facts,
                 "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex, **basis,
-                "sources": [], "note": "本内容无教材依据（该学科没有引用材料，或材料未通过健康度检查）"}
+                "sources": [], "note": "这一节没有教材依据（本学科还没导入教材，或导入的是扫描件/图片版）"}
     if not getattr(report, "material_checked", False):
         return {"status": "未覆盖", "material_bound": False, "grounded_facts": facts,
                 "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex, **basis,

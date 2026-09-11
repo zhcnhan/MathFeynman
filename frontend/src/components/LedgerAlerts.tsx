@@ -28,7 +28,7 @@ const CAT_COLOR: Record<string, string> = {
 
 export default function LedgerAlerts({
   entries,
-  title = "本次操作记录（一切显性）",
+  title = "本次的记录",
   subjectId,
   compact = false,
 }: {
@@ -40,11 +40,11 @@ export default function LedgerAlerts({
   if (!entries || entries.length === 0) {
     return (
       <div className="dim" style={{ fontSize: 12 }}>
-        ✓ 本次操作没有丢弃 / 截断 / 降级 / 失败（账本为空）
+        ✓ 本次一切正常：没有用不上的内容，也没有出错的步骤
         {subjectId && (
           <>
             {" · "}
-            <Link to={`/ledger?subject_id=${subjectId}`}>查看总账</Link>
+            <Link to={`/ledger?subject_id=${subjectId}`}>查看记录</Link>
           </>
         )}
       </div>
@@ -66,7 +66,7 @@ export default function LedgerAlerts({
         </strong>
         {subjectId && (
           <Link to={`/ledger?subject_id=${subjectId}`} style={{ fontSize: 12 }}>
-            看全部账目 →
+            查看全部 →
           </Link>
         )}
       </div>
@@ -82,7 +82,7 @@ export default function LedgerAlerts({
           <div style={{ marginTop: 2 }}>{e.reason}</div>
           {(e.impact || e.remedy) && (
             <div className="dim" style={{ fontSize: 12 }}>
-              影响面：{e.impact || "—"} · 可否补救：{e.remedy || "—"}
+              影响：{e.impact || "—"} · 能不能补救：{e.remedy || "—"}
               {e.unit_id ? ` · 单元：${e.unit_id}` : ""}
             </div>
           )}
