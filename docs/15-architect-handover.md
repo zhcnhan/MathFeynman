@@ -338,3 +338,43 @@
 
 **下一棒注意**：R50 收完后出 **R51** 裁决即可；用户侧三件事**已交付**，无需重做。
 
+#### #3 补记二 · 2026-09-11 · R51 通过 + 一键启停 + 双远端同步
+
+**R51 验收通过（R50 放行）**：独立复跑 **501 passed + 2 skipped / 503，0 failed**；
+自写脚本 `.runtime/verify_r51.py` **11/11**——2000 秒后命名状态**只剩 1 条**（修复前 2000）、
+同秒 3 个调用点的键**都保留**、**4 次换名报因仍全含"已被占用"（R48 成果未回退）**、
+跨秒后序号归零且文件都在。→ **R41–R50 链条全部闭合，`NOTES §58` 挂账清空，欧拉无在办事项。**
+
+**一键启停（新，桌面已可用）**：
+
+- 位置：`_dsh-local\yanhui-launcher\YanHui-Start.ps1` / `YanHui-Stop.ps1`
+  （`_dsh-local/` 是 git 忽略区，**不入库**，与既有 DSH 启动器同处一地）；
+- 桌面快捷方式：**「启动颜回」「停止颜回」**（指向 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <脚本>`）；
+- **实测**：启动 6 秒返回、自动开浏览器、前后端各 HTTP 200；停止 5 秒返回、连子进程树一起停、端口全释放；
+  已在运行时会询问"重启还是只开页面"。
+
+**⚠️ 两条踩过的坑（写启动器的人必看）**：
+
+1. **绝不能把 `dev.ps1` 放进管道**（`| more` / `| tee` / `| Select-Object` 都会中招）：
+   它 `Start-Process` 拉起的子进程会**继承管道写端句柄**，调用方永远等不到"写端关闭"而**永久卡住**。
+   （我第一次就是这样卡了 300 秒，被 harness 强杀时连服务一起带走。）
+   **同时**：也不要用 `cmd /c "... | ..."` 去跑含 `timeout` 的脚本——`timeout` 需要控制台输入，
+   输入被重定向时会报 `ERROR: Input redirection is not supported`。
+2. **含中文的 `.ps1` 必须带 UTF-8 BOM**（否则 PS 5.1 按 ANSI 解码 → 中文乱码/语法错）；
+   **含中文的 `.cmd` 更糟**：cmd 按 OEM 代码页读批处理，中文会被**当成命令执行**（我实测报
+   `'file' 不是内部或外部命令`）。**结论：启动器用 `.ps1`（带 BOM），不要用 `.cmd`。**
+   另：`chcp 65001` 也不需要——直接让 PowerShell 输出中文即可（实测正常）。
+
+**双远端同步（已完成）**：
+
+- 远端：`origin` = `https://github.com/zhcnhan/YanHui.git`；`gitee` = `https://gitee.com/gengzisama/YanHui.git`
+  （**注意 Gitee 命名空间是 `gengzisama`**，不是 zhcnhan —— 我第一次测错了名空间得到 404）。
+- 本次推送：GitHub `4c66ef2..707ca20`（127 条）、Gitee `bc22176..707ca20`（136 条），
+  **两个远端现在都与本地 HEAD 一致（各欠 0 条）**。
+- 同步工具（用户自己的）：`D:\developments\toolbox\cli-tools\git-mirror`，
+  配置在 `~/.git-mirror/config.json`（已含 YanHui 条目）。用法：
+  `python -m git_mirror sync YanHui --from github --to gitee`（实测 exit 0）。
+- **代理**：全局 `http.proxy = http://192.168.3.4:7897`（**代理服务就跑在本机**，需自行启动）。
+  GitHub 必须走它；**Gitee 可直连**——但 git 的 `http.<url>.proxy = ""` **不能当免代理用**
+  （现代 git 会忽略空值），要免代理得**逐命令**：`git -c http.proxy= push gitee main`。
+
