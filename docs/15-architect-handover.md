@@ -378,3 +378,53 @@
   GitHub 必须走它；**Gitee 可直连**——但 git 的 `http.<url>.proxy = ""` **不能当免代理用**
   （现代 git 会忽略空值），要免代理得**逐命令**：`git -c http.proxy= push gitee main`。
 
+### #4 · 2026-09-11 收工 · 颜回（第三棒）· **明天从这里开始**
+
+**一句话**：**欧拉正在做 R52**（文案说人话 + 提示词页 A+C），已落一个提交 `2b442c2`（A 部分后端）＋
+一批**未提交**改动；**新需求 R54 工单（教材体检/图示认输/抽取修正）已写好待派**。
+
+**⚠️ 交接时的工作树状态（重要，别误commit）**：
+
+- HEAD = `2b442c2`（`feat(R52 A)`）；**工作树有欧拉 R52 的未提交改动**：
+  `backend/app/ai/prompt_templates.py`、`outline/draft.py`、`outline/generate.py`、`outline/materials.py`、
+  `service/ledger.py`、`frontend/src/App.tsx`、`components/{LedgerAlerts,MaterialBudgetPanel,MathInput}.tsx`、
+  `pages/{AiTracePage,DashboardPage,FeynmanHistoryPage,LedgerPage,OutlinePage,ReviewPage,SettingsPage,SubjectsPage}.tsx`
+  ＋ 新增未跟踪 `backend/tests/ui_copy_guard.py`。
+  → **这是欧拉的活，别动、别提交、别 reset**（架构侧只改 `docs/` 与 `.runtime/`）。
+- `content/stages|subjects/s-f2decfcf/` 是**用户自己的内容**（他**明确说是他自己删的**，
+  架构侧曾误判为丢失并从 `_backups` 恢复，**已成事实**；**只读、不要删、不要再动它**）。
+
+**明天（周六）的行动清单 —— 按顺序**：
+
+1. **收 R52 的工单汇报**（用户会转达）→ 架构侧独立复跑 + 自写脚本验收 → 出 **R53 裁决**。
+   验收重点：**界面上不再出现 `R\d+` / `§` / `schema` / 字段名 / 术语**（欧拉已加 `ui_copy_guard.py`，
+   但**不许只信它**——架构侧要自己扫一遍渲染文本）；**A+C 的"共用 N 个"数字与后端一致**；
+   **真实承诺没被改软**（"调小只是分更多批、一章都不会少""到顶会明说哪几章没读"）。
+2. **派 R54**（工单已就绪：`.runtime/EULER_TICKET_R54.md`）→ 完成后出 **R55 裁决**。
+   验收必须包含**接地审计前后对比**（基线：`audit_material_binding.py --dir content\stages\s-f2decfcf
+   --material content\subjects\s-f2decfcf\materials\researchgate-17551026c7.md`
+   → **taught_facts 11/11、basis.quote 5/5、整句 1/44、内含逐字片段 18/44**，不许降）。
+3. **R52/R54 都落地后**，再把桌面两份交付物（`颜回-能力地图.html`、`颜回-验收清单-走查用.html`）
+   按**新文案**复核一遍——里面的术语/数字若与改后不一致，同步更新。
+4. **用户侧**：真人走查（桌面 `颜回-验收清单-走查用.html`）；走查问题按"**新裁决 → 新工单**"流程走。
+
+**R54 立案的实测数据（工单里已写，这里留一份便于复述）**：
+
+- 用户教材 126 页 / 图片 47 张（20 页含图）
+- **私用区垃圾字符 17,607 个 = 6.47%**（`U+1001BA` 目录点线 10337、`U+1001B0` 书名间隔号 6789、
+  `U+100170` 作者分隔符 371 …）
+- **字母/汉字被插空格 1,647/4,673 行 = 35%**（中文被拆开 953 行）
+- 全角数字 15,551（半角 279）
+- **公式符号几乎为零**（`$`=0、根号/积分/求和=3）→ 这本书公式基本都是图片
+- **引文尺子仍正确**（6 项实测全过）→ "逐字可查"没坏；**架构维持"发提取文本、不发文件"**
+
+**给下一棒的纪律提醒（累积）**：
+
+1. 工单与汇报**禁用 Markdown 表格**（用户复制粘贴会错行）——docs/13 §2。
+2. **禁止在欧拉正在工作的活动工作树里做 `stash`/`checkout`/`reset`**（本任因此丢过一次自己的工作树改动）。
+3. **对自己的断言也保持怀疑**：本任 5 次"假失败"全是自己的样本/断言写错
+   （短条目没加页标记、`batch_chars` 当整数、glob 排序把 `-02` 当第 1 个、归档清单自己也叫 `.txt`、
+   预置后文件数是 5 不是 4）。**FAIL 出现先怀疑自己的口径。**
+4. **不要凭一次快照下"某功能不存在"的结论**（本任据此误判过一次 R38/R39 未开工）。
+5. 界面文案**一律说人话**（docs/13 §2 新增铁律）。
+
