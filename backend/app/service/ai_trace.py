@@ -107,8 +107,15 @@ def _next_name(entry_dir: Path, stamp: str, call_name: str) -> tuple[Path, str, 
     - 同秒第 n 次 → ``<stamp>-<call_name>-02.txt``、``-03``…（序号单调，不覆盖）；
     - 目标名已被占用（跨进程/预置文件）→ 序号继续自增**换名**，并在冲突说明里写明原因；
       **R48 A**：该原因**记在该秒该调用点上**，本秒后续每次换名都沿用（不再退化成"同秒多次"）。
+    - **R50 A（上界）**：进来先**只保留"当前秒"的键**——键是 `(秒, 调用点)`，跨秒即丢，
+      记忆量恒定为"当前秒的调用点数"（不再 `86400 × 调用点数/天` 无界增长）；
+      **同一秒内的序号与换名报因原样保留**（正确性所在，R48 的"报因不退化"不受影响）。
     """
     with _SEQ_LOCK:
+        # R50 A：一行上界——两个字典都只留 stamp 等于本次的项（同秒项一律不动）
+        for _d in (_SEQ_BY_KEY, _COLLISION_BY_KEY):
+            for _k in [k for k in _d if k[0] != stamp]:
+                _d.pop(_k, None)
         key = (stamp, call_name)
         seq = _SEQ_BY_KEY.get(key, 0)
         base = f"{stamp}-{call_name}"
