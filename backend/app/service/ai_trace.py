@@ -87,7 +87,17 @@ def _preview(text: str, *, chars: int = PREVIEW_CHARS) -> str:
 # 文件名仍保持 `<时间>-<调用点>[-序号].txt` 的可读形状（用户靠它肉眼找）。
 _SEQ_LOCK = threading.Lock()
 _SEQ_BY_KEY: dict[tuple[str, str], int] = {}
+# **R48 A**：本秒该调用点的"换名报因"记忆——一旦确认"目标名被占用"，**该秒内每次**换名都用同一原因
+# （否则第 2–4 次只剩通用文案"同秒多次"，把更重要的"被占用"丢掉）。
+_COLLISION_BY_KEY: dict[tuple[str, str], str] = {}
 _MAX_NAME_TRIES = 200
+
+
+def _reset_naming_state() -> None:
+    """清空"同秒序号 + 换名报因"进程内记忆（**仅供测试**复位，避免用例之间互相污染）。"""
+    with _SEQ_LOCK:
+        _SEQ_BY_KEY.clear()
+        _COLLISION_BY_KEY.clear()
 
 
 def _next_name(entry_dir: Path, stamp: str, call_name: str) -> tuple[Path, str, str]:
@@ -95,7 +105,8 @@ def _next_name(entry_dir: Path, stamp: str, call_name: str) -> tuple[Path, str, 
 
     - 首次（该秒该调用点第 1 次）→ ``<stamp>-<call_name>.txt``（最可读）；
     - 同秒第 n 次 → ``<stamp>-<call_name>-02.txt``、``-03``…（序号单调，不覆盖）；
-    - 目标名已被占用（跨进程/预置文件）→ 序号继续自增**换名**，并在冲突说明里写明原因。
+    - 目标名已被占用（跨进程/预置文件）→ 序号继续自增**换名**，并在冲突说明里写明原因；
+      **R48 A**：该原因**记在该秒该调用点上**，本秒后续每次换名都沿用（不再退化成"同秒多次"）。
     """
     with _SEQ_LOCK:
         key = (stamp, call_name)
@@ -105,9 +116,11 @@ def _next_name(entry_dir: Path, stamp: str, call_name: str) -> tuple[Path, str, 
         if seq == 0 and not (entry_dir / first).exists():
             _SEQ_BY_KEY[key] = 1
             return entry_dir / first, base, ""
-        why = ""
+        why = _COLLISION_BY_KEY.get(key, "")   # R48 A：本秒已确认的占用原因（有则沿用）
         if seq == 0:
             why = f"目标文件名已被占用（{first}，可能是另一进程写的或人为预置），已换名以免覆盖"
+            _SEQ_BY_KEY[key] = 1               # R48 A：先置位（并记住报因）——本秒后续写入不再当作"首次"
+            _COLLISION_BY_KEY[key] = why
         n = max(1, seq)
         while n <= _MAX_NAME_TRIES:
             name = f"{base}-{n + 1:02d}.txt"
@@ -438,8 +451,13 @@ def _meta_block(text: str) -> str:
 # ---------------------------------------------------------------------------
 # 保留期清理（清理也要记账——"不静默消失"）
 # ---------------------------------------------------------------------------
-def cleanup_old(db, *, keep_days_override: int | None = None) -> dict:
-    """按保留期清理审计与账本文件：**先记账（要清理哪几条），再删除**。"""
+def cleanup_old(db, *, keep_days_override: int | None = None,
+                trigger: str = "手动") -> dict:
+    """按保留期清理审计与账本文件：**先记账（要清理哪几条），再删除**。
+
+    ``trigger``（**R48 B**）：本次清理的**触发者**（``启动`` / ``定时`` / ``手动``），写进账目
+    ``detail.trigger``——事后能分辨"这次是谁清的"；账目文案本身不变。
+    """
     import time
 
     days = keep_days_override if keep_days_override is not None else keep_days()
@@ -455,7 +473,8 @@ def cleanup_old(db, *, keep_days_override: int | None = None) -> dict:
             + ("…" if len(doomed) > 20 else "")
             + "（账本留痕，不静默消失；过程数据本身按要求过期清理）",
             impact=ledger.SCOPE_GLOBAL, remedy=ledger.REMEDY_NO,
-            detail={"files": [p.name for p in doomed], "keep_days": days},
+            detail={"files": [p.name for p in doomed], "keep_days": days,
+                    "trigger": str(trigger or "手动")},
         )
     removed = []
     for p in doomed:
@@ -464,7 +483,7 @@ def cleanup_old(db, *, keep_days_override: int | None = None) -> dict:
             removed.append(p.name)
         except Exception:
             pass
-    return {"removed": removed, "count": len(removed), "keep_days": days}
+    return {"removed": removed, "count": len(removed), "keep_days": days, "trigger": trigger}
 
 
 # ---------------------------------------------------------------------------
@@ -490,20 +509,22 @@ def clean_interval_hours() -> float:
     return v if v > 0 else DEFAULT_CLEAN_INTERVAL_HOURS
 
 
-def cleanup_once(reason: str = "定时") -> dict:
+def cleanup_once(reason: str = "定时", *, keep_days_override: int | None = None) -> dict:
     """跑一次保留期清理：启动 / 定时 / 手动三处**共用同一实现**（不新建第二套清理）。
 
+    ``reason``（**R48 B**）作为 ``trigger`` 落进账目 ``detail``（``启动`` / ``定时`` / ``手动``）。
     异常一律**只 warning**（不清就下次再清），**绝不抛**——审计清理不得影响主流程。
     """
     try:
-        out = cleanup_old(None)
+        out = cleanup_old(None, keep_days_override=keep_days_override, trigger=reason)
         if out.get("count"):
             logger.info("审计保留期清理（%s）: 删除 %s 个文件（保留期 %s 天，已记入总账）",
                         reason, out["count"], out.get("keep_days"))
         return out
     except Exception as e:
         logger.warning("审计保留期清理失败（%s，不影响主流程，下次再清）: %s", reason, e)
-        return {"removed": [], "count": 0, "keep_days": keep_days(), "error": str(e)}
+        return {"removed": [], "count": 0, "keep_days": keep_days(),
+                "trigger": reason, "error": str(e)}
 
 
 class PeriodicCleanup:

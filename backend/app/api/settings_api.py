@@ -67,6 +67,9 @@ class CleanupBody(BaseModel):
 
 @router.post("/ai-traces/cleanup")
 def cleanup_traces(body: CleanupBody | None = None, db: Session = Depends(get_db)) -> dict:
-    """按保留期清理审计全文文件：**先记账（清理了哪几条），再删除**（不静默消失）。"""
+    """按保留期清理审计全文文件：**先记账（清理了哪几条），再删除**（不静默消失）。
+
+    **R48 B**：手动入口也走 `cleanup_once`（与启动/定时**同一实现**），账目 `detail.trigger="手动"`。
+    """
     del db
-    return ai_trace.cleanup_old(None, keep_days_override=(body.keep_days if body else None))
+    return ai_trace.cleanup_once("手动", keep_days_override=(body.keep_days if body else None))

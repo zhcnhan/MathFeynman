@@ -39,11 +39,9 @@ def trace_dir(tmp_path, monkeypatch):
     """审计目录 → 临时目录（并清掉同秒序号记忆）。"""
     d = tmp_path / "ai_trace"
     monkeypatch.setenv("MF_AI_TRACE_DIR", str(d))
-    with ai_trace._SEQ_LOCK:
-        ai_trace._SEQ_BY_KEY.clear()
+    ai_trace._reset_naming_state()
     yield d
-    with ai_trace._SEQ_LOCK:
-        ai_trace._SEQ_BY_KEY.clear()
+    ai_trace._reset_naming_state()
 
 
 def _ledger_cleanups() -> list[dict]:

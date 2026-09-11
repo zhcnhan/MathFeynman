@@ -41,11 +41,9 @@ def trace_dir(tmp_path, monkeypatch):
             return FIXED if tz else FIXED.replace(tzinfo=None)
 
     monkeypatch.setattr(ai_trace, "datetime", _Frozen)
-    with ai_trace._SEQ_LOCK:
-        ai_trace._SEQ_BY_KEY.clear()
+    ai_trace._reset_naming_state()   # R48 A：序号 + 换名报因一并清（否则跨用例互相污染）
     yield d
-    with ai_trace._SEQ_LOCK:
-        ai_trace._SEQ_BY_KEY.clear()
+    ai_trace._reset_naming_state()
 
 
 def _write(i: int, *, subject_id: str) -> dict:
@@ -73,11 +71,19 @@ def _naming_lines(path: str) -> dict:
     return out
 
 
-def _ledger_renames() -> list[dict]:
+def _ledger_renames(*, subject_id: str = "") -> list[dict]:
+    """换名账目；``subject_id`` 给了就只取该学科的。
+
+    **R48 A 补**：R44 A 的同期用例与本模块**共用同一个冻结时间戳与调用点**
+    （`20260304T050607Z-answer_question`），只按 `kind` 过滤会**跨用例串账** →
+    单文件/部分选择运行时计数会虚高（全量套件里因为 `test_r44_b_*` 的库重置而侥幸通过）。
+    账目上带了 `subject_id`，按它过滤即可精确隔离。
+    """
     with SessionLocal() as db:
-        rows = (db.query(models.ContentLedger)
-                .filter(models.ContentLedger.category == "other")
-                .order_by(models.ContentLedger.id.desc()).all())
+        q = db.query(models.ContentLedger).filter(models.ContentLedger.category == "other")
+        if subject_id:
+            q = q.filter(models.ContentLedger.subject_id == subject_id)
+        rows = q.order_by(models.ContentLedger.id.desc()).all()
         return [{"id": int(r.id), "reason": r.reason or "", "detail": dict(r.detail_json or {})}
                 for r in rows if (r.detail_json or {}).get("kind") == "trace_name_renamed"]
 
@@ -112,7 +118,7 @@ def test_r46_a1_first_file_says_no_rename_second_says_original_and_actual(app_cl
         assert n["原拟文件名"] == f"{BASE}.txt", n
         assert "已改名" in n["命名说明"], n
     # **总账那条仍保留**（文件正文是第二道可见性，不是替代品），且文案同源
-    renames = _ledger_renames()
+    renames = _ledger_renames(subject_id="r46a1")
     assert len(renames) == 4, [r["reason"] for r in renames]
     assert all(r["detail"].get("reason_in_body") is True for r in renames)
     assert any(_naming_lines(second["trace_path"])["命名说明"] in r["reason"] for r in renames), \

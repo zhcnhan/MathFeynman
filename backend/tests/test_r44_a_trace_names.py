@@ -42,11 +42,9 @@ def trace_dir(tmp_path, monkeypatch):
             return FIXED if tz else FIXED.replace(tzinfo=None)
 
     monkeypatch.setattr(ai_trace, "datetime", _Frozen)
-    with ai_trace._SEQ_LOCK:
-        ai_trace._SEQ_BY_KEY.clear()
+    ai_trace._reset_naming_state()   # R48 A：序号 + 换名报因一并清（否则跨用例互相污染）
     yield d
-    with ai_trace._SEQ_LOCK:
-        ai_trace._SEQ_BY_KEY.clear()
+    ai_trace._reset_naming_state()
 
 
 def _write(call_name: str, i: int, *, subject_id: str = "r44", **kw) -> dict:
