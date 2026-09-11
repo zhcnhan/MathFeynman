@@ -35,6 +35,9 @@ type PromptItem = {
   user_required_placeholders?: string[];
   user_required_tokens?: string[];
   placeholders: string[];
+  /** R52 A2（后端只读统计）：与其它调用点"共用同一份模板文本"的个数（0＝本调用点独有） */
+  system_shared_with?: number;
+  user_shared_with?: number;
 };
 
 function DiffView({ title, diff }: { title: string; diff: DiffLine[] }) {
@@ -76,8 +79,9 @@ function DiffView({ title, diff }: { title: string; diff: DiffLine[] }) {
 export default function PromptsPage() {
   const [items, setItems] = useState<PromptItem[]>([]);
   const [active, setActive] = useState<string>("");
-  // R42 C2：两个字段各自编辑（system / user）
-  const [field, setField] = useState<"system" | "user">("system");
+  // R52 A1：**默认显示 user 模板**——它才是每个调用点各不相同的"这次具体干什么活"；
+  //          各调用点的 system 往往共用同一份，先看 system 会以为"提示词都是同一个"。
+  const [field, setField] = useState<"system" | "user">("user");
   const [draft, setDraft] = useState("");
   const [draftUser, setDraftUser] = useState("");
   const [err, setErr] = useState("");
@@ -94,6 +98,8 @@ export default function PromptsPage() {
       if (cur) {
         setDraft(cur.raw_template);
         setDraftUser(cur.raw_user_template ?? "");
+        // 该调用点没有 user 模板时，别把编辑器停在空的 user 栏上
+        if (field === "user" && !cur.editable_fields.includes("user")) setField("system");
       }
     } catch (e) {
       setErr((e as Error).message);
@@ -131,7 +137,7 @@ export default function PromptsPage() {
       // 只提交当前字段（另一字段保持原样；两个字段都能改 → R42 C2）
       const body = field === "user" ? { user: draftUser } : { system: draft };
       await api.put(`/prompts/${cur.call_name}`, body);
-      setMsg(`已保存（${field}）：下一次生成即使用新提示词（可在「AI 对话记录」里对照）。`);
+      setMsg("已保存：下一次生成就用新提示词（可在「AI 对话记录」里对照）。");
       await load(cur.call_name);
     } catch (e) {
       setErr((e as Error).message); // 中文拒存原因（缺占位符/硬约束）
@@ -142,8 +148,8 @@ export default function PromptsPage() {
 
   const resetOne = async (f?: "system" | "user") => {
     if (!cur) return;
-    const what = f === "user" ? "user 模板" : f === "system" ? "system 模板" : "整条提示词";
-    if (!window.confirm(`把「${cur.label}」的**${what}**恢复为默认？自定义内容会删除（已记入总账）。`))
+    const what = f === "user" ? "「每次具体怎么干活」那一份" : f === "system" ? "「角色与总纪律」那一份" : "整条";
+    if (!window.confirm(`把「${cur.label}」的${what}恢复成默认？你改过的内容会删除（会记进「记录」里）。`))
       return;
     setBusy(true);
     try {
@@ -158,7 +164,7 @@ export default function PromptsPage() {
   };
 
   const resetAll = async () => {
-    if (!window.confirm("把**全部**提示词恢复为默认？所有自定义内容都会删除（已记入总账）。")) return;
+    if (!window.confirm("把全部提示词恢复成默认？你改过的内容都会删除（会记进「记录」里）。")) return;
     setBusy(true);
     try {
       const r = await api.post<{ count: number }>("/prompts/reset-all", {});
@@ -173,10 +179,11 @@ export default function PromptsPage() {
 
   return (
     <div className="settings-page">
-      <h1>提示词（所有发往模型的模板都可在程序内修改）</h1>
+      <h1>提示词（可以自己改）</h1>
       <div className="dim" style={{ fontSize: 13 }}>
-        左侧是全部调用点（中文名 + 用途）。改动**立即生效**；随时可恢复默认。带「必填」标记的占位符与
-        硬约束**删掉会拒绝保存**（否则改坏提示词会让功能静默失效）。
+        这里列的是程序每次问 AI 时用的原话。左边挑一处，右边直接改，保存后**下一次就生效**；
+        改坏了随时能恢复默认。带「必填」标记的花括号是程序往里填内容的位置（比如这次的题目、学生的回答），
+        删掉就存不了——这是防止改坏之后功能悄悄失灵。
       </div>
       {err && <div className="banner error">{err}</div>}
       {msg && <div className="banner ok">{msg}</div>}
@@ -214,40 +221,58 @@ export default function PromptsPage() {
             <p className="empty">请选择左侧调用点。</p>
           ) : (
             <>
-              <h2 style={{ marginTop: 0 }}>{cur.label}（{cur.call_name}）</h2>
+              <h2 style={{ marginTop: 0 }}>{cur.label}</h2>
               <div className="dim" style={{ fontSize: 12 }}>
                 {cur.purpose}
                 <br />
-                当前值：
+                现在这份：
                 {field === "user"
-                  ? (cur.user_is_default ? "**默认**" : "**你已修改**")
-                  : (cur.system_is_default ? "**默认**" : "**你已修改**")}
+                  ? (cur.user_is_default ? "默认" : "你改过")
+                  : (cur.system_is_default ? "默认" : "你改过")}
                 {cur.updated_at ? ` · 上次修改：${cur.updated_at.replace("T", " ").replace("+00:00", " UTC")}` : ""}
                 {cur.notes ? ` · 提示：${cur.notes}` : ""}
               </div>
-              {/* R42 C2：字段切换（system / user 都可改） */}
-              <div className="input-row" style={{ gap: 6, marginTop: 6 }}>
-                <button className={field === "system" ? "depth active" : "depth"} disabled={busy}
-                        onClick={() => setField("system")}>
-                  system 模板{cur.system_is_default ? "" : "（已改）"}
-                </button>
+              {/* R52 A1：字段按钮各自写明性质（哪个"每个调用点都不一样"、哪个"多处共用"） */}
+              <div className="input-row" style={{ gap: 6, marginTop: 6, alignItems: "stretch" }}>
                 {cur.editable_fields.includes("user") && (
                   <button className={field === "user" ? "depth active" : "depth"} disabled={busy}
-                          onClick={() => setField("user")}>
-                    user 模板{cur.user_is_default ? "" : "（已改）"}
+                          onClick={() => setField("user")}
+                          style={{ textAlign: "left", lineHeight: 1.35 }}>
+                    <div>这次具体怎么干活{cur.user_is_default ? "" : "（已改）"}</div>
+                    <div className="dim" style={{ fontSize: 11 }}>
+                      每处都不一样{(cur.user_shared_with ?? 0) > 0 ? `（与 ${cur.user_shared_with} 处相同）` : ""}
+                    </div>
                   </button>
                 )}
+                <button className={field === "system" ? "depth active" : "depth"} disabled={busy}
+                        onClick={() => setField("system")}
+                        style={{ textAlign: "left", lineHeight: 1.35 }}>
+                  <div>角色与总纪律{cur.system_is_default ? "" : "（已改）"}</div>
+                  <div className="dim" style={{ fontSize: 11 }}>
+                    {(cur.system_shared_with ?? 0) > 0
+                      ? `${(cur.system_shared_with ?? 0) + 1} 处共用同一份`
+                      : "只有这一处在用"}
+                  </div>
+                </button>
               </div>
+              {/* R52 A2：把"共用"这件事直接说白（N 由后端算）——共用文本 ≠ 改一处全变 */}
+              {field === "system" && (
+                <div className="dim" style={{ fontSize: 12, marginTop: 6 }}>
+                  {(cur.system_shared_with ?? 0) > 0
+                    ? `这份「角色与总纪律」和另外 ${cur.system_shared_with} 处用的是同一段文字——在这里改，只影响「${cur.label}」这一处。`
+                    : "这份「角色与总纪律」只有这一处在用。"}
+                </div>
+              )}
               {(field === "user" ? cur.user_required_placeholders ?? [] : cur.required_placeholders).length > 0 && (
                 <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
-                  必填占位符（删掉会拒存）：
+                  必须留着的位置（删掉就存不了，花括号里是程序填内容的地方）：
                   {(field === "user" ? cur.user_required_placeholders ?? [] : cur.required_placeholders)
                     .map((x) => `{${x}}`).join(" ")}
                 </div>
               )}
               {(field === "user" ? cur.user_required_tokens ?? [] : cur.required_tokens).length > 0 && (
                 <div className="dim" style={{ fontSize: 12 }}>
-                  必留硬约束（删掉会拒存）：
+                  必须留着的要求（删掉就存不了）：
                   {(field === "user" ? cur.user_required_tokens ?? [] : cur.required_tokens).join(" / ")}
                 </div>
               )}
@@ -268,27 +293,27 @@ export default function PromptsPage() {
               />
               <div className="input-row" style={{ gap: 8, marginTop: 6 }}>
                 <button className="primary" disabled={busy} onClick={() => void save()}>
-                  保存（立即生效）
+                  保存（下一次就生效）
                 </button>
                 <button className="ghost" disabled={busy} onClick={() => void resetOne()}>
-                  恢复默认（整条）
+                  两处都恢复默认
                 </button>
                 <button className="ghost" disabled={busy} onClick={() => void resetOne(field)}>
-                  恢复默认（仅 {field}）
+                  只恢复这一份
                 </button>
                 <button className="ghost" disabled={busy}
                         onClick={() => (field === "user"
                           ? setDraftUser(cur.default_raw_user_template ?? "")
                           : setDraft(cur.default_raw_template))}>
-                  载入默认文本（不保存）
+                  填入默认文字（先不保存）
                 </button>
               </div>
-              <DiffView title={field === "user" ? "user" : "system"}
+              <DiffView title={field === "user" ? "这次具体怎么干活" : "角色与总纪律"}
                         diff={field === "user" ? cur.user_diff : cur.system_diff} />
               {cur.editable_fields.includes("user") && (
                 <details style={{ marginTop: 8 }}>
                   <summary className="dim">
-                    {field === "user" ? "system（只读对照）" : "user（只读对照）"}
+                    {field === "user" ? "另一份（角色与总纪律，只看不改）" : "另一份（这次具体怎么干活，只看不改）"}
                   </summary>
                   <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, maxHeight: 240, overflow: "auto" }}>
                     {field === "user" ? cur.system : cur.user}

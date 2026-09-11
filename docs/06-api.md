@@ -93,7 +93,7 @@
 | GET | `/ledger/cats` | 类别计数（筛选项徽标） |
 | GET | `/ledger/snapshot/{subject_id}` | 某学科账目快照（就地提示的"看全部"入口） |
 | POST | `/ledger` | 手动补记一条（前端动作也可入账；类别非法 → 中文 422） |
-| GET | `/prompts` | **全部提示词调用点**：中文名 + 用途 + `is_default` + `updated_at` + 当前值 + 与默认的差异 `system_diff` + 必填占位符/硬约束清单；`changed` 列出已改的调用点 |
+| GET | `/prompts` | **全部提示词调用点**：中文名 + 用途 + `is_default` + `updated_at` + 当前值 + 与默认的差异 `system_diff` + 必填占位符/硬约束清单；`changed` 列出已改的调用点。**R52 A2（只读新增字段，不改既有字段）**：`system_shared_with` / `user_shared_with` ＝ 与**其它**调用点"当前模板文本完全相同"的个数（0＝本调用点独有）；实测 15 个调用点只有 6 份不同 system（最大一组 10 处共用）、15 份 user 互不相同 |
 | GET | `/prompts/{call_name}` | 单条（含 `raw_template` = **可编辑模板原文**（带 `{占位符}`）；`default_system` = 渲染后的可读默认值；**R42 C2**：`raw_user_template`/`default_raw_user_template`/`user_required_placeholders`/`user_required_tokens` —— **user 模板同样可编辑**） |
 | PUT | `/prompts/{call_name}` | 保存（body `{system?, user?}`；**两者都可改**，未给的字段保持原样）；**改动立即生效**；缺必填占位符/硬约束、或模板花括号不合法 → **中文 422 拒绝保存**；成功 → 记入账本 |
 | POST | `/prompts/{call_name}/reset` | 恢复默认（body `{field: ""\|system\|user}`）——**R42 C2**：可按字段恢复（只回退 user 不影响 system） |

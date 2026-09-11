@@ -29,6 +29,39 @@ def _row(db, call_name: str) -> models.PromptOverride | None:
     return db.get(models.PromptOverride, call_name)
 
 
+def _current_templates(db) -> dict[str, dict[str, str]]:
+    """全部调用点**当前可编辑的模板原文**（有自定义用自定义，否则用内置默认）。
+
+    **R52 A2** 用：判断"这份模板还被哪些调用点共用"。口径与编辑器里显示的那份一致
+    （空白覆盖视同默认，与 `_view` 的 `*_is_default` 判定同源）。
+    """
+    out: dict[str, dict[str, str]] = {}
+    for name, spec in reg.PROMPTS.items():
+        row = _row(db, name)
+        sys_custom = bool(row is not None and (row.system_text or "").strip())
+        usr_custom = bool(row is not None and (row.user_text or "").strip())
+        out[name] = {
+            "system": row.system_text if sys_custom else spec.system,
+            "user": row.user_text if usr_custom else (spec.user or ""),
+        }
+    return out
+
+
+def _shared_counts(db, call_name: str) -> tuple[int, int]:
+    """返回 ``(system 共用数, user 共用数)``——与**其它**调用点文本完全相同的个数（**只读统计**）。
+
+    **R52 A2**：界面上要说明"这份 system 模板与另外 N 个调用点共用同一文本"，
+    N 由后端算（前端只渲染）。注意语义：**共用同一份文本 ≠ 改一处全变**——
+    每个调用点的模板各存各的，改这里只影响当前调用点。
+    """
+    texts = _current_templates(db)
+    mine = texts.get(call_name) or {"system": "", "user": ""}
+    sys_n = sum(1 for n, t in texts.items() if n != call_name and t["system"] == mine["system"])
+    usr_n = sum(1 for n, t in texts.items()
+                if n != call_name and mine["user"] and t["user"] == mine["user"])
+    return sys_n, usr_n
+
+
 def _view(db, call_name: str) -> dict:
     spec = reg.PROMPTS.get(call_name)
     if spec is None:
@@ -40,6 +73,7 @@ def _view(db, call_name: str) -> dict:
     usr_custom = bool(row is not None and (row.user_text or "").strip())
     cur_system = row.system_text if sys_custom else default_system
     cur_user = row.user_text if usr_custom else default_user
+    sys_shared, usr_shared = _shared_counts(db, call_name)   # R52 A2：只读统计（一次算好）
     return {
         "call_name": call_name,
         "label": spec.label,
@@ -61,6 +95,11 @@ def _view(db, call_name: str) -> dict:
         "user_is_default": not usr_custom,
         "user_diff": reg.diff_lines(default_user, cur_user),
         "editable_fields": ["system"] + (["user"] if spec.user else []),
+        # **R52 A2（只读统计字段，不改任何既有字段/结构）**：
+        #   与其它调用点"共用同一份模板文本"的个数（0 ＝ 本调用点独有）。
+        #   界面据此显示"这份 system 模板与另外 N 个调用点共用同一文本——改这里只影响当前调用点"。
+        "system_shared_with": sys_shared,
+        "user_shared_with": usr_shared,
         # 兼容/汇总字段：整条是否全默认 = 界面"是否默认"列
         "is_default": (not sys_custom) and (not usr_custom),
         "updated_at": _iso(row.updated_at) if row is not None else "",
