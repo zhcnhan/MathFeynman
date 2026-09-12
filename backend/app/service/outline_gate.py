@@ -284,7 +284,28 @@ def unit_content_status(node_id: str) -> dict:
 
     out = {"exists": False, "usable": False, "reason_zh": "这个单元还没有生成内容",
            "missing": "content", "explanation_chars": 0, "exercises": 0, "taught_facts": 0,
-           "asks": 0, "dropped_exercises": 0, "title": ""}
+           "asks": 0, "dropped_exercises": 0, "title": "",
+           # R55 B：内容基本都在图里而没出稿（与覆盖账同源）
+           "figure_unavailable": False}
+    # 覆盖记录（同源：大纲单元的覆盖记录）——**先读**，因为"整节靠图 → 没出稿"的单元
+    # 根本不在内容库里，只有覆盖记录说得清原因。
+    subject_id = None
+    cov: dict = {}
+    head, sep, _ = str(node_id).partition(".")
+    if sep:
+        subject_id = head
+    if subject_id:
+        outline = _outline_of(subject_id)
+        unit = (outline.by_id().get(node_id) if outline is not None else None)
+        if unit is not None:
+            cov = dict((getattr(unit, "meta", None) or {}).get("coverage") or {})
+            out["dropped_exercises"] = int(cov.get("dropped_exercises") or 0)
+            out["dropped_facts"] = int(cov.get("dropped_facts") or 0)
+    if cov.get("figure_unavailable"):
+        out["figure_unavailable"] = True
+        out["reason_zh"] = str(cov.get("note")
+                               or "这一节的内容基本都在图里，系统读不到图片内容，"
+                                  "按「不编造」的规矩没有生成内容")
     loaded = get_library().by_id.get(node_id)
     if loaded is None:
         return out
@@ -298,21 +319,15 @@ def unit_content_status(node_id: str) -> dict:
     out.update({"exists": True, "title": str(getattr(doc, "title", "") or ""),
                 "explanation_chars": len(explanation), "exercises": exercises,
                 "taught_facts": facts, "asks": asks})
-    # 丢弃计数（同源：大纲单元的覆盖记录）
-    subject_id = None
-    head, sep, _ = str(node_id).partition(".")
-    if sep:
-        subject_id = head
-    if subject_id:
-        outline = _outline_of(subject_id)
-        unit = (outline.by_id().get(node_id) if outline is not None else None)
-        if unit is not None:
-            cov = dict((getattr(unit, "meta", None) or {}).get("coverage") or {})
-            out["dropped_exercises"] = int(cov.get("dropped_exercises") or 0)
-            out["dropped_facts"] = int(cov.get("dropped_facts") or 0)
     dropped_facts = int(out.get("dropped_facts") or 0)
     if not explanation and not exercises:
-        out.update({"missing": "content", "reason_zh": "这个单元还没有讲解和练习，先生成内容才能开始学"})
+        # **R55 B**：这一节的内容基本都在图里（系统读不到图）→ 说清**真正的原因**，
+        # 不能只说"还没有内容"（那会让人以为是漏生成，反复点生成也是白点）。
+        if out["figure_unavailable"]:
+            out.update({"missing": "content", "reason_zh": out["reason_zh"]})
+        else:
+            out.update({"missing": "content",
+                        "reason_zh": "这个单元还没有讲解和练习，先生成内容才能开始学"})
     elif not explanation:
         out.update({"missing": "explanation", "reason_zh": "这个单元还没有讲解正文，先生成讲解才能开始学"})
     elif exercises < MIN_EXERCISES:

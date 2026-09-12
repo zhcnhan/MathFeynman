@@ -1848,15 +1848,25 @@ class SessionService:
 
         res = outline_gate.resolve_subject_unit(db, node_id)
         subject_id, unit_id = (res if res is not None else ("", ""))
+        # **R55 B**：整节内容都在图里 → 单元**本来就不会有内容文件**。这时说"还没有生成"
+        # 会让人以为是漏生成、反复点生成也是白点；改用覆盖记录里的**真正原因**（同源）。
+        status = outline_gate.unit_content_status(node_id)
+        if status.get("figure_unavailable"):
+            reason = str(status.get("reason_zh") or "")
+        else:
+            reason = ("这个单元还没有生成内容（或者内容已经不在了）。"
+                      "先生成内容，才能开始学。")
         return {"kind": "no_content", "missing": "content",
-                "reason_zh": "这个单元还没有生成内容（或者内容已经不在了）。"
-                             "先生成内容，才能开始学。",
+                "reason_zh": reason,
                 "node_id": node_id, "node_title": node_id,
                 "subject_id": subject_id, "unit_id": unit_id,
                 "can_generate": bool(subject_id and unit_id),
-                "content_status": {"exists": False, "usable": False, "missing": "content",
-                                   "reason_zh": "这个单元还没有生成内容",
-                                   "exercises": 0, "taught_facts": 0}}
+                "content_status": {"exists": bool(status.get("exists")),
+                                   "usable": bool(status.get("usable")),
+                                   "missing": str(status.get("missing") or "content"),
+                                   "reason_zh": str(status.get("reason_zh") or ""),
+                                   "exercises": int(status.get("exercises") or 0),
+                                   "taught_facts": int(status.get("taught_facts") or 0)}}
 
     def _node_or_gate(self, db: Session, sess: models.Session) -> tuple[NodeDoc | None, dict | None]:
         """取节点并判断内容是否够学；返回 ``(node, 阻断说明)``（两者必有一个为 None）。"""

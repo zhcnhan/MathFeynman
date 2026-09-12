@@ -80,14 +80,43 @@ def fact_id_set(facts: list[TaughtFact]) -> set[str]:
     return {f.id for f in facts}
 
 
+def _in_figure_only(text: str, material: str, figure_text: str,
+                    material_where: str) -> str:
+    """**R55 B**：该引文是不是"只落在引用了图/表的段落里"？是 → 返回中文原因，否则空串。
+
+    判据：引文在**图段文本**里能逐字找到，而在**去掉图段的正文**里找不到
+    → 它是那张图的说明文字，模型看不到图，**不许拿它当依据**（宁缺勿造）。
+    """
+    if not figure_text or not text:
+        return ""
+    ok_fig, _ = citations.check(text, figure_text, where=material_where)
+    if not ok_fig:
+        return ""
+    clean = _strip_figure_segments(material)
+    ok_clean, _ = citations.check(text, clean, where=material_where)
+    if ok_clean:
+        return ""      # 别处也有这句话 → 仍可作依据
+    return (f"这句话只出现在{material_where}**引用了图/表**的段落里"
+            "（原文说「如图/见表…」，但系统读不到图片内容）——按 R55 不猜，丢弃")
+
+
+def _strip_figure_segments(material: str) -> str:
+    """去掉"引用了图/表的句子"后的教材正文（与 materials 的**同一口径、同一实现**）。"""
+    from ..outline.materials import non_figure_text
+
+    return non_figure_text(material)
+
+
 def clean_facts(raw_facts: list, lecture: str, *,
                 known_concepts: set[str] | None = None,
                 material: str = "", material_where: str = MATERIAL_WHERE,
+                figure_text: str = "",
                 ) -> tuple[list[TaughtFact], list[str], list[dict]]:
     """事实句归一 + 逐字来源校验：`text` 必须能在讲解里找到（citations 同一把尺子）。
 
     R37 S5：给了 `material`（教材正文）时，还**必须逐字出自教材**——找不到的事实句被丢弃，
     并给出中文原因（含"教材里没有这句话"与所在位置）。
+    **R55 B**：``figure_text``（引用了图/表的段落）里的句子**不得**当依据（读不到图，不许猜）。
 
     `known_concepts`（R35 §11）：给出时，`concept_id` **必须指向已注册概念**，否则剔除并记问题——
     保证"讲过的概念/考的概念"共用同一套 id（不新建第二套概念系统）。
@@ -119,6 +148,13 @@ def clean_facts(raw_facts: list, lecture: str, *,
                        "也可能本单元对应的教材段落没讲到它（教材锚定 R37 S5）")
                 problems.append(msg)
                 dropped.append({"id": fid, "text": text[:60], "reason": msg})
+                continue
+            fig_reason = _in_figure_only(text, material, figure_text, material_where)
+            if fig_reason:
+                msg = f"事实 {fid}：{fig_reason}：{text[:40]}…"
+                problems.append(msg)
+                dropped.append({"id": fid, "text": text[:60], "reason": msg,
+                                "drop_kind": "figure_unavailable"})
                 continue
         if concept_id and known_concepts is not None and concept_id not in known_concepts:
             problems.append(f"事实 {fid} 的 concept_id {concept_id!r} 未注册（须指向既有概念注册表）")
@@ -153,10 +189,12 @@ def clean_derivable(raw_items: list, fact_ids: set[str]) -> tuple[list[Derivable
 
 def check_basis(basis: BasisDoc | dict | None, *, lecture: str, fact_ids: set[str],
                 derivable: list[Derivable] | None = None, label: str = "题目",
-                material: str = "", material_where: str = MATERIAL_WHERE) -> tuple[bool, str]:
+                material: str = "", material_where: str = MATERIAL_WHERE,
+                figure_text: str = "") -> tuple[bool, str]:
     """单条 `basis` 判定 → (是否可答, 中文原因)。
 
     R37 S5：给了 `material` 时，引文还必须**逐字出自教材正文**（第三类校验，教材锚定）。
+    **R55 B**：引文若只出现在"引用了图/表的段落"里 → 判不可答（读不到图，不许猜）。
     """
     if basis is None:
         return False, f"{label}未声明依据（basis 缺失）——零基础学习者无从推出，按不可答处理"
@@ -177,6 +215,9 @@ def check_basis(basis: BasisDoc | dict | None, *, lecture: str, fact_ids: set[st
         if not ok2:
             return False, (f"{label}的引文不在{material_where}中（教材锚定未通过：{reason2}）"
                            "——教材里没有这句话，不能拿它当出题依据（R37 S5）")
+        fig_reason = _in_figure_only(str(b.quote), material, figure_text, material_where)
+        if fig_reason:
+            return False, f"{label}的引文{fig_reason}"
     premises = [str(x) for x in (b.premises or []) if str(x).strip()]
     rule = str(b.rule or "").strip()
     if premises or rule:  # 推理题：须 ≥2 条已述事实前提 + 明确规则
@@ -201,7 +242,8 @@ def _drop_exercise(ex: ExerciseDoc, reason: str) -> dict:
 def gate_node(doc: NodeDoc, *, drop: bool = True,
               known_concepts: set[str] | None = None,
               material: str | None = None,
-              material_where: str = MATERIAL_WHERE) -> AnswerabilityReport:
+              material_where: str = MATERIAL_WHERE,
+              figure_text: str = "") -> AnswerabilityReport:
     """对一个 NodeDoc 做可答性判定（R35）＋**教材锚定**（R37 S5）。
 
     `drop=True`（生成端默认）：不合规的**核心题**与 socratic 一律**丢弃**（S5：丢弃该题，不是让内容失败），
@@ -211,12 +253,14 @@ def gate_node(doc: NodeDoc, *, drop: bool = True,
     `material`（R37 S5）：给出时（该学科有教材），事实句与引文还必须**逐字出自教材正文**——
     这是闸门的**第三类校验**；教材里找不到的事实句被丢弃，一条不剩 → `report.facts` 为空，
     调用方据此判**整单元失败**（不得回退"自己编的启发式内容"）。
+    `figure_text`（**R55 B**）：原文**引用了图/表**的段落——那里的句子不得当依据（读不到图，不许猜）。
     """
     lecture = doc.explanation.body or doc.body_md or ""
     material = material or ""
     facts, fp, dropped_facts = clean_facts(doc.taught_facts, lecture,
                                            known_concepts=known_concepts,
-                                           material=material, material_where=material_where)
+                                           material=material, material_where=material_where,
+                                           figure_text=figure_text)
     derivable, dp = clean_derivable(doc.derivable, fact_id_set(facts))
     report = AnswerabilityReport(facts=facts, derivable=derivable,
                                  problems=list(fp) + list(dp),
@@ -233,7 +277,7 @@ def gate_node(doc: NodeDoc, *, drop: bool = True,
     for ex in doc.exercises:
         ok, reason = check_basis(ex.basis, lecture=lecture, fact_ids=ids, derivable=derivable,
                                  label=f"练习 {ex.id}", material=material,
-                                 material_where=material_where)
+                                 material_where=material_where, figure_text=figure_text)
         if ok:
             kept_ex.append(ex)
         else:
@@ -247,7 +291,7 @@ def gate_node(doc: NodeDoc, *, drop: bool = True,
         basis = bases[i] if i < len(bases) else None
         ok, reason = check_basis(basis, lecture=lecture, fact_ids=ids, derivable=derivable,
                                  label=f"socratic[{i + 1}]", material=material,
-                                 material_where=material_where)
+                                 material_where=material_where, figure_text=figure_text)
         if ok:
             report.asks.append(ask)
             report.asks_basis.append(basis if isinstance(basis, BasisDoc) else BasisDoc(**basis))
