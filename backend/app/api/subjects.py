@@ -536,7 +536,61 @@ def material_list(subject_id: str, db: Session = Depends(get_db)) -> dict:
     _require_enabled(db, subject_id)
     from ..outline import materials as mat
 
-    return {"subject_id": subject_id, "materials": mat.list_materials(db, subject_id)}
+    return {"subject_id": subject_id,
+            "materials": mat.list_materials(db, subject_id),
+            # **R56 第 3 步**：这个学科现在是哪条路径（界面要一直能看出来）
+            "mode": mat.subject_mode(db, subject_id),
+            "mode_label_zh": mat.MODE_LABELS_ZH.get(mat.subject_mode(db, subject_id), "")}
+
+
+@router.get("/subjects/{subject_id}/mode")
+def subject_mode_api(subject_id: str, db: Session = Depends(get_db)) -> dict:
+    """**R56 第 3 步**：模式选择入口的现状——当前模式 + 能不能开图示教材模式 + 诚实边界。"""
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+    from ..service import model_config
+
+    mode = mat.subject_mode(db, subject_id)
+    ok, why = model_config.supports_vision(db)
+    return {"subject_id": subject_id, "mode": mode,
+            "mode_label_zh": mat.MODE_LABELS_ZH.get(mode, ""),
+            "vision_ready": ok, "vision_note_zh": why,
+            "vision_model": model_config.vision_model(db),
+            "entry_zh": mat.mode_entry_zh()}
+
+
+@router.post("/subjects/{subject_id}/materials/upload-pages", status_code=201)
+def material_upload_pages(
+    subject_id: str,
+    db: Session = Depends(get_db),
+    title: str = Form(""),
+    want: str = Form(""),
+    files: list[UploadFile] = File(...),
+) -> dict:
+    """**R56 第 3 步**：图示教材模式导入——**页面图片** → 逐页让模型读 → 入库并标记为本模式。
+
+    - 前置校验：没配能读图的模型 → **中文 422 拒绝，不落库**（不做静默降级）；
+    - 读不出来的页**照样入库但如实标注**（正文 + 账本 + 返回值的 `unreadable`）；
+    - 返回里带**诚实边界**（`boundary`）：没有独立核对、失败更隐蔽、更贵。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import mode_pages
+    from ..outline import materials as mat
+
+    payload: list[tuple[str, bytes]] = []
+    for f in files or []:
+        name = str(getattr(f, "filename", "") or "page.png")
+        payload.append((name, f.file.read()))
+    fname_stem = ""
+    if payload:
+        fname_stem = payload[0][0].rsplit(".", 1)[0]
+    try:
+        return mode_pages.import_pages(
+            db, subject_id, title=(title or "").strip() or (fname_stem or "页面图片教材"),
+            files=payload, want=want or "",
+            source="图片页面导入（图示教材模式）")
+    except OutlineError as e:
+        raise _outline_err(e) from e
 
 
 @router.delete("/subjects/{subject_id}/materials/{material_id}", status_code=204)

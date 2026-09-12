@@ -72,6 +72,10 @@ type MaterialItem = {
   role?: string;
   role_explicit?: boolean;
   role_zh?: string;
+  // R56 第 3 步：来源模式（all_ai = 图片为主的教材 / 全程交给 AI 判断）
+  mode?: string;
+  mode_zh?: string;
+  page_count?: number;
   // R55 A：教材体检（认不出比例 / 拆字比例 / 公式符号 / 图片数 → 好·一般·差 + 人话）
   text_health?: {
     pages: number; chars: number; healthy: boolean; checked: boolean; note: string;
@@ -251,6 +255,15 @@ export default function OutlinePage() {
   const [searchBusy, setSearchBusy] = useState(false);
   // C2：PDF 上传（pypdf 分页/分节入库）
   const pdfFileRef = useRef<HTMLInputElement>(null);
+  // R56 第 3 步：当前学科是不是"图片为主的教材"（界面上要一直能看出来）
+  const [modeLabel, setModeLabel] = useState("");
+  const [modeEntry, setModeEntry] = useState<{
+    vision_ready: boolean; vision_note_zh: string; vision_model: string;
+    entry_zh: {
+      label: string; what_zh: string; pros_zh: string; costs_zh: string[];
+      not_better_zh: string; need_images_zh: string;
+    };
+  } | null>(null);
   // R39 §1：最近一次"单元出稿"的就地账目（丢弃/降级/失败——界面必须能看见）
   const [lastUnitLedger, setLastUnitLedger] = useState<LedgerEntry[] | null>(null);
 
@@ -320,12 +333,59 @@ export default function OutlinePage() {
     }
   };
 
+  // R56 第 3 步：图示教材模式（页面图片 → 全程交给 AI 判断）
+  const pagesFileRef = useRef<HTMLInputElement>(null);
+
+  const loadModeEntry = async () => {
+    try {
+      const r = await api.get<{
+        mode: string; mode_label_zh: string; vision_ready: boolean; vision_note_zh: string;
+        vision_model: string;
+        entry_zh: { label: string; what_zh: string; pros_zh: string; costs_zh: string[];
+                    not_better_zh: string; need_images_zh: string };
+      }>(`/subjects/${id}/mode`);
+      setModeEntry(r);
+      setModeLabel(r.mode_label_zh || "");
+    } catch {
+      setModeEntry(null);
+    }
+  };
+
+  const uploadPages = async () => {
+    const inp = pagesFileRef.current;
+    const list = Array.from(inp?.files ?? []);
+    if (!list.length) {
+      setErr("请先选择教材的页面图片（可以一次选多张，按文件名顺序当页序）");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const fd = new FormData();
+      if (matTitle.trim()) fd.append("title", matTitle.trim());
+      for (const f of list) fd.append("files", f);
+      const r = await api.upload<{ id: string; title: string; page_count: number; unreadable: string[]; note_zh: string }>(
+        `/subjects/${id}/materials/upload-pages`, fd
+      );
+      setMsg(`「${r.title}」已按「图片为主的教材」入库：${r.note_zh}。` +
+        (r.unreadable.length ? `读不出来的页：${r.unreadable.join("、")}（已如实标注，不会当成内容用）` : ""));
+      if (inp) inp.value = "";
+      await loadMaterials();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const loadMaterials = async () => {
     try {
-      const r = await api.get<{ materials: MaterialItem[] }>(
+      const r = await api.get<{ materials: MaterialItem[]; mode?: string; mode_label_zh?: string }>(
         `/subjects/${id}/materials`
       );
       setMaterials(r.materials);
+      setModeLabel(r.mode_label_zh || "");
       const p = await api.get<{ source_policy: string }>(`/subjects/${id}/policy`);
       setPolicy(p.source_policy);
     } catch {
@@ -457,6 +517,7 @@ export default function OutlinePage() {
   useEffect(() => {
     void load();
     void loadMaterials();
+    void loadModeEntry();
   }, [load]);
 
   const draft = async (regen = false) => {
@@ -725,6 +786,54 @@ export default function OutlinePage() {
           仅上传自有/授权资料，不整本下载书籍。
         </div>
 
+        {/* R56 第 3 步：图示教材模式（页面图片 → 全程交给 AI 判断）——
+            导入前先把"代价"写在看得见的地方（没有独立核对 / 失败更隐蔽 / 更贵） */}
+        <div style={{ marginTop: 10, padding: 10, border: "1px solid #e6d9a8", borderRadius: 8,
+                      background: "#fffdf5" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <strong>{modeEntry?.entry_zh.label ?? "图片为主的教材（全程交给 AI 判断）"}</strong>
+            {modeLabel && <span className="badge deferred">当前学科：{modeLabel}</span>}
+            {modeEntry && !modeEntry.vision_ready && (
+              <span className="badge error">还没配能读图的模型</span>
+            )}
+          </div>
+          <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
+            {modeEntry?.entry_zh.what_zh ?? "把教材每页的图片交给 AI，由它自己读、自己出题、自己判、自己评。"}
+          </div>
+          <ul className="plain" style={{ fontSize: 12, margin: "4px 0 4px 16px" }}>
+            {(modeEntry?.entry_zh.costs_zh ?? [
+              "没有独立的第二次核对：判对错、评分都是模型的判断，程序不替你复核。",
+              "失败了不容易发现：这类模型的错法更像「说得很有把握但其实不对」。",
+              "更贵：每一步都要问模型。",
+            ]).map((c) => (
+              <li key={c}>{c.replace(/\*\*/g, "")}</li>
+            ))}
+          </ul>
+          <div className="dim" style={{ fontSize: 12 }}>
+            {modeEntry?.entry_zh.pros_zh ?? "长处是能看图、能读公式与版式；但没法逐字核对引用。"}
+            <br />
+            {modeEntry?.entry_zh.not_better_zh ?? "它不比文字教材模式更可靠。"}
+            {" "}{modeEntry?.entry_zh.need_images_zh ?? "要的是页面图片（PNG/JPEG/WebP）。"}
+          </div>
+          {modeEntry && !modeEntry.vision_ready && (
+            <div className="banner warn" style={{ marginTop: 6 }}>
+              {modeEntry.vision_note_zh}
+            </div>
+          )}
+          <div className="input-row" style={{ gap: 8, marginTop: 6 }}>
+            <input type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif"
+                   ref={pagesFileRef} disabled={busy} style={{ flex: 1 }} />
+            <button className="primary" disabled={busy || !modeEntry?.vision_ready}
+                    onClick={() => void uploadPages()}>
+              导入页面图片（全 AI 模式）
+            </button>
+          </div>
+          <div className="dim" style={{ fontSize: 12 }}>
+            一次最多 60 页；按选择顺序当页序；读不出来的页会**如实标注**、不会被当成内容用。
+            {modeEntry?.vision_model ? `读图用的模型：${modeEntry.vision_model}。` : ""}
+          </div>
+        </div>
+
         {/* 引用材料列表（可删除） */}
         {materials.length > 0 && (
           <div style={{ marginTop: 8 }}>
@@ -734,6 +843,12 @@ export default function OutlinePage() {
                 <div style={{ minWidth: 0 }}>
                   <strong>{m.title}</strong>{" "}
                   <span className="badge">{KIND_LABEL[m.kind] ?? m.kind}</span>{" "}
+                  {/* R56：材料的来源模式（界面一直能看出"这条材料走的是哪条路"） */}
+                  {m.mode === "all_ai" && (
+                    <span className="badge deferred" title="判对错与评分都由模型给出，程序不替你复核">
+                      图片为主 · 全程 AI{m.page_count ? ` · ${m.page_count} 页` : ""}
+                    </span>
+                  )}{" "}
                   <span className="dim">{m.source}</span>
                   {m.text_health?.checked && !m.text_health.healthy && (
                     <span className="badge error">无可用文本层</span>

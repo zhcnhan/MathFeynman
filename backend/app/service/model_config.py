@@ -29,8 +29,11 @@ K_HEAVY = "model.heavy"
 K_LIGHT = "model.light"
 K_DAILY = "model.max_tokens_per_day"
 K_MEMORY_ONLY = "model.key_memory_only"
+# **R56 第 3 步**：图示教材模式要用的"能读图的模型"（留空 = 用快档模型）
+K_VISION_MODEL = "model.vision_model"
 
-KEYS = (K_PROVIDER, K_API_KEY, K_BASE_URL, K_HEAVY, K_LIGHT, K_DAILY, K_MEMORY_ONLY)
+KEYS = (K_PROVIDER, K_API_KEY, K_BASE_URL, K_HEAVY, K_LIGHT, K_DAILY, K_MEMORY_ONLY,
+        K_VISION_MODEL)
 
 # ---- 内置默认（服务商默认 DeepSeek；OpenAI 兼容） ----
 DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
@@ -127,6 +130,7 @@ def _resolve_with(db) -> dict[str, Field]:
         "max_tokens_per_day": _pick(
             rows, K_DAILY,
             s.llm_max_tokens_per_day if _env_set("LLM_MAX_TOKENS_PER_DAY") else 0, 0),
+        "vision_model": _pick(rows, K_VISION_MODEL, "", ""),
         "memory_only": Field("1" if memory_only else "0",
                              "page" if K_MEMORY_ONLY in rows else "default"),
     }
@@ -168,6 +172,40 @@ def configured(db=None) -> bool:
     return bool(str(resolve(db)["api_key"].value or "").strip())
 
 
+# 读图能力的实测事实（R56 第 1 步实测 + 官方文档）：
+#   - DeepSeek 只有 `deepseek-flash` 支持图像理解；`deepseek-v4-pro` 不支持；
+#   - 旧名 `deepseek-chat` / `deepseek-reasoner` 实际由 flash 承接（能用图）。
+_DEEPSEEK_VISION_OK = ("flash", "chat", "reasoner", "vision")
+# 官方的规范模型名（旧名 chat/reasoner 会被静默转成 flash；提示里给规范名以免用户困惑）
+DEEPSEEK_VISION_CANON = "deepseek-flash"
+VISION_NEED_ZH = ("这条路需要能读图片的模型，你现在没配上——去「设置 · 模型」里把「模型名（快）」"
+                  f"填成能读图的（DeepSeek 用 {DEEPSEEK_VISION_CANON}）")
+
+
+def vision_model(db=None) -> str:
+    """图示教材模式实际要用的模型名（没单独设就用快档）。"""
+    r = resolve(db)
+    return str(r.get("vision_model", Field("", "default")).value or "") or str(
+        r["light"].value or DEFAULT_LIGHT)
+
+
+def supports_vision(db=None) -> tuple[bool, str]:
+    """能不能读图 → ``(可用?, 中文原因)``（**前置校验**用；不许静默降级）。"""
+    r = resolve(db)
+    key = str(r["api_key"].value or "").strip()
+    if not key:
+        return False, NEED_KEY_ZH
+    provider = str(r["provider"].value or DEFAULT_PROVIDER)
+    model = vision_model(db)
+    if provider == "custom":
+        return True, f"用自定义服务商的模型 {model} 读图（能不能读由对方决定，可用「测试连接」确认）"
+    if any(tok in model.lower() for tok in _DEEPSEEK_VISION_OK):
+        return True, f"用 {model} 读图（实测 DeepSeek 只有 fast 档支持图像理解）"
+    return False, (f"当前模型 {model} 不支持读图片——DeepSeek 只有快档"
+                   f"（{DEEPSEEK_VISION_CANON}）能读图；请在「设置 · 模型」把「模型名（快）」或"
+                   "「读图用的模型」改成它，或换成能读图的服务商")
+
+
 def mask(key: str) -> str:
     """掩码：前 3 位 + … + 后 4 位（长度不足只回后 4 位；**绝不回完整 Key**）。"""
     k = (key or "").strip()
@@ -200,6 +238,10 @@ def view(db=None) -> dict:
         "heavy_source_zh": r["heavy"].source_zh,
         "light": str(r["light"].value or DEFAULT_LIGHT),
         "light_source_zh": r["light"].source_zh,
+        # **R56 第 3 步**：图示教材模式用的读图模型 + 能不能读图（中文原因）
+        "vision_model": vision_model(db),
+        "vision_ok": supports_vision(db)[0],
+        "vision_note_zh": supports_vision(db)[1],
         "max_tokens_per_day": int(str(r["max_tokens_per_day"].value or 0) or 0),
         "daily_source_zh": r["max_tokens_per_day"].source_zh,
         # 界面照实写明的安全提示（docs/13 §2：说人话）
@@ -388,8 +430,8 @@ def _exception_reason_zh(e: Exception) -> str:
 
 __all__ = [
     "K_PROVIDER", "K_API_KEY", "K_BASE_URL", "K_HEAVY", "K_LIGHT", "K_DAILY", "K_MEMORY_ONLY",
-    "DEFAULT_BASE_URL", "DEFAULT_HEAVY", "DEFAULT_LIGHT", "DEFAULT_PROVIDER",
-    "PROVIDER_LABELS_ZH", "SOURCE_LABELS_ZH", "NEED_KEY_ZH", "NEED_KEY_SHORT_ZH",
+    "K_VISION_MODEL", "DEFAULT_BASE_URL", "DEFAULT_HEAVY", "DEFAULT_LIGHT", "DEFAULT_PROVIDER",
+    "PROVIDER_LABELS_ZH", "SOURCE_LABELS_ZH", "NEED_KEY_ZH", "NEED_KEY_SHORT_ZH", "VISION_NEED_ZH",
     "Field", "UNSET", "resolve", "effective_settings", "configured", "mask", "view", "save",
-    "test_connection",
+    "test_connection", "vision_model", "supports_vision",
 ]

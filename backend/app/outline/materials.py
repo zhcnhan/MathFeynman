@@ -222,7 +222,8 @@ def set_policy(db, subject_id: str, policy: str) -> str:
 
 def add_material(db, subject_id: str, *, title: str, text: str, source: str = "本地导入",
                  url: str = "", kind: str | None = None, filename: str = "",
-                 quality: dict | None = None, raw_text: str = "") -> dict:
+                 quality: dict | None = None, raw_text: str = "",
+                 mode: str = "", pages_file: str = "", page_count: int = 0) -> dict:
     """本地/联网引用入库（文本必填；分节文本按段落/标题切分存正文）。
 
     kind ∈ local|web|pdf（缺省按 url 推导：有 url=web、无=local；pdf 由 C2 解析器显式传入）；
@@ -230,14 +231,20 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
     R37 S7：入库时计算文本层健康度并写入 frontmatter（扫描版 → 中文告知，见 ``text_health``）。
     **R55**：``quality`` ＝ 抽取体检（PDF 路径传入，含图片数等 PDF 才有的信息）；
     ``raw_text`` ＝ **原始抽取文本**（与修正后不同则另存 `*.raw.txt` 备查，见 NOTES §77 C3）。
+    **R56 第 3 步**：``mode="all_ai"`` 标记这份材料属于**图示教材模式**（全 AI 模式）——
+    ``pages_file`` 指向 `*.pages.json`（每页"读到了什么"的结构化记录），``page_count`` 是页数。
+    这是**既有材料层的一个字段**，不是第二套材料机制（正文仍是这份 `.md`）。
     """
     title = title.strip()
     text = text.strip()
     if not title or not text:
         raise OutlineError("材料标题与正文不能为空")
     effective_kind = kind or ("web" if url else "local")
-    if effective_kind not in ("local", "web", "pdf"):
+    if effective_kind not in ("local", "web", "pdf", "pages"):
         raise OutlineError(f"材料 kind 非法: {effective_kind!r}")
+    mode = (mode or "").strip()
+    if mode not in ("", "all_ai"):
+        raise OutlineError(f"材料模式非法: {mode!r}（只支持空或 all_ai）")
     fixed = bool(raw_text.strip()) and raw_text.strip() != text
     if quality is None and fixed:
         # **R55 A**：只给了"修正后的文本 + 原始抽取"（粘贴/外部工具路径）时，体检照**原始抽取**算
@@ -283,6 +290,11 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
         if fixed:  # C3：原始抽取文本另存一份（供事后核查"是抽取错了，还是模型编了"）
             (p.parent / raw_name).write_text(raw_text, encoding="utf-8")
             meta_lines.append(f"raw_file: {raw_name}")
+        # **R56 第 3 步**：图示教材模式标记（这条材料的"来源模式"）
+        if mode:
+            meta_lines += [f"mode: {mode}", f"page_count: {int(page_count or 0)}"]
+            if pages_file:
+                meta_lines.append(f"pages_file: {pages_file}")
         meta_lines += ["", "---", ""]
         p.write_text("\n".join(meta_lines) + "\n" + text + "\n", encoding="utf-8")
     if fixed:
@@ -334,6 +346,10 @@ def _parse_entry(p: Path) -> dict | None:
                 # R38 B2：材料角色（main=主教材 / supplement=补充材料）；老材料无该字段
                 # → 视为"未标注"（按导入顺序，覆盖账里注明）
                 "role": role_raw if role_raw in ("main", "supplement") else "",
+                # **R56 第 3 步**：材料来源模式（空 = 文字教材路径；all_ai = 图示教材模式）
+                "mode": str(fm.get("mode", "")).strip(),
+                "page_count": _as_int(fm.get("page_count")),
+                "pages_file": str(fm.get("pages_file", "")).strip(),
                 # **R55 A/C**：入库时算好的抽取体检 + "已做抽取修正"留痕（老材料无 → 读时现算）
                 "extract_meta": {
                     "grade": fm.get("extract_grade", ""),
@@ -396,6 +412,10 @@ def list_materials(db, subject_id: str) -> list[dict]:
             out.append({"id": e["id"], "title": e["title"], "source": e["source"],
                         "url": e["url"], "kind": e["kind"], "file": e["file"],
                         "filename": e.get("filename", ""),
+                        # **R56 第 3 步**：来源模式（界面据此显示"当前是哪个模式"）+ 页数
+                        "mode": e.get("mode", ""),
+                        "mode_zh": MODE_LABELS_ZH.get(e.get("mode", "") or "", ""),
+                        "page_count": int(e.get("page_count") or 0),
                         # R38 B2：材料角色（未标注 → main 并标注 explicit=False，按导入顺序）
                         "role": e.get("role") or ROLE_UNSET,
                         "role_explicit": bool(e.get("role")),
@@ -467,8 +487,27 @@ def reparse_material(db, subject_id: str, material_id: str) -> dict:
     raise OutlineError(f"材料不存在: {material_id}")
 
 
+def set_material_pages_file(db, subject_id: str, material_id: str, pages_file: str) -> bool:
+    """**R56 第 3 步**：把 `pages_file`（页面记录文件名）补写进材料 frontmatter。
+
+    为什么不在 `add_material` 一次写完：入库要先拿到材料 id 才能给 `*.pages.json` 命名
+    （放在 `*.md` 旁边、以 `pages-<id>` 开头）；这里只改这一行，正文一字不动。
+    """
+    d = materials_dir(subject_id)
+    for p in d.glob("*.md"):
+        e = _parse_entry(p)
+        if not e or e["id"] != material_id:
+            continue
+        raw = p.read_text(encoding="utf-8")
+        fm, body = _split_frontmatter(raw)
+        fm["pages_file"] = pages_file
+        lines = ["---"] + [f"{k}: {v}" for k, v in fm.items()] + ["", "---", ""]
+        p.write_text("\n".join(lines) + body.strip() + "\n", encoding="utf-8")
+        return True
+    return False
+
+
 def _split_frontmatter(raw: str) -> tuple[dict, str]:
-    """拆 frontmatter（保持行序；值一律按字符串存）与正文。"""
     fm: dict[str, str] = {}
     if raw.startswith("---\n"):
         end = raw.find("\n---", 4)
@@ -839,6 +878,42 @@ ROLE_SUPPLEMENT = "supplement"    # 补充材料（只补细节与例题）
 ROLE_UNSET = ""                   # 未标注（**不等于主教材**：按导入顺序，覆盖账注明）
 ROLES = (ROLE_MAIN, ROLE_SUPPLEMENT)
 ROLE_LABELS_ZH = {ROLE_MAIN: "主教材", ROLE_SUPPLEMENT: "补充材料", ROLE_UNSET: "未标注"}
+
+# **R56 第 3 步**：材料来源模式（路径③＝图示教材 / 全 AI 模式；空 = 文字教材路径）
+MODE_ALL_AI = "all_ai"
+MODE_LABELS_ZH = {MODE_ALL_AI: "图片为主的教材（全程交给 AI 判断）", "": ""}
+MODE_ENTRY_ZH = "图片为主的教材（全程交给 AI 判断）"
+
+
+def subject_mode(db, subject_id: str) -> str:
+    """该学科当前的来源模式：``all_ai``（图示教材）或 ``""``（文字教材）。
+
+    口径：**只要该学科有 all_ai 材料**就算本模式（一个学科一种模式，避免两条口径打架）。
+    学习会话 / 判题 / 评分据此走本模式分支（工单 §3-A 的"模式隔离"）。
+    """
+    for e in _entries_with_body(subject_id):
+        if str(e.get("mode") or "") == MODE_ALL_AI:
+            return MODE_ALL_AI
+    return ""
+
+
+def mode_entry_zh() -> dict:
+    """导入处给用户看的**诚实边界**（工单 §2：这段比功能本身重要）。"""
+    return {
+        "label": MODE_ENTRY_ZH,
+        "what_zh": ("把教材**每页的图片**交给 AI，由它自己读、自己出题、自己判、自己评。"
+                    "程序只负责：流程顺序、提示词、把图片递过去、把每次结果原样记下来。"),
+        "costs_zh": [
+            "**没有独立的第二次核对**：判对错、评分都是模型的判断，程序不替你复核（数学题也一样）；",
+            "**失败了不容易发现**：这类模型的错法更像「说得很有把握但其实不对」，而不是明显乱答；",
+            "**更贵**：每一步都要问模型（实测一页约 0.002~0.004 元，一本书逐页读一遍约 0.3~0.6 元）。",
+        ],
+        "pros_zh": ("长处是**能看图、能读公式和版式**；但程序没法逐字核对引用，"
+                    "依据只能记到「第几页/哪张图」。"),
+        "not_better_zh": "它不比文字教材模式更可靠——只是「读得到图，但没人替你把关」。",
+        "need_images_zh": ("要的是**页面图片**（PNG/JPEG/WebP）："
+                           "实测 DeepSeek 的接口只收图片，**PDF 文件本身它不收**。"),
+    }
 
 BATCH_TIERS = (("省着用", 20000), ("常规（默认）", 60000), ("充裕", 150000), ("不限", 0))
 INJECT_TIERS = (("省着用", 20000), ("常规（默认）", 60000), ("充裕", 150000), ("不限", 0))
