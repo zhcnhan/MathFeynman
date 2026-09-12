@@ -71,7 +71,12 @@ def read_page(provider, *, images: list[dict] | None = None, page_label: str = "
         audit={"subject_id": subject_id, "unit_id": unit_id, "prompt_versions": rt.version},
     )
     parsed = dict(outcome.parsed or {})
-    parsed.setdefault("page_label", ctx.page_label)
+    # **页号以我们为准**（R57）：模型回什么都覆盖成"我们发出去的那个页号"——
+    # 依据必须能追到"第 N 页"，不许由模型自己决定页号（它可能回错、回空或回成"这一页"）。
+    if ctx.page_label:
+        parsed["page_label"] = ctx.page_label
+    else:
+        parsed.setdefault("page_label", "")
     return ReadPageOut(**parsed), rt.version
 
 

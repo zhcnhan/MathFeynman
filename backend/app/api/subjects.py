@@ -545,17 +545,26 @@ def material_list(subject_id: str, db: Session = Depends(get_db)) -> dict:
 
 @router.get("/subjects/{subject_id}/mode")
 def subject_mode_api(subject_id: str, db: Session = Depends(get_db)) -> dict:
-    """**R56 第 3 步**：模式选择入口的现状——当前模式 + 能不能开图示教材模式 + 诚实边界。"""
+    """**R56 第 3 步**：模式选择入口的现状——当前模式 + 能不能开图示教材模式 + 诚实边界。
+
+    **R57**：再多回一项**能不能自动把 PDF 转成页图**（方案 a 的渲染组件在不在），
+    不在时给中文原因与两条替代路（自己导出图片 / 换能收 PDF 的服务商）。
+    """
     _require_enabled(db, subject_id)
     from ..outline import materials as mat
+    from ..outline import pdfrender
     from ..service import model_config
 
     mode = mat.subject_mode(db, subject_id)
     ok, why = model_config.supports_vision(db)
+    render_ok, render_why = pdfrender.render_available()
     return {"subject_id": subject_id, "mode": mode,
             "mode_label_zh": mat.MODE_LABELS_ZH.get(mode, ""),
             "vision_ready": ok, "vision_note_zh": why,
             "vision_model": model_config.vision_model(db),
+            # **R57 方案 a**：能不能直接用 PDF（不在 → 回落方案 c）
+            "pdf_render_ready": render_ok, "pdf_render_note_zh": render_why,
+            "pdf_render_options": pdfrender.render_options(),
             "entry_zh": mat.mode_entry_zh()}
 
 
@@ -565,17 +574,25 @@ def material_upload_pages(
     db: Session = Depends(get_db),
     title: str = Form(""),
     want: str = Form(""),
+    pages: str = Form(""),
     files: list[UploadFile] = File(...),
 ) -> dict:
     """**R56 第 3 步**：图示教材模式导入——**页面图片** → 逐页让模型读 → 入库并标记为本模式。
 
+    **R57 任务 A（方案 a）**：第一个文件是 **PDF** 时**按页渲染成图片**再读
+    （`pages` 可指定页范围，如 `1-5,8`；渲染参数见 `/mode` 的 `pdf_render_options`）。
+
     - 前置校验：没配能读图的模型 → **中文 422 拒绝，不落库**（不做静默降级）；
+    - **PDF 渲染组件没装** → 中文 422 + 两条替代路（自己导出图片 / 换能收 PDF 的服务商）；
     - 读不出来的页**照样入库但如实标注**（正文 + 账本 + 返回值的 `unreadable`）；
+    - **页面图片不落 `content/`**（渲染出来的大图尤其不落盘）：只留"读到了什么"，
+      原始 PDF/图片进 gitignored 缓存目录（`/mode` 之外无需关心）；
     - 返回里带**诚实边界**（`boundary`）：没有独立核对、失败更隐蔽、更贵。
     """
     _require_enabled(db, subject_id)
     from ..outline import mode_pages
     from ..outline import materials as mat
+    from ..outline.schemas import OutlineError
 
     payload: list[tuple[str, bytes]] = []
     for f in files or []:
@@ -587,10 +604,68 @@ def material_upload_pages(
     try:
         return mode_pages.import_pages(
             db, subject_id, title=(title or "").strip() or (fname_stem or "页面图片教材"),
-            files=payload, want=want or "",
+            files=payload, want=want or "", pdf_pages=(pages or "").strip(),
             source="图片页面导入（图示教材模式）")
     except OutlineError as e:
         raise _outline_err(e) from e
+    except ValueError as e:          # 渲染/页范围等一律中文 422（PdfRenderError 继承 ValueError）
+        raise _err(422, "validation_error", str(e)) from e
+
+
+class ReadPagesBody(BaseModel):
+    pages: str = ""          # 页范围，如 "7-9"；留空＝按缓存里的全部页重读
+    want: str = ""
+
+
+class ModeDraftBody(BaseModel):
+    brief: str = ""
+    count: int = 0
+
+
+@router.post("/subjects/{subject_id}/mode/outline/draft")
+def mode_outline_draft(subject_id: str, body: ModeDraftBody, db: Session = Depends(get_db)) -> dict:
+    """**R57 任务 B-①**：图示教材模式的**一键起草大纲**（走 `mode_outline`）。
+
+    - 依据是**页/图号**（不是逐字引文）；**不调**路径②的教材锚定/可答性/引文闸门；
+    - 模型没提到的页会**并进最后一个单元**并在响应/账本里如实列出（`absorbed_pages`），
+      **不会**有页面被静默丢掉；
+    - 返回的 `units` 可直接喂给既有 `PUT /subjects/{sid}/outline` 采纳（同一个大纲结构）。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import mode_generate
+    from ..outline.schemas import OutlineError
+    from ..service import ledger
+
+    try:
+        with ledger.collector(subject_id) as acc:
+            out = mode_generate.draft_mode_outline(db, subject_id, brief=body.brief,
+                                                  count=body.count)
+            out["ledger"] = acc.to_list()
+        return out
+    except OutlineError as e:
+        raise _outline_err(e) from e
+    except ValueError as e:
+        raise _err(422, "validation_error", str(e)) from e
+
+
+@router.post("/subjects/{subject_id}/materials/{material_id}/read-pages")
+def material_read_pages(subject_id: str, material_id: str, body: ReadPagesBody,
+                        db: Session = Depends(get_db)) -> dict:
+    """**R57 任务 A**：按需取页范围——从缓存里重渲染那几页（或取原始图片）再读一遍。
+
+    幂等口径：同一页**替换**、新页**追加**，其余页面记录不动。变更进账本（中文）。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import mode_pages
+    from ..outline.schemas import OutlineError
+
+    try:
+        return mode_pages.reread_pages(db, subject_id, material_id, pages=(body.pages or "").strip(),
+                                      want=(body.want or "").strip())
+    except OutlineError as e:
+        raise _outline_err(e) from e
+    except ValueError as e:
+        raise _err(422, "validation_error", str(e)) from e
 
 
 @router.delete("/subjects/{subject_id}/materials/{material_id}", status_code=204)

@@ -22,6 +22,14 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
 ]
+# R57 任务 A（方案 a）：PDF → 页面图片渲染（图示教材模式"直接传 PDF"用）。
+# 许可：pypdfium2 = BSD-3-Clause / Apache-2.0（PDFium 二进制打包在 wheel 里，无需系统依赖）；
+#       Pillow = MIT-CMU（BSD 系）。**不用** PyMuPDF（AGPL）、**不用** pdf2image（要 poppler 系统依赖）。
+# 没装也能跑：本模式会回落"用户自己导出图片"（方案 c），并给中文说明（绝不静默失败）。
+render = [
+    "pypdfium2>=4.30",
+    "Pillow>=10.0",
+]
 
 [project.scripts]
 # docs/04 §7：`content validate` / `content render <node_id> <seed>`（等价于文档中的

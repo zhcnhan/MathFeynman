@@ -135,6 +135,34 @@ class Settings:
         default_factory=lambda: int(os.getenv("MF_PDF_PER_PAGE_MAX_CHARS", "8000") or "8000")
     )
 
+    # --- **R57 任务 A**：PDF → 页图渲染（图示教材模式 · 方案 a；可选依赖 pypdfium2+Pillow）---
+    # 目标宽度（px）：**成本实测** 1024 px 宽 JPEG 一页 ≈ 960 prompt token；1457 px ≈ 1049。
+    page_image_width: int = field(
+        default_factory=lambda: int(os.getenv("MF_PAGE_IMAGE_WIDTH", "1024") or "1024")
+    )
+    # 输出格式（jpeg|png）与 JPEG 质量
+    page_image_format: str = field(
+        default_factory=lambda: (os.getenv("MF_PAGE_IMAGE_FORMAT", "jpeg") or "jpeg").lower()
+    )
+    page_image_quality: int = field(
+        default_factory=lambda: int(os.getenv("MF_PAGE_IMAGE_QUALITY", "85") or "85")
+    )
+    # DPI 上限（防止"小页面被目标宽放大"到过大；实际 dpi = min(目标宽隐含 dpi, 本上限)）
+    page_image_dpi_cap: int = field(
+        default_factory=lambda: int(os.getenv("MF_PAGE_IMAGE_DPI_CAP", "200") or "200")
+    )
+    # 单页图片字节上限（防畸形页/超大页；超限 → 降质量重出一次，仍超 → 中文报错）
+    page_image_max_bytes: int = field(
+        default_factory=lambda: int(os.getenv("MF_PAGE_IMAGE_MAX_BYTES", str(4 * 1024 * 1024)) or "0")
+    )
+    # 渲染后的 PDF 缓存目录（**不进 content/**；进 .gitignore；按保留期清理）
+    pdf_cache_dir: Path = field(
+        default_factory=lambda: _env_path("MF_PDF_CACHE_DIR", ".runtime/pdf_cache")
+    )
+    pdf_cache_keep_days: int = field(
+        default_factory=lambda: int(os.getenv("MF_PDF_CACHE_KEEP_DAYS", "7") or "7")
+    )
+
     # --- 判题 ---
     judge_max_retry_samples: int = 20  # 模板自检失败重取样上限（docs/04 §4）
 

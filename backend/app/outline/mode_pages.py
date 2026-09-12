@@ -1,4 +1,4 @@
-"""outline.mode_pages：**图示教材模式（全 AI 模式）的页面图片入库**（R56 第 3 步）。
+"""outline.mode_pages：**图示教材模式（全 AI 模式）的页面图片入库**（R56 第 3 步 + R57 任务 A）。
 
 职责很小、很清楚（工单 §1：程序只负责"流程骨架 / 提示词 / 材料递送 / 记录"）：
 
@@ -9,7 +9,12 @@
 4. **入库**：用**既有材料层** `materials.add_material(mode="all_ai")` 存一份 `.md`
    （正文＝各页"读到了什么"的拼接），并把结构化记录另存 `*.pages.json`（供出题/判题按页取用）。
 
-前置校验（工单 §3-A）：**没配能读图的模型 → 中文明确拒绝，不落库**（不做静默降级）。
+**R57 任务 A（方案 a）**：入口也允许**直接给 PDF** —— 交给 `outline.pdfrender` **按页渲染成图片**
+（一页一图、页号留痕、参数可配），图片**只在内存里**发给模型，**不往 `content/` 落大图**；
+PDF 本体存进**缓存目录**（`.runtime/pdf_cache/`，`.gitignore` 覆盖 + 保留期清理），
+以便"以后再读某几页"（`reread_pages`）。**没装渲染库 → 中文说明 + 回落方案 c**（用户自己导出图片）。
+
+前置校验（工单 §3-A / R57 §2.2）：**没配能读图的模型 → 中文明确拒绝，不落库**。
 """
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ from pathlib import Path
 from ..ai.vision import image_block, read_page
 from ..service import ledger
 from . import materials as mat
+from . import pdfrender
 
 MAX_PAGES = 60                      # 一次最多多少页（避免一次导入把额度打光；可分批再传）
 ALLOWED_MIME = ("image/png", "image/jpeg", "image/webp", "image/gif")
@@ -27,8 +33,18 @@ _MIME_BY_SUFFIX = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jp
                    ".webp": "image/webp", ".gif": "image/gif"}
 
 
-def pages_dir(subject_id: str, entry_id: str) -> Path:
-    return mat.materials_dir(subject_id) / f"pages-{entry_id.replace('mat-', '')}"
+def _image_cache_dir() -> Path:
+    """原始页面图（用户上传的那几张）的缓存目录（**gitignored，不进 `content/`**）。"""
+    d = pdfrender.cache_dir() / "images"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _save_image_cache(subject_id: str, entry_id: str, i: int, name: str, data: bytes) -> str:
+    suffix = Path(name).suffix.lower() or ".png"
+    fn = f"{subject_id}-{entry_id.replace('mat-', '')}-page-{i:04d}{suffix}"
+    (_image_cache_dir() / fn).write_bytes(data)
+    return fn
 
 
 def _mime_of(filename: str, given: str = "") -> str:
@@ -39,11 +55,15 @@ def _mime_of(filename: str, given: str = "") -> str:
 
 
 def import_pages(db, subject_id: str, *, title: str, files: list[tuple[str, bytes]],
-                 provider=None, source: str = "页面图片导入", want: str = "") -> dict:
-    """图片 → 读取记录 → 入库（返回 ``{id, title, page_count, pages, unreadable, note_zh, cost}``）。
+                 provider=None, source: str = "页面图片导入", want: str = "",
+                 pdf_pages: str = "") -> dict:
+    """图片（或 PDF）→ 读取记录 → 入库（返回 ``{id, title, page_count, pages, unreadable, note_zh, cost}``）。
 
     ``files`` ＝ ``[(filename, bytes), ...]``（按页序）。任何一张读不出来都**不影响**入库，
     但会在正文/账本/返回值里如实标出。
+
+    **R57**：若第一个文件是 PDF（``%PDF`` 文件头）→ 交给 `pdfrender` **按页渲染**（``pdf_pages`` 指定页范围），
+    渲染库没装 → 中文报错（回落方案 c，由界面提示用户自己导出图片）。
     """
     from ..service import model_config
 
@@ -57,7 +77,7 @@ def import_pages(db, subject_id: str, *, title: str, files: list[tuple[str, byte
     if not files:
         from .schemas import OutlineError
 
-        raise OutlineError("还没有选择页面图片（支持 PNG / JPEG / WebP / GIF）")
+        raise OutlineError("还没有选择页面图片（支持 PNG / JPEG / WebP / GIF）或 PDF")
     if len(files) > MAX_PAGES:
         from .schemas import OutlineError
 
@@ -66,26 +86,49 @@ def import_pages(db, subject_id: str, *, title: str, files: list[tuple[str, byte
     if provider is None:
         provider = _build_provider(db)
 
+    # ---- R57 方案 a：PDF → 按页渲染（图片只在内存里；PDF 进缓存目录） ----
+    render_info: dict = {}
+    pdf_bytes: bytes | None = None
+    first_name, first_data = files[0]
+    is_pdf = b"%PDF" in bytes(first_data)[:1024]
+    if is_pdf:
+        pdf_bytes = bytes(first_data)
+        picked = pdfrender.render_pages(pdf_bytes, pages=pdf_pages or None)
+        render_info = {"source": "pdf_render", "pages": [p["page_no"] for p in picked],
+                       "width": picked[0]["width"] if picked else 0,
+                       "dpi": picked[0]["dpi_used"] if picked else 0,
+                       "format": picked[0]["format"] if picked else "",
+                       "bytes_avg": (sum(p["bytes"] for p in picked) // max(1, len(picked))),
+                       "ms_total": round(sum(p["ms"] for p in picked), 1),
+                       "pages_spec": str(pdf_pages or "")}
+        files = [(f"page{p['page_no']:04d}.{'jpg' if p['format'] == 'jpeg' else 'png'}", p["data"])
+                 for p in picked]
+        # 页号留痕：渲染出来的第 N 页＝PDF 的第 N 页（页范围也保住原页号）
+        page_labels = [f"第 {p['page_no']} 页" for p in picked]
+    else:
+        page_labels = [f"第 {i} 页" for i in range(1, len(files) + 1)]
+
     records: list[dict] = []
     started = time.time()
-    slugs: list[str] = []
-    for i, (name, data) in enumerate(files, start=1):
+    for i, (name, data) in enumerate(files):
         mime = _mime_of(name)
+        label = page_labels[i] if i < len(page_labels) else f"第 {i + 1} 页"
         if not mime:
-            records.append({"page_label": f"第 {i} 页", "readable": False,
+            records.append({"page_label": label, "readable": False,
                             "unreadable_reason": f"这个文件不是支持的图片格式（{name}）"})
-            slugs.append("")
             continue
         out, version = read_page(
             provider, images=[image_block(data, mime=mime)],
-            page_label=f"第 {i} 页", want=want or "这一页的正文要点、公式与图里画了什么",
-            note=f"用户上传的第 {i} 页图片（文件名 {name}）",
+            page_label=label, want=want or "这一页的正文要点、公式与图里画了什么",
+            note=f"用户上传的{('PDF 第 ' + label.replace('第 ', '').replace(' 页', '') + ' 页渲染图') if is_pdf else '第 ' + str(i + 1) + ' 页图片'}（{name}）",
             subject_id=subject_id,
         )
         rec = out.model_dump()
         rec["image"] = name
         rec["mime"] = mime
         rec["prompt_version"] = version
+        if is_pdf and i < len(render_info.get("pages", [])):
+            rec["page_no"] = render_info["pages"][i]
         records.append(rec)
     elapsed_ms = int((time.time() - started) * 1000)
 
@@ -100,16 +143,23 @@ def import_pages(db, subject_id: str, *, title: str, files: list[tuple[str, byte
         pages_file="",          # 先入库拿到 id，再写 pages.json 回来补 frontmatter
     )
     entry_id = str(entry["id"])
-    d = pages_dir(subject_id, entry_id)
-    d.mkdir(parents=True, exist_ok=True)
-    for i, (name, data) in enumerate(files, start=1):
-        if not _mime_of(name):
-            continue
-        suffix = Path(name).suffix.lower() or ".png"
-        (d / f"page-{i:03d}{suffix}").write_bytes(data)
-    pages_name = f"{pages_dir(subject_id, entry_id).name}.pages.json"
+    # **R57 红线**：页面图片**一律不落 `content/`**（避免仓库膨胀；渲染出来的大图尤其不许）。
+    # "读到了什么"进 `*.pages.json`；原始图（或 PDF）进 **gitignored 缓存目录**，供"以后再读某几页"。
+    cache_names: list[str] = []
+    if is_pdf and pdf_bytes is not None:
+        # PDF 进**缓存目录**（gitignored），供"以后再读某几页"；**渲染出来的图一张都不落盘**
+        render_info["key"] = entry_id
+        render_info["cache"] = pdfrender.save_pdf_cache(subject_id, entry_id, pdf_bytes)
+    elif not is_pdf:
+        for i, (name, data) in enumerate(files, start=1):
+            if not _mime_of(name):
+                continue
+            cache_names.append(_save_image_cache(subject_id, entry_id, i, name, bytes(data)))
+        render_info = {"source": "uploaded_images", "cache": cache_names}
+    pages_name = f"pages-{entry_id.replace('mat-', '')}.pages.json"
     (mat.materials_dir(subject_id) / pages_name).write_text(
-        json.dumps({"title": entry["title"], "pages": records}, ensure_ascii=False, indent=1),
+        json.dumps({"title": entry["title"], "pages": records, "render": render_info},
+                   ensure_ascii=False, indent=1),
         encoding="utf-8")
 
     mat.set_material_pages_file(db, subject_id, entry_id, pages_name)
@@ -135,6 +185,7 @@ def import_pages(db, subject_id: str, *, title: str, files: list[tuple[str, byte
     )
     return {"id": entry_id, "title": entry["title"], "page_count": len(records),
             "unreadable": unreadable, "pages": records, "elapsed_ms": elapsed_ms,
+            "render": render_info,
             "text_health": entry.get("text_health"), "mode": mat.MODE_ALL_AI,
             "note_zh": (f"已导入 {len(records)} 页；其中 {len(unreadable)} 页读不出来"
                         if unreadable else f"已导入 {len(records)} 页，全部读到了内容"),
@@ -183,22 +234,127 @@ def _build_provider(db):
 
 def load_pages(subject_id: str, material_id: str) -> list[dict]:
     """读回某份材料的页面记录（出题/判题按页取依据用）；没有就返回空。"""
+    return list((_pages_doc(subject_id, material_id) or {}).get("pages") or [])
+
+
+def _pages_doc(subject_id: str, material_id: str) -> dict | None:
+    """读取整份 `*.pages.json`（页面记录 + 渲染/缓存口径）。"""
     d = mat.materials_dir(subject_id)
     for p in sorted(d.glob("*.md")):
         e = mat._parse_entry(p)
         if not e or e["id"] != material_id:
             continue
         name = str(e.get("pages_file") or "")
-        if not name:
-            return []
         f = d / name
-        if not f.exists():
-            return []
+        if not name or not f.exists():
+            return None
         try:
-            return list((json.loads(f.read_text(encoding="utf-8")) or {}).get("pages") or [])
+            return json.loads(f.read_text(encoding="utf-8")) or {}
         except Exception:
-            return []
-    return []
+            return None
+    return None
+
+
+def reread_pages(db, subject_id: str, material_id: str, *, pages: str = "",
+                 provider=None, want: str = "") -> dict:
+    """**按需取页范围**：从缓存里取原始图（或 PDF 重渲染那几页）→ 再读一遍 → 合并回页面记录。
+
+    - PDF 导入的材料：用缓存里的 **PDF** 重渲染指定页（`pdf_pages` 口径）；
+    - 图片导入的材料：用缓存里的**原始页面图**；
+    - 合并口径：同一页（`page_no` / `page_label`）**替换**，新页**追加**，其余不动（幂等可重跑）。
+    """
+    from ..service import model_config
+
+    ok, why = model_config.supports_vision(db)
+    if not ok:
+        from .schemas import OutlineError
+
+        raise OutlineError("这条路需要能读图片的模型：" + why)
+    doc = _pages_doc(subject_id, material_id) or {}
+    render = dict(doc.get("render") or {})
+    records = list(doc.get("pages") or [])
+    if not records:
+        from .schemas import OutlineError
+
+        raise OutlineError(f"材料不存在或还没有页面记录: {material_id}")
+    if provider is None:
+        provider = _build_provider(db)
+
+    is_pdf = str(render.get("source") or "") == "pdf_render"
+    rendered: list[tuple[str, str, bytes, int | None]] = []   # (label, mime, bytes, page_no)
+    if is_pdf:
+        cache = str(render.get("cache") or "")
+        data = pdfrender.load_pdf_cache(subject_id, str(render.get("key") or material_id))
+        if not data or not cache:
+            from .schemas import OutlineError
+
+            raise OutlineError("这份材料的 PDF 缓存已经清理掉了，没法按页重读——"
+                               "请重新导入这份 PDF（缓存只保留一段时间）")
+        picked = pdfrender.render_pages(data, pages=pages or None)
+        for p in picked:
+            rendered.append((f"第 {p['page_no']} 页", p["mime"], p["data"], p["page_no"]))
+    else:
+        names = [str(x) for x in (render.get("cache") or [])]
+        picked = pdfrender.parse_pages(pages, len(names)) if pages else list(range(1, len(names) + 1))
+        for n in picked:
+            fn = names[n - 1] if n - 1 < len(names) else ""
+            f = _image_cache_dir() / fn if fn else None
+            if not fn or not f.exists():
+                from .schemas import OutlineError
+
+                raise OutlineError(f"第 {n} 页的原始图片缓存不在了，没法重读——请重新导入这张图")
+            rendered.append((f"第 {n} 页", _mime_of(fn) or "image/png", f.read_bytes(), n))
+
+    updated: list[dict] = []
+    for label, mime, data_bytes, page_no in rendered:
+        out, version = read_page(
+            provider, images=[image_block(data_bytes, mime=mime)],
+            page_label=label, want=want or "这一页的正文要点、公式与图里画了什么",
+            note=f"按需重读的 {label}", subject_id=subject_id)
+        rec = out.model_dump()
+        rec["prompt_version"] = version
+        if page_no is not None:
+            rec["page_no"] = page_no
+        updated.append(rec)
+    merged = _merge_pages(records, updated)
+    d = mat.materials_dir(subject_id)
+    for p in sorted(d.glob("*.md")):
+        e = mat._parse_entry(p)
+        if not e or e["id"] != material_id:
+            continue
+        name = str(e.get("pages_file") or "")
+        if name:
+            (d / name).write_text(
+                json.dumps({"title": e["title"], "pages": merged, "render": render},
+                           ensure_ascii=False, indent=1), encoding="utf-8")
+        break
+    labels = [str(r.get("page_label") or "") for r in updated]
+    ledger.note(
+        ledger.CAT_MATERIAL, f"材料《{doc.get('title') or material_id}》· 按页重读",
+        f"按你的要求把 {'、'.join(labels[:8])} 重新读了一遍（共 {len(updated)} 页）——"
+        "页面记录已就地更新；这一步同样要问模型，所以也会花钱。",
+        impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
+        detail={"kind": "pages_reread", "pages": labels[:20], "count": len(updated),
+                "source": render.get("source") or ""},
+    )
+    return {"id": material_id, "title": doc.get("title") or "", "reread": labels,
+            "count": len(updated), "pages": merged}
+
+
+def _merge_pages(old: list[dict], new: list[dict]) -> list[dict]:
+    """按 `page_label` 合并（新的替换同页、追加新页；保序：原顺序在前，新页在后）。"""
+    by_label = {str(r.get("page_label") or ""): r for r in new}
+    out: list[dict] = []
+    used: set[str] = set()
+    for r in old:
+        label = str(r.get("page_label") or "")
+        if label in by_label:
+            out.append(by_label[label])
+            used.add(label)
+        else:
+            out.append(r)
+    out.extend(r for k, r in by_label.items() if k not in used)
+    return out
 
 
 def pages_digest(db, subject_id: str) -> str:
@@ -213,4 +369,5 @@ def pages_digest(db, subject_id: str) -> str:
     return _digest(out)
 
 
-__all__ = ["MAX_PAGES", "ALLOWED_MIME", "pages_dir", "import_pages", "load_pages", "pages_digest"]
+__all__ = ["MAX_PAGES", "ALLOWED_MIME", "import_pages", "load_pages", "pages_digest",
+           "reread_pages"]

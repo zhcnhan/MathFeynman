@@ -37,6 +37,9 @@ _dsh-local/
 .runtime/
 *.log
 
+# R57：PDF→页图渲染的缓存（**渲染出来的大图绝不入库**；见 backend/app/outline/pdfrender.py）
+.runtime/pdf_cache/
+
 # 本地进度数据库备份（绝不推送）
 backend/data/
 
