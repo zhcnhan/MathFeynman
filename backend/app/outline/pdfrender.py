@@ -245,6 +245,11 @@ def cache_dir() -> Path:
     return Path(get_settings().pdf_cache_dir)
 
 
+def pdf_cache_path(subject_id: str, key: str) -> Path:
+    """缓存里这份 PDF 的**路径**（不读内容；界面"能不能一键改道"只查它在不在）。"""
+    return cache_dir() / f"{_safe(subject_id)}-{_safe(key)}.pdf"
+
+
 def save_pdf_cache(subject_id: str, key: str, data: bytes) -> str:
     """把上传的 PDF 存进缓存目录（供"以后再读某几页"用），返回文件名。"""
     d = cache_dir()
@@ -304,4 +309,5 @@ def _safe(s: str) -> str:
 
 
 __all__ = ["FORMATS", "PdfRenderError", "render_available", "render_options", "parse_pages",
-           "render_pages", "cache_dir", "save_pdf_cache", "load_pdf_cache", "cleanup_pdf_cache"]
+           "render_pages", "cache_dir", "pdf_cache_path", "save_pdf_cache", "load_pdf_cache",
+           "cleanup_pdf_cache"]

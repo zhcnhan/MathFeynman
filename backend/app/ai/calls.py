@@ -481,6 +481,43 @@ CALL_READ_PAGE = CallSpec(
 
 
 # ---------------------------------------------------------------------------
+# **R67 任务 F（批量读）**：一次调用读 2–4 页 —— **仍然一页一条记录**
+#
+# 为什么要独立一个调用点：省的是"网络往返次数"，不是"读得粗"。口径必须是
+# "一次发几张图，回来 N 条记录、每条各自带页号"，**绝不允许**把几页糊成一条。
+# ---------------------------------------------------------------------------
+class ReadPagesIn(BaseModel):
+    """批量读：一次要读的页（按顺序）+ 想读出来的东西。图片本体在消息里（多模态）。"""
+
+    page_labels: list[str] = Field(default_factory=list)   # 这一批要读的页号（一页一条记录）
+    want: str = ""
+    note: str = ""
+
+
+class ReadPagesItem(BaseModel):
+    """**每页一条**的读取记录（字段与单页读时逐字相同）。"""
+
+    page_label: str = ""
+    readable: bool = True
+    unreadable_reason: str = ""
+    key_points: list[str] = Field(default_factory=list)
+    visible_text: list[str] = Field(default_factory=list)
+    formulas: list[str] = Field(default_factory=list)
+    figures: list[dict] = Field(default_factory=list)
+    uncertain: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
+class ReadPagesOut(BaseModel):
+    pages: list[ReadPagesItem] = Field(default_factory=list)
+
+
+CALL_READ_PAGES = CallSpec(
+    "read_pages", "light", ReadPagesIn, ReadPagesOut, temperature=0.1, max_retries=1,
+)
+
+
+# ---------------------------------------------------------------------------
 # **R56 第 2 步**：图示教材模式（全 AI 模式）的完整提示词调用点
 #
 # 为什么要**独立一套**（不与路径②共用）：路径②的提示词里写着"必须逐字出自教材段落"
@@ -670,6 +707,7 @@ CALLS: dict[str, CallSpec] = {
         CALL_UNIT_CONTENT,
         CALL_SEARCH_CANDIDATES,
         CALL_READ_PAGE,
+        CALL_READ_PAGES,
         CALL_MODE_OUTLINE,
         CALL_MODE_LESSON,
         CALL_MODE_EXERCISE,

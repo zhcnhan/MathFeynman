@@ -6,6 +6,10 @@
   每页文本上限（防畸形页刷爆内存）——超限给中文错误提示；
 - 产出：分页文本 sections（每页一条：页码 + 正文），并组装为带页标记的整段正文
   （引用材料入库 kind=pdf，分节可追溯"第 N 页"）；
+- **R67 任务 C**：顺带读出 **PDF 自带书签**（`bookmarks`）——这是书自己的权威目录，
+  比"解析目录页的印刷文字"可靠得多（实测某 126 页书：书签 31 条干净标题，
+  而目录页文字只有 2 条认得出）。读书签**失败不影响解析**（吞掉异常 → 空表，
+  调用方回落原来的目录页解析）；**不新增依赖**（pypdf 已在用）；
 - **R55 C：抽取修正**（只影响**新导入**；原始抽取文本一并返回，供事后核查"是抽取错了还是模型编了"）：
   ① 私用区字形 → 真标点（**已知码位表 + 通用兜底**两层，见 `_PUA_KNOWN` / `_fold_private_use`）；
   ② 拆字空格合并（汉字之间直接合并；拉丁单字母只在"疑似被拆开的词"上合并，见 `_merge_broken_spaces`）；
@@ -216,9 +220,11 @@ def _mb(n: int) -> str:
 
 
 def parse_pdf_bytes(data: bytes, *, filename: str = "") -> dict:
-    """解析 PDF 字节 → ``{sections, pages, chars, body, raw_body, quality}``。
+    """解析 PDF 字节 → ``{sections, pages, chars, body, raw_body, quality, bookmarks}``。
 
     ``body`` ＝ **修正后**（注入给模型用）；``raw_body`` ＝ **原始抽取**（留档供核查）。
+    ``bookmarks`` ＝ PDF **自带书签**（``[{title, page, level}]``，``page`` 为 **1 起的物理页号**；
+    没有书签/读不到 → 空表）。**R67 任务 C**：书签是"书自己写的目录"，比解析目录页文字权威。
     """
     s = get_settings()
     if len(data) > max(1, s.pdf_max_bytes):
@@ -238,6 +244,8 @@ def parse_pdf_bytes(data: bytes, *, filename: str = "") -> dict:
         raise PdfParseError("PDF 不含任何页面")
     if total_pages > max(1, s.pdf_max_pages):
         raise PdfParseError(f"PDF 页数过多（{total_pages} 页，上限 {max(1, s.pdf_max_pages)} 页）")
+    # **R67 任务 C**：书签（权威目录）——读书签失败一律当"没有书签"，绝不因此让解析失败
+    bookmarks = _read_bookmarks(reader, total_pages=total_pages)
     per_page_cap = max(200, s.pdf_per_page_max_chars)
     sections: list[dict] = []
     raw_sections: list[dict] = []
@@ -270,7 +278,68 @@ def parse_pdf_bytes(data: bytes, *, filename: str = "") -> dict:
     body = "\n\n".join(f"【第 {sec['page']} 页】\n{sec['text']}" for sec in sections)
     quality = extract_quality(raw_body, pages=total_pages, images=images, image_pages=image_pages)
     return {"sections": sections, "pages": total_pages, "chars": chars, "body": body,
-            "raw_body": raw_body, "quality": quality}
+            "raw_body": raw_body, "quality": quality, "bookmarks": bookmarks}
+
+
+# ---------------------------------------------------------------------------
+# **R67 任务 C**：PDF 自带书签（权威目录）
+# ---------------------------------------------------------------------------
+def _read_bookmarks(reader, *, total_pages: int) -> list[dict]:
+    """pypdf 的 ``reader.outline`` → ``[{title, page, level}]``（``page`` 为 1 起物理页号）。
+
+    - **读不到就给空表**（加密/没有书签/结构怪异都算"没有书签"）——绝不因此让解析失败；
+    - ``page`` 取不到时给 ``0``（调用方按"标题落在哪一页"再找一次，找不到才顺延）；
+    - 只收前 400 条（防畸形书签把内存/界面刷爆）。
+    """
+    out: list[dict] = []
+    try:
+        items = list(getattr(reader, "outline", None) or [])
+    except Exception:
+        return []
+    if not items:
+        return []
+
+    def walk(nodes, level: int) -> None:
+        for it in nodes:
+            if len(out) >= 400:
+                return
+            if isinstance(it, list):
+                walk(it, level + 1)
+                continue
+            title = str(getattr(it, "title", "") or "").strip()
+            page = 0
+            try:
+                idx = reader.get_destination_page_number(it)
+                page = int(idx) + 1
+            except Exception:
+                page = 0
+            if page < 0 or page > int(total_pages):
+                page = 0
+            if title:
+                out.append({"title": title, "page": page, "level": int(level)})
+
+    try:
+        walk(items, 0)
+    except Exception:
+        return []
+    return out
+
+
+def pdf_bookmarks(data: bytes) -> list[dict]:
+    """只读书签（不抽文本）→ ``[{title, page, level}]``；读不到就给空表。
+
+    给"快读"选页用（只要目录 + 每章开头几页时，不必把整本文本抽出来）。
+    """
+    if not data or PDF_MAGIC not in data[:1024]:
+        return []
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(data))
+        total = len(reader.pages)
+    except Exception:
+        return []
+    return _read_bookmarks(reader, total_pages=total)
 
 
 def _clean_raw(text: str) -> str:
@@ -291,6 +360,6 @@ def _clean(text: str) -> str:
 
 
 __all__ = [
-    "PdfParseError", "parse_pdf_bytes", "PDF_MAGIC",
+    "PdfParseError", "parse_pdf_bytes", "PDF_MAGIC", "pdf_bookmarks",
     "extract_quality", "is_private_use", "_fold_private_use", "_merge_broken_spaces", "_clean",
 ]

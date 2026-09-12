@@ -115,12 +115,48 @@ def _pages_title(db, subject_id: str) -> str:
 
 
 def generate_mode_unit(db, subject_id: str, unit, *, provider=None, want_count: int = 3) -> dict:
-    """给一个单元生成"全 AI 模式"的内容并落盘 → ``{status, node_id, path, note, ...}``。"""
-    pages = mode_pages.pages_digest(db, subject_id)
-    if not pages.strip():
+    """给一个单元生成"全 AI 模式"的内容并落盘 → ``{status, node_id, path, note, ...}``。
+
+    **R67 任务 F（硬约束）**：给单元出讲解/题目之前，**必须先真的读过这一章**——
+    - 单元依据的页**一页都没读到** → ``status=uncovered`` + 中文说明（按既有"没内容"那套如实说），
+      **不调用模型、不落盘、不编造**；
+    - 只读到一部分（例如"快读"抽样）→ 只把**读到的那几页**交给模型（不许拿别的章节凑），
+      并在返回/账本里写明"这个单元还有哪几页没读"。
+    """
+    from ..service import ledger
+
+    pages_all = mode_pages.pages_digest(db, subject_id)
+    if not pages_all.strip():
         from .schemas import OutlineError
 
         raise OutlineError("这个学科还没有页面记录：先用「图片为主的教材」导入页面图片，再生成内容")
+    state = mode_pages.unit_page_state(db, subject_id, unit)
+    if state["refs"] and not state["read"]:
+        # 这一章**一页都没读过**（快读抽样时最可能撞上）→ 按"还没内容"如实说，绝不编造
+        note = (f"这个单元的依据是 {'、'.join(state['refs'][:8])}"
+                + ("…" if len(state["refs"]) > 8 else "")
+                + "，这几页这次**没有读到**——系统不编造内容："
+                  "请先把这几页读了（在材料里点「重读这几页」，或重新导入时把这一章读进来），再生成。")
+        _record_reason(db, subject_id, unit, note)
+        ledger.note(ledger.CAT_GENERATION, f"单元内容（{unit.id}）",
+                    note, impact=ledger.SCOPE_UNIT, remedy=ledger.REMEDY_RETRY,
+                    subject_id=subject_id, unit_id=unit.id,
+                    detail={"kind": "mode_unit_pages_not_read", "refs": state["refs"][:20],
+                            "unread": state["unread"][:20]})
+        return {"status": "uncovered", "node_id": unit.id, "path": "", "note": note,
+                "unit": unit.id, "subject": subject_id, "source_pages": state["refs"]}
+    pages = state["digest"] if state["refs"] and state["digest"].strip() else pages_all
+    if state["unread"]:
+        note_zh = (f"这个单元依据的页里，{'、'.join(state['unread'][:8])}"
+                   + ("…" if len(state["unread"]) > 8 else "")
+                   + " 这次没读到（是抽样读的），所以讲解与题目只用了读到的那几页。")
+        ledger.note(ledger.CAT_GENERATION, f"单元内容（{unit.id}）",
+                    note_zh, impact=ledger.SCOPE_UNIT, remedy=ledger.REMEDY_RETRY,
+                    subject_id=subject_id, unit_id=unit.id,
+                    detail={"kind": "mode_unit_partial_pages", "read": state["read"][:20],
+                            "unread": state["unread"][:20]})
+    else:
+        note_zh = ""
     if provider is None:
         provider = _build_provider(db)
 
@@ -144,10 +180,33 @@ def generate_mode_unit(db, subject_id: str, unit, *, provider=None, want_count: 
                 "note": "；".join(out.errors[:3])}
     return {"status": "created", "node_id": unit.id, "path": str(path),
             "note": (f"出稿：全 AI 模式（模型写讲解 + 出题，共 {len(doc.exercises)} 题）"
-                     f"；这个模式没有独立的第二次核对"),
+                     f"；这个模式没有独立的第二次核对"
+                     + ("；" + note_zh if note_zh else "")),
             "source_pages": list(lesson.source_pages or []),
+            "read_pages": state["read"], "unread_pages": state["unread"],
             "lesson_uncertain": bool(lesson.uncertain),
             "exercise_uncertain": bool(exercises.uncertain)}
+
+
+def _record_reason(db, subject_id: str, unit, note: str) -> None:
+    """把"这个单元为什么没出内容"写回大纲单元的 meta（覆盖账/会话守卫据此如实说）。"""
+    try:
+        from . import store as ostore
+
+        doc = ostore.get_outline(subject_id)
+        if doc is None:
+            return
+        target = doc.by_id().get(unit.id)
+        if target is None:
+            return
+        meta = dict(target.meta or {})
+        meta["coverage"] = {"status": "未覆盖", "note": note, "material_bound": True,
+                            "grounded_facts": 0, "dropped_exercises": 0,
+                            "figure_unavailable": False}
+        target.meta = meta
+        ostore.save_outline(subject_id, doc)
+    except Exception:
+        pass
 
 
 def _to_node_doc(subject_id: str, unit, lesson, exercises, subject_label: str = "") -> NodeDoc:

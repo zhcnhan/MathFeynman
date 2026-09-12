@@ -61,6 +61,25 @@ const STATUS_CLS: Record<string, string> = {
   draft: "deferred",
 };
 
+// R67：材料上的"上次读到哪了"（程序重启过也留着）+ 该走哪条路的建议
+type MaterialImportState = {
+  state?: string;
+  strategy?: string;
+  sampled?: boolean;
+  read?: number;
+  total?: number;
+  pending?: string[];
+  failed?: string[];
+  note_zh?: string;
+};
+
+type MaterialSuggest = {
+  better?: string;
+  reason_zh?: string;
+  can_switch_to_pages?: boolean;
+  can_switch_to_text?: boolean;
+};
+
 type MaterialItem = {
   id: string;
   title: string;
@@ -77,6 +96,10 @@ type MaterialItem = {
   mode?: string;
   mode_zh?: string;
   page_count?: number;
+  /** R67：上次读到哪了（进度；程序重启后仍能看出来） */
+  import_state?: MaterialImportState;
+  /** R67：该走哪条路 + 能不能一键改道 */
+  suggest?: MaterialSuggest;
   // R55 A：教材体检（认不出比例 / 拆字比例 / 公式符号 / 图片数 → 好·一般·差 + 人话）
   text_health?: {
     pages: number; chars: number; healthy: boolean; checked: boolean; note: string;
@@ -148,10 +171,32 @@ type CoverageByMaterial = {
   /** R55 B：哪几章/节在引用图（系统读不到图；不会被当作依据） */
   figure_unavailable?: string[];
   figure_unavailable_count?: number;
+  /** R67 任务 D：这份材料的读书账（进流程 / 没进去 / 差在哪） */
+  text_account?: TextAccount;
+  /** R67 任务 F：是不是"抽样读"的（读了哪几页 / 还剩哪些页） */
+  sampled?: boolean;
+  read_pages?: number;
+  planned_pages?: number;
+  pages_pending?: string[];
+  import_state?: string;
 };
 
-type NotInjected = {
-  material: string;
+/** R67 任务 D：一份材料的"读书账"（进流程多少字 / 没进去多少字 / 差在哪）。 */
+type TextAccount = {
+  material_id?: string;
+  title?: string;
+  body_chars?: number;
+  injected_chars?: number;
+  blocks_chars?: number;
+  not_injected_chars?: number;
+  cap_skipped_chars?: number;
+  unused_page_chars?: number;
+  marker_chars?: number;
+  note_zh?: string;
+  groups?: { kind: string; label_zh: string; count: number; chars: number; sample_zh: string }[];
+};
+
+type NotInjected = {  material: string;
   material_id?: string;
   label: string;
   chars: number;
@@ -195,6 +240,8 @@ type Coverage = {
   materials: { id: string; title: string; healthy: boolean; note: string; structure_kind: string; structure_note: string; role?: string; role_zh?: string }[];
   entries: CoverageEntry[];
   units: CoverageUnit[];
+  /** R67 任务 D：跨材料的读书账合计（进流程多少字 / 没进去多少字 / 差在哪） */
+  text_account?: TextAccount & { materials?: TextAccount[]; all_checks_ok?: boolean };
 };
 
 const COVERAGE_CLS: Record<string, string> = { 完整: "pass", 部分: "deferred", 未覆盖: "error" };
@@ -238,6 +285,42 @@ const POLICY_LABEL: Record<string, string> = {
   mixed: "混合",
 };
 
+// R67：读法三档 / 一次读多少页 / 同时读几页（都由后端给默认值与上限，界面不写死）
+type ReadOptions = {
+  strategies: { value: string; label: string }[];
+  default_strategy: string;
+  default_max_pages: number;
+  hard_max_pages: number;
+  default_concurrency: number;
+  max_concurrency: number;
+  default_batch_pages: number;
+  max_batch_pages: number;
+  fast_pages_per_chapter: number;
+  checkpoint_every_pages: number;
+  seconds_per_page_hint: number;
+  note_zh: string;
+};
+
+// R67 任务 A：一次导入的进度（后台任务；刷新页面也能接着看）
+type ImportJob = {
+  id: string;
+  status: "running" | "done" | "cancelled" | "failed";
+  title: string;
+  total: number;
+  done: number;
+  failed: number;
+  current: string;
+  material_id: string;
+  note_zh: string;
+  strategy?: string;
+  sampled?: boolean;
+  pending?: string[];
+  unreadable?: string[];
+  error_zh?: string;
+  read_options?: ReadOptions;
+  poll_zh?: string;
+};
+
 export default function OutlinePage() {
   const { id = "" } = useParams();
   const nav = useNavigate();
@@ -272,11 +355,20 @@ export default function OutlinePage() {
     vision_ready: boolean; vision_note_zh: string; vision_model: string;
     pdf_render_ready?: boolean; pdf_render_note_zh?: string;
     pdf_render_options?: { width: number; format: string; dpi_cap: number };
+    read_options?: ReadOptions;
     entry_zh: {
       label: string; what_zh: string; pros_zh: string; costs_zh: string[];
       not_better_zh: string; need_images_zh: string;
     };
   } | null>(null);
+  // R67：读法三档 + 一次读多少页（默认 60，用户可改）+ 同时读几页 + 一次读几页
+  const [readMaxPages, setReadMaxPages] = useState("60");
+  const [readStrategy, setReadStrategy] = useState("full");
+  const [readConcurrency, setReadConcurrency] = useState("3");
+  const [readBatch, setReadBatch] = useState("1");
+  // R67 任务 A：导入进度（点击后立刻返回，进度在这里一直更新；可随时停止）
+  const [job, setJob] = useState<ImportJob | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   // R57：PDF 页范围（如 1-20；留空＝整本）+ 起草大纲的忙碌状态
   const [modePages, setModePages] = useState("");
   const [draftingMode, setDraftingMode] = useState(false);
@@ -485,6 +577,11 @@ export default function OutlinePage() {
     }
   };
 
+  // R67 任务 A：导入改**后台任务**——点击后立刻返回，进度在这里一直更新，随时可以停。
+  // 任务号记在本地：刷新页面后先按"最近一次任务"把进度接回来（任务记录只在程序内存里，
+  // 程序重启过就查不到 → 那时按材料上留下的"读到哪了"如实显示，不假装还在跑）。
+  const jobIdRef = useRef<string>("");
+
   const uploadPages = async () => {
     const inp = pagesFileRef.current;
     const list = Array.from(inp?.files ?? []);
@@ -492,29 +589,116 @@ export default function OutlinePage() {
       setErr("请先选择教材的页面图片或 PDF（PDF 会自动按页转成图片；也可以一次选多张图片）");
       return;
     }
+    const fd = new FormData();
+    if (matTitle.trim()) fd.append("title", matTitle.trim());
+    for (const f of list) fd.append("files", f);
+    // 先把文件塞进 fd，再补读法参数（同一个 FormData 一起提交）
+    const extra = {
+      pages: modePages.trim(),
+      strategy: readStrategy,
+      max_pages: readMaxPages.trim(),
+      concurrency: readConcurrency,
+      batch_pages: readBatch,
+    };
+    for (const [k, v] of Object.entries(extra)) if (v) fd.append(k, v);
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const r = await api.upload<ImportJob>(`/subjects/${id}/materials/upload-pages/start`, fd);
+      jobIdRef.current = r.id;
+      setJob(r);
+      setMsg(r.poll_zh || "已开始导入：进度会一直在页面上更新（可以随时点「停止这次导入」）。");
+      if (inp) inp.value = "";
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  /** 停止这次导入：已读的页会留在材料里（一页都不丢）。 */
+  const cancelImport = async () => {
+    if (!job?.id) return;
+    setCancelling(true);
+    setErr("");
+    try {
+      const r = await api.post<ImportJob>(`/subjects/${id}/import-jobs/${job.id}/cancel`, {});
+      setJob(r);
+      setMsg(r.note_zh || "已请求停止：读完手上这一页就停，已读的页会存下来。");
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  /** R67 任务 E：选错了能**一键改道**——把这份 PDF 改成"连图一起看"（不必重导一遍）。 */
+  const switchToPages = async (mid: string) => {
     setBusy(true);
     setErr("");
     setMsg("");
     try {
       const fd = new FormData();
-      if (matTitle.trim()) fd.append("title", matTitle.trim());
-      if (modePages.trim()) fd.append("pages", modePages.trim());
-      for (const f of list) fd.append("files", f);
-      const r = await api.upload<{
-        id: string; title: string; page_count: number; unreadable: string[]; note_zh: string;
-        render?: { source?: string; pages?: number[]; width?: number; dpi?: number };
-      }>(`/subjects/${id}/materials/upload-pages`, fd);
-      const fromPdf = r.render?.source === "pdf_render";
-      setMsg(`「${r.title}」已按「图片为主的教材」入库：${r.note_zh}。` +
-        (fromPdf
-          ? `（把 PDF 的第 ${(r.render?.pages ?? []).slice(0, 6).join("、")} 页转成图片后读的，`
-            + `出图宽 ${r.render?.width ?? "—"} px；页面图片本身没有存进内容目录）`
-          : "") +
-        (r.unreadable.length ? `读不出来的页：${r.unreadable.join("、")}（已如实标注，不会当成内容用）` : ""));
-      if (inp) inp.value = "";
+      fd.append("strategy", readStrategy);
+      fd.append("max_pages", readMaxPages.trim());
+      fd.append("concurrency", readConcurrency);
+      fd.append("batch_pages", readBatch);
+      const r = await api.upload<ImportJob>(
+        `/subjects/${id}/materials/${mid}/switch-to-pages`, fd);
+      jobIdRef.current = r.id;
+      setJob(r);
+      setMsg("已改道：正在把这份 PDF 逐页交给 AI 读（进度会一直更新）。原来那份只看文字的材料没动。");
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 反向改道：把"连图一起看"读过的 PDF 再按"只看文字"存一份（原来那份一字不动）。 */
+  const switchToText = async (mid: string) => {
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const r = await api.post<{ title: string; note_zh?: string }>(
+        `/subjects/${id}/materials/${mid}/switch-to-text`, {});
+      setMsg(r.note_zh || `已另存一份「${r.title}」。`);
       await loadMaterials();
     } catch (e) {
       setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 接着把没读的页补读（材料里留下的"还剩哪些页没读"）。
+   *  页可能很多 → 走**后台任务**（进度可见、可取消、已读的留着），不再是一个请求挂十几分钟。 */
+  const readPendingPages = async (mid: string, title: string, pending: string[]) => {
+    const nums = pending.map((x) => (x.match(/第\s*(\d+)\s*页/) || [])[1]).filter(Boolean);
+    if (!nums.length) {
+      setErr("这份材料剩下的页没有页号，没法自动补读——可以在下面按页重读。");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const fd = new FormData();
+      fd.append("pages", nums.join(","));
+      fd.append("strategy", "range");
+      fd.append("max_pages", String(Math.max(nums.length, 1)));
+      fd.append("concurrency", readConcurrency);
+      fd.append("batch_pages", readBatch);
+      const r = await api.upload<ImportJob>(
+        `/subjects/${id}/materials/${mid}/read-pages-job`, fd);
+      jobIdRef.current = r.id;
+      setJob(r);
+      setMsg(`已开始接着读《${title}》还没读的 ${nums.length} 页（进度会一直更新；读到的会另存一份新材料）。`);
+    } catch (e) {
+      // 没有 PDF 缓存（例如页面图片导入的材料）→ 回到按页重读（页少时够用）
+      setErr(String(e));
+      await rereadMaterialPages(mid, title, nums.slice(0, 12).join(","));
     } finally {
       setBusy(false);
     }
@@ -662,11 +846,65 @@ export default function OutlinePage() {
     }
   }, [id]);
 
+  /** 刷新页面后把进度接回来：先看这个学科有没有正在跑的导入（任务记录只在程序内存里，
+   *  程序重启过就查不到 → 这时按材料上留下的"读到哪了"如实显示，不假装还在跑）。 */
+  const resumeImportJob = async () => {
+    try {
+      const r = await api.get<{ active: ImportJob | null }>(`/subjects/${id}/import-jobs`);
+      if (r.active && r.active.id) {
+        jobIdRef.current = r.active.id;
+        setJob(r.active);
+      }
+    } catch {
+      /* 读不到就算了：材料列表里仍能看出"读到哪了" */
+    }
+  };
+
   useEffect(() => {
     void load();
     void loadMaterials();
     void loadModeEntry();
+    void resumeImportJob();
   }, [load]);
+
+  // R67 任务 A：进度轮询（只在这条导入还在跑的时候轮询；跑完就把材料列表刷新一遍）
+  useEffect(() => {
+    if (!job || job.status !== "running" || !job.id) return;
+    let stopped = false;
+    const tick = async () => {
+      try {
+        const r = await api.get<ImportJob>(`/subjects/${id}/import-jobs/${job.id}`);
+        if (stopped) return;
+        setJob(r);
+        if (r.status !== "running") {
+          await loadMaterials();
+          if (r.status === "cancelled") {
+            setMsg(r.note_zh || "已停止：读到的页都存下来了。");
+          } else if (r.status === "failed") {
+            setErr(`这次导入没能继续：${r.error_zh || r.note_zh || "原因见记录"}`);
+          } else {
+            setMsg(`「${r.title}」${r.note_zh || "读完了"}` +
+              (r.unreadable?.length
+                ? `读不出来的页：${r.unreadable.join("、")}（已如实标注，不会当成内容用）`
+                : ""));
+          }
+        }
+      } catch (e) {
+        if (stopped) return;
+        // 程序重启过 / 任务号失效：进度查不到了，但已读的页还在材料里
+        setJob(null);
+        setErr(`${String(e)}`);
+        await loadMaterials();
+      }
+    };
+    const h = window.setInterval(() => void tick(), 900);
+    void tick();
+    return () => {
+      stopped = true;
+      window.clearInterval(h);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id, job?.status, id]);
 
   const draft = async (regen = false) => {
     setBusy(true);
@@ -956,16 +1194,19 @@ export default function OutlinePage() {
                   onChange={(e) => setMatText(e.target.value)}
                   style={{ width: "100%", minHeight: 56 }} />
 
-        {/* C2：PDF 上传（分页/分节 → 引用库 kind:pdf；保留文本粘贴入口） */}
+        {/* C2：PDF 上传（分页/分节 → 引用库 kind:pdf；保留文本粘贴入口）
+            R67 任务 E：两个入口的**区别写在按钮上**（只看文字 vs 连图一起看），
+            并把"选错了怎么办"就地写出来（一键改道，不必重导一遍）。 */}
         <div className="input-row" style={{ gap: 8, margin: "8px 0" }}>
           <input type="file" accept=".pdf,application/pdf" ref={pdfFileRef} disabled={busy}
                  style={{ flex: 1 }} />
           <button className="primary" disabled={busy} onClick={() => void uploadPdf()}>
-            上传 PDF → 引用库
+            上传 PDF（只看文字）
           </button>
         </div>
         <div className="dim" style={{ fontSize: 12 }}>
-          PDF ≤20MB，解析为分页/分节文本入库（kind=PDF，来源可追溯）；扫描图片版请先 OCR 或改用文本粘贴；
+          <strong>只看文字</strong>：把 PDF 里的文字抽出来当教材（快、省；<strong>书里的图看不见</strong>）。
+          PDF ≤20MB，扫描图片版请先做文字识别或改用下面那条路；
           仅上传自有/授权资料，不整本下载书籍。
         </div>
 
@@ -1013,25 +1254,116 @@ export default function OutlinePage() {
                    ref={pagesFileRef} disabled={busy} style={{ flex: 1 }} />
             <button className="primary" disabled={busy || !modeEntry?.vision_ready}
                     onClick={() => void uploadPages()}>
-              导入页面图片 / PDF（全 AI 模式）
+              导入页面图片 / PDF（连图一起看）
             </button>
           </div>
-          <div className="input-row" style={{ gap: 8, marginTop: 4, alignItems: "center" }}>
-            <input placeholder="PDF 页范围（可选，如 1-20；留空＝整本）" value={modePages}
+          <div className="dim" style={{ fontSize: 12, marginTop: 2 }}>
+            <strong>连图一起看</strong>：把 PDF 每页转成图片交给 AI 读（<strong>图、公式、版式都看得见</strong>，
+            但更慢也更贵）。<strong>图多的书选这条</strong>。
+          </div>
+          {/* R67 任务 B/F：读法三档 + 一次读多少页 + 两项提速（都由用户定，都有默认值） */}
+          <div className="input-row" style={{ gap: 8, marginTop: 6, flexWrap: "wrap",
+                                              alignItems: "center" }}>
+            <label className="dim">读法</label>
+            <select value={readStrategy} disabled={busy}
+                    onChange={(e) => setReadStrategy(e.target.value)}
+                    title="快读：只读目录页和每章开头几页，够排大纲；按页范围读：只读你填的那几页；整本精读：一页不落">
+              {(modeEntry?.read_options?.strategies ?? [
+                { value: "fast", label: "快读（挑着读）" },
+                { value: "range", label: "按页范围读" },
+                { value: "full", label: "整本精读" },
+              ]).map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+            <label className="dim">一次读多少页</label>
+            <input value={readMaxPages} onChange={(e) => setReadMaxPages(e.target.value)}
+                   style={{ width: 70 }} placeholder={String(modeEntry?.read_options?.default_max_pages ?? 60)}
+                   title="想读整本就把这本书的页数填进来（例如 126）；填 0 或负数会有中文提示" />
+            <input placeholder="页范围（可选，如 1-20；留空＝按读法来）" value={modePages}
                    onChange={(e) => setModePages(e.target.value)}
-                   style={{ width: 260 }} />
+                   style={{ width: 240 }} />
+          </div>
+          <div className="input-row" style={{ gap: 8, marginTop: 4, flexWrap: "wrap",
+                                              alignItems: "center" }}>
+            <label className="dim">同时读几页</label>
+            <select value={readConcurrency} disabled={busy}
+                    onChange={(e) => setReadConcurrency(e.target.value)}
+                    title="同时读几页会快一些；填太大容易被服务商限流">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <option key={n} value={String(n)}>{n} 页</option>
+              ))}
+            </select>
+            <label className="dim">一次读几页（省来回）</label>
+            <select value={readBatch} disabled={busy}
+                    onChange={(e) => setReadBatch(e.target.value)}
+                    title="一次调用塞几页给模型（1 = 一页一页来，最稳）">
+              {[1, 2, 3, 4].map((n) => (
+                <option key={n} value={String(n)}>{n} 页</option>
+              ))}
+            </select>
             <button className="ghost" disabled={busy || draftingMode || !modeEntry?.vision_ready}
                     onClick={() => void draftModeOutline()}>
               {draftingMode ? "正在按页面记录排大纲…" : "一键起草大纲（本模式）"}
             </button>
           </div>
+          <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
+            读得越多越慢、越贵，<strong>大约每页 8 秒</strong>：想先看个大概就选「快读」
+            （目录页 + 每章开头几页，够排大纲），回头再补读没读到的页；
+            <strong>没读过的章不会生成讲解和题目</strong>（系统不编造）。
+          </div>
+          {/* R67 任务 A：导入进度（点击后立刻开始，进度一直更新，随时可以停） */}
+          {job && (
+            <div className={job.status === "failed" ? "banner error"
+                            : job.status === "running" ? "banner warn" : "banner ok"}
+                 style={{ marginTop: 6 }}>
+              {job.status === "running" ? (
+                <>
+                  <strong>正在读：{job.done} / {job.total || "…"} 页</strong>
+                  {job.current && <span className="dim">（刚读完：{job.current}）</span>}
+                  {job.total > 0 && (
+                    <progress value={job.done} max={job.total}
+                              style={{ width: "100%", marginTop: 4 }} />
+                  )}
+                  <div className="dim" style={{ fontSize: 12 }}>
+                    {job.note_zh} 已经读到的页会一直存在材料里——现在停也不会白读。
+                  </div>
+                  <button className="ghost" disabled={cancelling} onClick={() => void cancelImport()}>
+                    {cancelling ? "正在停止…" : "停止这次导入"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <strong>
+                    {job.status === "cancelled" ? `已停止：读到了 ${job.done} 页`
+                      : job.status === "failed" ? "这次导入没能继续"
+                        : `读完了：共 ${job.done} 页`}
+                  </strong>
+                  <div className="dim" style={{ fontSize: 12 }}>{job.note_zh}</div>
+                  {!!job.unreadable?.length && (
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      读不出来的页：{job.unreadable.join("、")}（已如实标注，不会当成内容用）
+                    </div>
+                  )}
+                  {!!job.pending?.length && (
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      还有 {job.pending.length} 页没读（已读的都在材料里）：
+                      {job.pending.slice(0, 8).join("、")}
+                      {job.pending.length > 8 ? "…" : ""}
+                    </div>
+                  )}
+                  <button className="ghost" onClick={() => setJob(null)}>收起</button>
+                </>
+              )}
+            </div>
+          )}
           <div className="dim" style={{ fontSize: 12 }}>
             可以<strong>直接选 PDF</strong>：装了渲染组件就<strong>按页转成图片</strong>再交给模型（一页一张、页号留痕；
             出图宽 {modeEntry?.pdf_render_options?.width ?? 1024} px、格式
             {" "}{modeEntry?.pdf_render_options?.format ?? "jpeg"}、DPI 上限
             {" "}{modeEntry?.pdf_render_options?.dpi_cap ?? 200}；参数可在配置里改）；
             {" "}<strong>页面图片不会存进内容目录</strong>（避免仓库膨胀），只留"读到了什么"。
-            一次最多 60 页；读不出来的页会<strong>如实标注</strong>、不会被当成内容用。
+            读不出来的页会<strong>如实标注</strong>、不会被当成内容用。
             {modeEntry?.vision_model ? `读图用的模型：${modeEntry.vision_model}。` : ""}
           </div>
         </div>
@@ -1070,6 +1402,57 @@ export default function OutlinePage() {
                   )}
                   {m.text_health?.checked && !m.text_health.healthy && (
                     <div className="dim error-text" style={{ fontSize: 12 }}>{m.text_health.note}</div>
+                  )}
+                  {/* R67 任务 A：这份材料"上次读到哪了"（程序重启过也照样看得见） */}
+                  {!!m.import_state?.total && m.import_state.state !== "done" && (
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      <span className={`badge ${m.import_state.state === "importing" ? "deferred" : ""}`}>
+                        {m.import_state.state === "importing" ? "上次没读完" : "已停止"}
+                      </span>{" "}
+                      已读 {m.import_state.read} / 共 {m.import_state.total} 页
+                      {!!m.import_state.pending?.length && (
+                        <>（还剩 {m.import_state.pending.length} 页没读：{m.import_state.pending.slice(0, 6).join("、")}{m.import_state.pending.length > 6 ? "…" : ""}）</>
+                      )}
+                      {!!m.import_state.pending?.length && (
+                        <button className="ghost" disabled={busy} style={{ marginLeft: 6 }}
+                                onClick={() => void readPendingPages(m.id, m.title, m.import_state!.pending ?? [])}
+                                title="把这份材料里还没读的页接着读完（会再问模型，所以会花钱）">
+                          接着读完没读的页
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {m.import_state?.sampled && (
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      <span className="badge deferred">抽样读</span>{" "}
+                      这本书是挑着读的（目录页 + 每章开头几页）：没读到的章不会生成讲解和题目。
+                    </div>
+                  )}
+                  {/* R67 任务 E：按这份材料的特征给一句人话建议 + 选错了能一键改道 */}
+                  {m.suggest?.better === "pages" && (
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      💡 {m.suggest.reason_zh}
+                      {m.suggest.can_switch_to_pages && (
+                        <button className="ghost" disabled={busy} style={{ marginLeft: 6 }}
+                                onClick={() => void switchToPages(m.id)}
+                                title="不用重新上传：直接用这份 PDF 再按「连图一起看」读一遍；原来那份只看文字的材料一字不动">
+                          一键改成「连图一起看」
+                        </button>
+                      )}
+                      {!m.suggest.can_switch_to_pages && (
+                        <span className="dim">（这份材料的 PDF 不在缓存里了，要改道得把 PDF 再选一次）</span>
+                      )}
+                    </div>
+                  )}
+                  {m.mode === "all_ai" && m.suggest?.can_switch_to_text && (
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      💡 {m.suggest.reason_zh}
+                      <button className="ghost" disabled={busy} style={{ marginLeft: 6 }}
+                              onClick={() => void switchToText(m.id)}
+                              title="不用重新上传：用同一份 PDF 再存一份「只看文字」的材料；原来这份一字不动">
+                        再存一份「只看文字」
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", whiteSpace: "nowrap" }}>
@@ -1395,6 +1778,48 @@ export default function OutlinePage() {
                 </table>
               )}
 
+              {/* R67 任务 D：**读书账说实话**——进流程多少字 / 没进去多少字 / 差在哪。
+                  （以前这里看着像"全读了"，其实有 12% 的正文根本没进去；现在如实列出） */}
+              {coverage.text_account && (coverage.text_account.materials?.length ?? 0) > 0 && (
+                <details style={{ marginTop: 6 }} open={(coverage.text_account.not_injected_chars ?? 0) > 0}>
+                  <summary className="dim">
+                    读书账（进流程 {charsText(coverage.text_account.injected_chars ?? 0)}，
+                    没进去 {charsText(coverage.text_account.not_injected_chars ?? 0)}）
+                  </summary>
+                  <div className="dim" style={{ fontSize: 12, margin: "4px 0 0 12px" }}>
+                    教材一共 {charsText(coverage.text_account.body_chars ?? 0)}，
+                    真正进入流程的是 {charsText(coverage.text_account.injected_chars ?? 0)}
+                    ——没进去的部分下面逐份写清了差在哪。
+                    {coverage.text_account.all_checks_ok === false && (
+                      <span className="error-text">（有一份材料的账对不上，已在下面标出）</span>
+                    )}
+                  </div>
+                  <ul className="plain" style={{ margin: "4px 0 0 12px", fontSize: 12 }}>
+                    {(coverage.text_account.materials ?? []).map((a) => (
+                      <li key={a.material_id} style={{ marginTop: 2 }}>
+                        《{a.title}》：{a.note_zh}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              {/* R67 任务 F：抽样读的材料要标出来（哪些章还没读，不许装成"全书都读了"） */}
+              {!!coverage.by_material?.some((b) => b.sampled) && (
+                <div className="banner warn" style={{ marginTop: 6 }}>
+                  这本书是<strong>挑着读</strong>的（快读：目录页 + 每章开头几页）：
+                  {coverage.by_material.filter((b) => b.sampled).map((b) => (
+                    <span key={b.material_id}>
+                      《{b.title}》已读 {b.read_pages ?? 0} / 共 {b.planned_pages ?? 0} 页
+                      {!!b.pages_pending?.length && (
+                        <>，还剩 {b.pages_pending.length} 页没读（{b.pages_pending.slice(0, 6).join("、")}{b.pages_pending.length > 6 ? "…" : ""}）</>
+                      )}
+                    </span>
+                  ))}
+                  <div className="dim" style={{ fontSize: 12 }}>
+                    没读到的章<strong>不会生成讲解和题目</strong>；想全读就回上面把「读法」改成「整本精读」重新导入。
+                  </div>
+                </div>
+              )}
               {/* R42 A3：因「总注入上限」未纳入（覆盖账如实降 —— 不许"没喂却算覆盖"） */}
               {!!coverage.inject_cap?.configured && (coverage.inject_cap.skipped_count > 0) && (
                 <div className="banner warn" style={{ marginTop: 6 }}>

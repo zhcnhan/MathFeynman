@@ -265,6 +265,36 @@ U_READ_PAGE = (
 )
 
 
+# **R67 任务 F（批量读）**：一次调用读 2–4 页 —— 硬口径是"**一页一条记录，不许糊成一坨**"。
+# 这条只是省网络往返，识读口径与单页那条完全一致（同样四条硬约束）。
+S_READ_PAGES = (
+    "[角色] 你是**教材阅读助手**：这一次会给你**连续几页**的图片（每一张前面会写清它是哪一页），"
+    "请**逐页**给出读取记录。\n"
+    "**五条硬约束（必须遵守）**：\n"
+    "1. **一页一条**：输出里的 `pages` 数组，**每一页一条**，`page_label` 原样回填"
+    "（例如「第 12 页」）；**不许**把几页的内容合成一条，也不许漏页（漏了会被要求重读）；\n"
+    "2. **各页各归各**：每一条只写**那一页**上看到的内容，别把上一页的内容写到下一页里；\n"
+    "3. **只看图说话**：图上没有写的，一律不许补（不许凭常识补公式、补结论、补数字）；\n"
+    "4. **看不清就明说**：字太小、被遮挡、图模糊 → 那一页 `readable=false` 并在 "
+    "`unreadable_reason` 写清**哪一部分读不出来、为什么**；能读一部分就把那部分写出来，"
+    "把读不出的写进 `uncertain`；\n"
+    "5. **不确定就给低 confidence**：`confidence` 是那一页的自评（0~1），宁可低不许虚高。\n"
+    + JSON_DISCIPLINE
+)
+
+U_READ_PAGES = (
+    "输出 JSON：\n"
+    '{{"pages":[{{"page_label":"第 12 页","readable":true,"unreadable_reason":"",'
+    '"key_points":["…"],"visible_text":["…"],"formulas":["…"],'
+    '"figures":[{{"label":"…","kind":"图|表|照片|示意图","description":"图里画了什么（只描述看到的）"}}],'
+    '"uncertain":["…"],"confidence":0.0}}]}}\n'
+    "这一批要读的页（每页一条记录，一条都别漏）：{page_labels}\n"
+    "本次想读出来的东西：{want}\n"
+    "程序附注：{note}\n"
+    "下面按顺序给出每一页的图片（每张图前面写着它是哪一页）："
+)
+
+
 # ---------------------------------------------------------------------------
 # **R56 第 2 步**：图示教材模式（全 AI 模式）的提示词
 # 共同纪律（写进每一条）：
@@ -650,6 +680,16 @@ def _specs() -> dict[str, PromptSpec]:
             user_required_tokens=("key_points", "figures", "confidence", "输出 JSON"),
             notes="这条决定「AI 到底从图里读到了什么」，删掉会让本模式失去依据。"
                   "（`readable=false` + 原因＝读不出来时的诚实出口，建议保留）",
+        ),
+        PromptSpec(
+            "read_pages", "读教材页/图（一次几页）",
+            "一次给几页图片，**逐页**给出读取记录（一页一条，不许糊成一坨、不许漏页）。",
+            S_READ_PAGES, U_READ_PAGES,
+            system_required_tokens=("输出 JSON", "readable"),
+            user_required_placeholders=("page_labels", "want", "note"),
+            user_required_tokens=("pages", "page_label", "confidence", "输出 JSON"),
+            notes="这是「省网络往返」用的批量读：识读口径与单页那条一致，"
+                  "但要求**一页一条记录**（依据必须能指到具体某一页）。",
         ),
         PromptSpec(
             "mode_outline", "图示教材 · 排大纲",

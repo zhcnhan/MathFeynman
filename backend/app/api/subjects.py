@@ -557,6 +557,7 @@ def subject_mode_api(subject_id: str, db: Session = Depends(get_db)) -> dict:
     """
     _require_enabled(db, subject_id)
     from ..outline import materials as mat
+    from ..outline import mode_pages
     from ..outline import pdfrender
     from ..service import model_config
 
@@ -570,6 +571,8 @@ def subject_mode_api(subject_id: str, db: Session = Depends(get_db)) -> dict:
             # **R57 方案 a**：能不能直接用 PDF（不在 → 回落方案 c）
             "pdf_render_ready": render_ok, "pdf_render_note_zh": render_why,
             "pdf_render_options": pdfrender.render_options(),
+            # **R67 任务 B/F**：页数上限的默认值与人话提示 + 读法三档 + 并发上限（界面直接渲染）
+            "read_options": mode_pages.read_options(),
             "entry_zh": mat.mode_entry_zh()}
 
 
@@ -617,9 +620,276 @@ def material_upload_pages(
         raise _err(422, "validation_error", str(e)) from e
 
 
+@router.post("/subjects/{subject_id}/materials/{material_id}/switch-to-pages", status_code=202)
+def material_switch_to_pages(
+    subject_id: str,
+    material_id: str,
+    db: Session = Depends(get_db),
+    pages: str = Form(""),
+    strategy: str = Form(""),
+    max_pages: str = Form(""),
+    concurrency: str = Form(""),
+    batch_pages: str = Form(""),
+) -> dict:
+    """**R67 任务 E**：选错了能**一键改道**——把这份 PDF 改成"连图一起看"（不必重导一遍）。
+
+    用的是导入时顺手存下的 PDF 缓存（**不在 content/ 里**）：起一次后台导入任务，
+    与「连图一起看」入口完全同一条路（进度/取消/已读的页留下，都一样）。
+    缓存过期/没有缓存（例如这份材料本来就是图片导入的）→ **中文说明**，让用户重选文件。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+    from ..outline import mode_pages, pdfrender
+    from ..service import model_config, page_import
+
+    hit = next((e for e in mat.list_materials(db, subject_id) if e["id"] == material_id), None)
+    if hit is None:
+        raise _err(404, "not_found", f"材料不存在: {material_id}")
+    if hit.get("mode") == mat.MODE_ALL_AI:
+        raise _err(409, "conflict", "这份材料已经走「连图一起看」了，不用改道")
+    ok, why = model_config.supports_vision(db)
+    if not ok:
+        raise _err(422, "validation_error", "这条路需要能读图片的模型：" + why)
+    data = pdfrender.load_pdf_cache(subject_id, material_id)
+    if not data:
+        raise _err(422, "validation_error",
+                   "这份材料的 PDF 不在缓存里了（缓存只保留一段时间，也可能当初是用图片导入的）——"
+                   "请把 PDF 再选一次、用「连图一起看」入口导入")
+    try:
+        limit = mode_pages.parse_page_limit(max_pages)
+        strat = mode_pages.parse_strategy(strategy, has_range=bool(str(pages or "").strip()))
+        conc = mode_pages.parse_concurrency(concurrency)
+        batch = mode_pages.parse_batch_pages(batch_pages)
+    except mode_pages.PagePlanError as e:
+        raise _err(422, "validation_error", str(e)) from e
+    provider = mode_pages.build_provider(db)
+    try:
+        job = page_import.start(
+            subject_id, title=str(hit.get("title") or "页面图片教材"),
+            files=[(str(hit.get("filename") or "book.pdf"), data)], provider=provider,
+            pdf_pages=(pages or "").strip(), max_pages=limit, strategy=strat,
+            concurrency=conc, batch_pages=batch,
+            source="改道：把这份 PDF 交给「连图一起看」")
+    except RuntimeError as e:
+        raise _err(409, "conflict", str(e)) from e
+    job["read_options"] = mode_pages.read_options()
+    job["note_zh"] = "已改道：正在把这本 PDF 逐页交给 AI 读（进度会一直更新）"
+    return job
+
+
+@router.post("/subjects/{subject_id}/materials/{material_id}/switch-to-text")
+def material_switch_to_text(subject_id: str, material_id: str,
+                            db: Session = Depends(get_db)) -> dict:
+    """**R67 任务 E**：反向改道——"连图一起看"读过的 PDF，也能用「只看文字」再读一遍。
+
+    用的是导入时存下的 PDF 缓存；没有缓存（例如这份材料是页面图片导入的）→ **中文说明**。
+    新入库的是一份**独立材料**（原材料的页面记录一字不动），两份都能留着。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+    from ..outline import pdfrender
+    from ..outline.pdfparse import PdfParseError, parse_pdf_bytes
+    from ..outline.schemas import OutlineError
+
+    hit = next((e for e in mat.list_materials(db, subject_id) if e["id"] == material_id), None)
+    if hit is None:
+        raise _err(404, "not_found", f"材料不存在: {material_id}")
+    data = pdfrender.load_pdf_cache(subject_id, material_id)
+    if not data:
+        raise _err(422, "validation_error",
+                   "这份材料的原始 PDF 不在缓存里了（缓存只保留一段时间）——"
+                   "请把 PDF 再选一次、用「只看文字」入口导入")
+    try:
+        parsed = parse_pdf_bytes(data, filename=str(hit.get("filename") or ""))
+    except PdfParseError as e:
+        raise _err(422, "validation_error", str(e)) from e
+    title = f"{hit.get('title') or 'PDF 材料'}（只看文字）"
+    try:
+        entry = mat.add_material(
+            db, subject_id, title=title, text=parsed["body"],
+            source="改道：只看文字（从「连图一起看」那份材料换算过来）", url="",
+            kind="pdf", filename=str(hit.get("filename") or ""),
+            quality=parsed.get("quality"), raw_text=str(parsed.get("raw_body") or ""),
+            toc=list(parsed.get("bookmarks") or []))
+    except OutlineError as e:
+        raise _outline_err(e) from e
+    return {"id": entry["id"], "title": entry["title"], "pages": parsed["pages"],
+            "chars": parsed["chars"], "source_material": material_id,
+            "note_zh": (f"已用「只看文字」的方式另存了一份《{entry['title']}》（{parsed['pages']} 页）："
+                        "原来那份「连图一起看」的材料一字没动，两种都可以留着。"),
+            "text_health": entry.get("text_health")}
+
+
+@router.post("/subjects/{subject_id}/materials/{material_id}/read-pages-job", status_code=202)
+def material_read_pages_job(
+    subject_id: str,
+    material_id: str,
+    db: Session = Depends(get_db),
+    pages: str = Form(""),
+    strategy: str = Form("range"),
+    max_pages: str = Form(""),
+    concurrency: str = Form(""),
+    batch_pages: str = Form(""),
+) -> dict:
+    """**R67 任务 A（接着读）**：把"还没读的页"也改成**后台任务**读（进度可见、可取消、已读的留着）。
+
+    为什么要有它：快读/取消之后材料上会留着"还剩哪些页没读"，那些页可能很多（几十页），
+    走既有那条同步重读接口又会变成"一个请求挂十几分钟、没有任何进度"——那正是本批要修的病。
+    这里复用**同一套**后台任务与同一份 PDF 缓存（页面图片导入的材料没有 PDF 缓存，会中文说明）。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+    from ..outline import mode_pages, pdfrender
+    from ..service import model_config, page_import
+
+    hit = next((e for e in mat.list_materials(db, subject_id) if e["id"] == material_id), None)
+    if hit is None:
+        raise _err(404, "not_found", f"材料不存在: {material_id}")
+    ok, why = model_config.supports_vision(db)
+    if not ok:
+        raise _err(422, "validation_error", "这条路需要能读图片的模型：" + why)
+    data = pdfrender.load_pdf_cache(subject_id, material_id)
+    if not data:
+        raise _err(422, "validation_error",
+                   "这份材料的原始 PDF 不在缓存里了（这份材料是页面图片导入的，或缓存已过期）——"
+                   "可以在材料那一行用「重读这几页」按页补读")
+    try:
+        limit = mode_pages.parse_page_limit(max_pages)
+        strat = mode_pages.parse_strategy(strategy, has_range=True)
+        conc = mode_pages.parse_concurrency(concurrency)
+        batch = mode_pages.parse_batch_pages(batch_pages)
+    except mode_pages.PagePlanError as e:
+        raise _err(422, "validation_error", str(e)) from e
+    provider = mode_pages.build_provider(db)
+    try:
+        job = page_import.start(
+            subject_id, title=str(hit.get("title") or "页面图片教材"),
+            files=[(str(hit.get("filename") or "book.pdf"), data)], provider=provider,
+            pdf_pages=(pages or "").strip(), max_pages=limit, strategy=strat,
+            concurrency=conc, batch_pages=batch,
+            source="接着读：把这份材料里没读到的页读完")
+    except RuntimeError as e:
+        raise _err(409, "conflict", str(e)) from e
+    job["read_options"] = mode_pages.read_options()
+    job["note_zh"] = "已开始接着读：这一批读完的页会另存成一份新材料（原来那份一字不动）"
+    return job
+
+
 class ReadPagesBody(BaseModel):
     pages: str = ""          # 页范围，如 "7-9"；留空＝按缓存里的全部页重读
     want: str = ""
+
+
+# ---------------------------------------------------------------------------
+# **R67 任务 A**：导入改**后台任务**（点击立刻返回 + 进度可查 + 可取消 + 已读的页留下）
+#
+# 为什么另开一组端点而不是改 `upload-pages`：契约纪律（工单 §7"对外契约零变化"）——
+# 既有同步端点的请求/响应形状一个字节都不动（老调用方/老用例照旧可用）；
+# 界面改走这一组：POST 立刻返回 job，GET 轮询进度，POST 取消。
+# ---------------------------------------------------------------------------
+@router.post("/subjects/{subject_id}/materials/upload-pages/start", status_code=202)
+def material_upload_pages_start(
+    subject_id: str,
+    db: Session = Depends(get_db),
+    title: str = Form(""),
+    want: str = Form(""),
+    pages: str = Form(""),
+    strategy: str = Form(""),
+    max_pages: str = Form(""),
+    concurrency: str = Form(""),
+    batch_pages: str = Form(""),
+    files: list[UploadFile] = File(...),
+) -> dict:
+    """**R67 任务 A/B/F**：起一次后台导入 → **立刻**回任务号（不再让请求挂 17 分钟）。
+
+    - 表单与既有入口同义，另加：``strategy``（快读/按页范围/整本）、``max_pages``（一次读多少页，
+      默认 60、用户可改）、``concurrency``（同时读几页）、``batch_pages``（一次调用读几页）；
+    - **进度**走 `GET .../import-jobs/{job_id}`；**取消**走 `POST .../import-jobs/{job_id}/cancel`
+      ——取消后**已读的页照样留在材料里**；
+    - 所有"用户填的值"在这里就校验（非法 → **中文 422**，不静默、不崩）；
+    - 没配能读图的模型 → 中文 422 直接拒绝（与既有入口同一句话）。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import mode_pages
+    from ..outline.schemas import OutlineError
+    from ..service import model_config, page_import
+
+    payload: list[tuple[str, bytes]] = []
+    for f in files or []:
+        name = str(getattr(f, "filename", "") or "page.png")
+        payload.append((name, f.file.read()))
+    if not payload:
+        raise _err(422, "validation_error",
+                   "还没有选择页面图片（支持 PNG / JPEG / WebP / GIF）或 PDF")
+    fname_stem = payload[0][0].rsplit(".", 1)[0] if payload else ""
+    ok, why = model_config.supports_vision(db)
+    if not ok:
+        raise _err(422, "validation_error", "这条路需要能读图片的模型：" + why)
+    try:
+        limit = mode_pages.parse_page_limit(max_pages)
+        strat = mode_pages.parse_strategy(strategy, has_range=bool(str(pages or "").strip()))
+        conc = mode_pages.parse_concurrency(concurrency)
+        batch = mode_pages.parse_batch_pages(batch_pages)
+    except mode_pages.PagePlanError as e:
+        raise _err(422, "validation_error", str(e)) from e
+    provider = mode_pages.build_provider(db)
+    try:
+        job = page_import.start(
+            subject_id, title=(title or "").strip() or (fname_stem or "页面图片教材"),
+            files=payload, provider=provider, want=(want or "").strip(),
+            pdf_pages=(pages or "").strip(), max_pages=limit, strategy=strat,
+            concurrency=conc, batch_pages=batch,
+            source="图片页面导入（图示教材模式）")
+    except RuntimeError as e:                     # 同一学科已经有导入在跑
+        raise _err(409, "conflict", str(e)) from e
+    except OutlineError as e:
+        raise _outline_err(e) from e
+    job["read_options"] = mode_pages.read_options()
+    job["poll_zh"] = "已开始导入：进度会一直在页面上更新（可以随时点「停止这次导入」）"
+    return job
+
+
+@router.get("/subjects/{subject_id}/import-jobs")
+def material_import_jobs(subject_id: str, db: Session = Depends(get_db)) -> dict:
+    """该学科最近的导入任务（含正在跑的那一条）——界面据此显示进度、也据此刻画"上次没读完"。"""
+    _require_enabled(db, subject_id)
+    from ..outline import mode_pages
+    from ..service import page_import
+
+    return {"subject_id": subject_id, "jobs": page_import.list_for(subject_id),
+            "active": page_import.active_for(subject_id),
+            "read_options": mode_pages.read_options()}
+
+
+@router.get("/subjects/{subject_id}/import-jobs/{job_id}")
+def material_import_job(subject_id: str, job_id: str, db: Session = Depends(get_db)) -> dict:
+    """查一次导入的进度：已读 N / 共 M 页、当前在读第几页、失败几页、已存下来的材料。
+
+    任务表**只在内存**（重启即空）——查不到时给中文说明 + 出路（材料里能看读到哪），
+    不假装还在跑，也不当成"失败"。
+    """
+    _require_enabled(db, subject_id)
+    from ..service import page_import
+
+    job = page_import.get(job_id)
+    if not job or job.get("subject_id") != subject_id:
+        raise _err(404, "not_found",
+                   "这次导入的进度记录已经不在了（程序重启过，或者任务号不对）——"
+                   "已经读到的页仍然在材料里：打开材料可以看到读到哪、还剩哪些页没读，"
+                   "也可以接着把没读的页补读。")
+    return job
+
+
+@router.post("/subjects/{subject_id}/import-jobs/{job_id}/cancel")
+def material_import_cancel(subject_id: str, job_id: str, db: Session = Depends(get_db)) -> dict:
+    """**停止这次导入**：读完手上这一页就停——**已读的页照样留在材料里**（一页都不丢）。"""
+    _require_enabled(db, subject_id)
+    from ..service import page_import
+
+    job = page_import.cancel(job_id)
+    if not job or job.get("subject_id") != subject_id:
+        raise _err(404, "not_found", "这次导入的进度记录已经不在了（程序重启过，或者任务号不对）")
+    return job
 
 
 class ModeDraftBody(BaseModel):
@@ -774,9 +1044,20 @@ def material_upload_pdf(
             # **R55 A/C**：把抽取体检（含图片数）与**原始抽取文本**一起入库
             # → 体检结论如实呈现；原始文本留档备查（注入用修正后的文本）
             quality=parsed.get("quality"), raw_text=str(parsed.get("raw_body") or ""),
+            # **R67 任务 C**：PDF 自带书签（权威目录）一并留档 → 认章优先用书签
+            toc=list(parsed.get("bookmarks") or []),
         )
     except OutlineError as e:
         raise _outline_err(e) from e
+    # **R67 任务 E**：把这份 PDF 顺手存进缓存目录（**不在 content/ 里**，gitignored，
+    # 按保留期清理）→ 万一路选错了（书图很多、只看文字读不到图），可以**一键改道**去
+    # "连图一起看"，不必让用户重新上传一遍。
+    try:
+        from ..outline import pdfrender
+
+        pdfrender.save_pdf_cache(subject_id, str(entry["id"]), data)
+    except Exception:
+        pass          # 缓存写不进去不影响导入（改道时再如实说"要重新选一次文件"）
     return PdfUploadOut(**entry, pages=parsed["pages"], chars=parsed["chars"])
 
 

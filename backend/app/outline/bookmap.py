@@ -41,6 +41,14 @@ _CHAPTER_ANY = re.compile(r"第\s*(\d{1,3}|[０-９]{1,3}|[一二三四五六七
 _APPENDIX_ANY = re.compile(r"附\s*录\s*([A-Za-zＡ-Ｚ])")
 # 书末页（参考文献/索引/致谢…）：不是可教内容，不进地图（如实记 note）
 _BACK_MATTER = re.compile(r"^(参\s*考\s*文\s*献|原\s*书\s*索\s*引|索\s*引|致\s*谢|后\s*记)")
+# **R67 任务 C**：书签里的"书前页"（封面/版权/目录/前言…）——同样不是可教内容
+_FRONT_MATTER = re.compile(
+    r"^(封\s*面|封\s*底|版\s*权|扉\s*页|目\s*录|前\s*言|序\s*言|序|推\s*荐|译\s*者|作\s*者|"
+    r"内\s*容\s*简\s*介|出\s*版|致\s*谢|引\s*言|凡\s*例|术\s*语|原\s*书\s*索\s*引)")
+# 书签里的章/附录写法（中英兼顾；`第 1 章` / `第1章` / `Chapter 3` / `附录 A` / `Appendix B`）
+_BM_CHAPTER = re.compile(r"^\s*(第\s*[0-9０-９]{1,3}\s*章|第\s*[一二三四五六七八九十]{1,3}\s*章|"
+                         r"chapter\s*[0-9]{1,3})", re.I)
+_BM_APPENDIX = re.compile(r"^\s*(附\s*录\s*[A-Za-zＡ-Ｚ]|appendix\s*[A-Za-z])", re.I)
 
 
 @dataclass
@@ -211,6 +219,123 @@ def _find_title_page(pages: list[dict], start: int, label: str) -> int | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# **R67 任务 C**：PDF 自带书签（权威目录）→ 章/附录条目
+#
+# 为什么优先书签：书签是**书自己写的目录**（干净标题 + 指到页），而目录页的印刷文字要靠
+# 全角数字/私用字形导引线去猜（实测某 126 页教材：书签 31 条干净标题，目录页文字只认出 2 条，
+# 结果 101 页被塞进「第2章」）。**没有书签才回落**到原来的目录页解析（`_parse_toc`）。
+# ---------------------------------------------------------------------------
+def _bookmark_kind(title: str) -> str:
+    """书签条目的类别：``chapter`` / ``appendix`` / ``other``（只看开头写法，不做模糊匹配）。"""
+    s = _fold(str(title or "")).strip()
+    if _BM_APPENDIX.match(s):
+        return "appendix"
+    if _BM_CHAPTER.match(s):
+        return "chapter"
+    return "other"
+
+
+def _bookmark_items(toc: list[dict]) -> list[dict]:
+    """书签原样条目 → 归一后的 ``[{title, page(1起，0=没指到页), level, kind}]``。"""
+    out: list[dict] = []
+    for b in toc or []:
+        if not isinstance(b, dict):
+            continue
+        title = str(b.get("title") or "").strip()
+        if not title:
+            continue
+        try:
+            page = int(b.get("page") or 0)
+        except (TypeError, ValueError):
+            page = 0
+        try:
+            level = int(b.get("level") or 0)
+        except (TypeError, ValueError):
+            level = 0
+        out.append({"title": title, "page": max(0, page), "level": level,
+                    "kind": _bookmark_kind(title)})
+    return out
+
+
+def _chapters_from_bookmarks(pages: list[dict], toc: list[dict]) -> tuple[list[MapEntry], str]:
+    """书签 → ``(章/附录条目, 中文说明)``；书签不可用 → ``([], "")``（调用方回落目录页解析）。
+
+    - 顶层书签里认得出「第 N 章 / 附录 X」→ **只把它们当章**（封面/版权/目录/前言/参考文献/
+      索引/术语这些不是可教内容，如实写进说明里）；它们之间的页照旧归上一章（**不丢页**）；
+    - 顶层书签里一个章/附录写法都没有（有的书按节/按主题做书签）→ 退一步用**全部顶层书签**
+      （去掉封面/目录/参考文献这类明显不是正文的），说明里写明这一层退让；
+    - 书签**指不到页**（`page=0`）→ 先按"标题出现在哪一页"找，找不到就顺延一页（保证章序单调、
+      不丢章）；这也是手册里 `附录 G` 那种"书签没有目标页"的真实情形。
+    """
+    items = _bookmark_items(toc)
+    if not items:
+        return [], ""
+    top = [it for it in items if it["level"] == 0] or items
+    teach = [it for it in top if it["kind"] in ("chapter", "appendix")]
+    fallback = False
+    if not teach:
+        teach = [it for it in top
+                 if not (_FRONT_MATTER.search(_fold(it["title"]))
+                         or _BACK_MATTER.search(_fold(it["title"])))]
+        fallback = True
+    if not teach:
+        return [], ""
+    total = len(pages)
+    body_start = 0
+    # **书末边界**：书签里第一个「参考文献/索引/术语…」页起不算正文（它不是可教内容）。
+    # 没有这一步，最后一个附录会把参考文献/索引一路吞进去（实测某书附录 G 会吞 34 页）。
+    back_start = total
+    for it in top:
+        if it["kind"] != "other" or not it["page"]:
+            continue
+        if _BACK_MATTER.search(_fold(it["title"])) or _FRONT_MATTER.search(_fold(it["title"])):
+            if _BACK_MATTER.search(_fold(it["title"])):
+                back_start = min(back_start, int(it["page"]) - 1)
+    # 章/附录起始页（0 起下标）
+    starts: list[int] = []
+    for it in teach:
+        idx: int | None = None
+        if it["page"]:
+            cand = int(it["page"]) - 1
+            if 0 <= cand < total:
+                idx = cand
+        if idx is None:
+            idx = _find_title_page(pages, (starts[-1] + 1) if starts else body_start, it["title"])
+        if idx is None:
+            idx = starts[-1] + 1 if starts else body_start
+        starts.append(max(body_start, min(idx, total - 1)))
+    for i in range(1, len(starts)):          # 起点单调不减（章序＝书序）
+        if starts[i] <= starts[i - 1]:
+            starts[i] = min(starts[i - 1] + 1, total - 1)
+    # 章下的**书签节**（level>0 且落在本章页范围内）→ 该章的 sections（S2 章节地图用）
+    lower = [it for it in items if it["level"] > 0]
+    out: list[MapEntry] = []
+    for i, it in enumerate(teach):
+        end = min(starts[i + 1] if i + 1 < len(teach) else total, max(back_start, starts[i] + 1))
+        part = pages[starts[i]:max(end, starts[i] + 1)]
+        secs = [s["title"] for s in lower
+                if starts[i] < (int(s["page"]) - 1 if s["page"] else starts[i]) < end]
+        out.append(MapEntry(
+            label=it["title"], chapter=it["title"],
+            text="\n\n".join(f"【{p['label']}】\n{p['text']}" for p in part).strip(),
+            pages=[p["label"] for p in part], sections=list(dict.fromkeys(secs)),
+        ))
+    kept = {"chapter": 0, "appendix": 0}
+    for it in teach:
+        kept[it["kind"]] = kept.get(it["kind"], 0) + 1
+    names = [it["title"] for it in teach]
+    others = [it["title"] for it in top if it not in teach]
+    note = (f"按 PDF 自带的目录（书签）识别出 {kept['chapter']} 章 + {kept['appendix']} 个附录"
+            if not fallback else
+            f"PDF 自带目录里没有「第 N 章」写法，按书签的 {len(names)} 条正文条目划分")
+    if others:
+        note += f"；另有 {len(others)} 条不是正文（{'、'.join(others[:6])}{'…' if len(others) > 6 else ''}）没算作章"
+    if back_start < total:
+        note += f"；从第 {back_start + 1} 页起（参考文献/索引）不算正文，已截去其后 {total - back_start} 页"
+    return out, note
+
+
 def _chapters_from_headings(pages: list[dict]) -> list[MapEntry]:
     """降级路径：正文页里行首即"第 N 章"/"附录 X"的页作为章起点。"""
     starts: list[tuple[int, str]] = []
@@ -306,13 +431,17 @@ def _chapters_from_blocks(pages: list[dict], window: int = 4,
     return out
 
 
-def parse_book(body: str, *, page_unit_chars: int | None = None) -> dict:
+def parse_book(body: str, *, page_unit_chars: int | None = None,
+               toc: list[dict] | None = None) -> dict:
     """教材正文 → 章节地图（唯一入口）。
 
     返回 ``{"kind": toc|heading|md|page|text, "entries": [MapEntry], "note": 中文说明}``。
     ``kind`` 如实标注识别路径（前端/日志据此判断"这本书的结构读到了什么程度"）。
     ``page_unit_chars``（R38 S1b）：无标题/目录的 PDF 按页**合并成章级单元**的目标大小
     （默认取 ``MF_PAGE_UNIT_CHARS``＝8000；0 = 关闭合并，退回固定 4 页窗口）。
+    ``toc``（**R67 任务 C**）：材料自带的**书签目录**（``[{title, page, level}]``，page 为 1 起页号）
+    ——有书签就**优先用书签**（权威目录）；书签认不出章/附录、或压根没有书签 → 回落原来的
+    目录页文字解析，行为与 R67 之前**逐字一致**。
     """
     body = body or ""
     if page_unit_chars is None:
@@ -327,15 +456,21 @@ def parse_book(body: str, *, page_unit_chars: int | None = None) -> dict:
     kind = "text"
     note = ""
     back_cut = ""
-    if pages:
+    if pages and toc:
+        # **R67 任务 C**：有书签 → 先用书签（不做"按正文页首截书末"那一步：书签已经给出边界）
+        entries, bm_note = _chapters_from_bookmarks(pages, toc)
+        if entries:
+            kind = "toc"
+            note = bm_note
+    if pages and not entries:
         end = _back_matter_start(pages)
         if end is not None:
             back_cut = "；已按书末『参考文献/索引』截去其后页面（不是可教内容）"
             pages = pages[:end]
         toc_block, body_start = _toc_block(pages)
-        toc = _parse_toc(toc_block) if toc_block else []
-        if len(toc) >= 2:
-            entries = _chapters_from_toc(pages, toc, body_start)
+        printed = _parse_toc(toc_block) if toc_block else []
+        if len(printed) >= 2:
+            entries = _chapters_from_toc(pages, printed, body_start)
             kind = "toc"
             note = f"按目录识别出 {len(entries)} 章/附录"
         else:
@@ -352,7 +487,7 @@ def parse_book(body: str, *, page_unit_chars: int | None = None) -> dict:
                     "正文完整、未截断，页号保留可下钻）"
                     if int(page_unit_chars or 0) > 0 else
                     "未识别到章结构：按页块切分（正文完整，未截断）")
-    else:
+    elif not pages:
         entries = _chapters_from_md(body)
         if entries:
             kind = "md"

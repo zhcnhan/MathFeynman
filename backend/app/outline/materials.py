@@ -17,6 +17,7 @@ math（preset）同样支持（材料作讲解增强，不影响 roadmap 内容�
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -223,7 +224,8 @@ def set_policy(db, subject_id: str, policy: str) -> str:
 def add_material(db, subject_id: str, *, title: str, text: str, source: str = "本地导入",
                  url: str = "", kind: str | None = None, filename: str = "",
                  quality: dict | None = None, raw_text: str = "",
-                 mode: str = "", pages_file: str = "", page_count: int = 0) -> dict:
+                 mode: str = "", pages_file: str = "", page_count: int = 0,
+                 toc: list[dict] | None = None) -> dict:
     """本地/联网引用入库（文本必填；分节文本按段落/标题切分存正文）。
 
     kind ∈ local|web|pdf（缺省按 url 推导：有 url=web、无=local；pdf 由 C2 解析器显式传入）；
@@ -234,11 +236,15 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
     **R56 第 3 步**：``mode="all_ai"`` 标记这份材料属于**图示教材模式**（全 AI 模式）——
     ``pages_file`` 指向 `*.pages.json`（每页"读到了什么"的结构化记录），``page_count`` 是页数。
     这是**既有材料层的一个字段**，不是第二套材料机制（正文仍是这份 `.md`）。
+    **R67 任务 C**：``toc`` ＝ **PDF 自带书签**（``[{title, page, level}]``）——有就另存一份
+    `*.toc.json` 并在 frontmatter 里留 ``toc_file``：认章时**优先用书签**（书自己写的目录），
+    没有书签才回落"解析目录页文字"。这一步**不改正文一个字节**。
     """
     title = title.strip()
     text = text.strip()
     if not title or not text:
         raise OutlineError("材料标题与正文不能为空")
+    bookmarks = [dict(x) for x in (toc or []) if isinstance(x, dict) and str(x.get("title") or "").strip()]
     effective_kind = kind or ("web" if url else "local")
     if effective_kind not in ("local", "web", "pdf", "pages"):
         raise OutlineError(f"材料 kind 非法: {effective_kind!r}")
@@ -259,7 +265,9 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
     entry_id = "mat-" + hashlib.sha1(f"{subject_id}:{title}:{url}:{text[:80]}".encode("utf-8")).hexdigest()[:10]
     p = materials_dir(subject_id) / f"{_slug(title)}-{entry_id[4:]}.md"
     raw_name = (p.with_suffix("").name + ".raw.txt") if fixed else ""
+    toc_name = (p.with_suffix("").name + ".toc.json") if bookmarks else ""
     health["raw_file"] = raw_name      # 界面/接口据此显示"原始文本留档"（老材料为空串）
+    health["toc_file"] = toc_name      # R67 C：书签目录留档（老材料为空串）
     if not p.exists():
         meta_lines = [
             "---",
@@ -290,6 +298,12 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
         if fixed:  # C3：原始抽取文本另存一份（供事后核查"是抽取错了，还是模型编了"）
             (p.parent / raw_name).write_text(raw_text, encoding="utf-8")
             meta_lines.append(f"raw_file: {raw_name}")
+        # **R67 任务 C**：PDF 自带书签目录另存一份（认章优先用它；正文一字不动）
+        if toc_name:
+            (p.parent / toc_name).write_text(
+                json.dumps({"bookmarks": bookmarks}, ensure_ascii=False, indent=1),
+                encoding="utf-8")
+            meta_lines.append(f"toc_file: {toc_name}")
         # **R56 第 3 步**：图示教材模式标记（这条材料的"来源模式"）
         if mode:
             meta_lines += [f"mode: {mode}", f"page_count: {int(page_count or 0)}"]
@@ -350,6 +364,8 @@ def _parse_entry(p: Path) -> dict | None:
                 "mode": str(fm.get("mode", "")).strip(),
                 "page_count": _as_int(fm.get("page_count")),
                 "pages_file": str(fm.get("pages_file", "")).strip(),
+                # **R67 任务 C**：PDF 自带书签目录（`*.toc.json`；老材料为空 → 回落目录页解析）
+                "toc_file": str(fm.get("toc_file", "")).strip(),
                 # **R55 A/C**：入库时算好的抽取体检 + "已做抽取修正"留痕（老材料无 → 读时现算）
                 "extract_meta": {
                     "grade": fm.get("extract_grade", ""),
@@ -399,6 +415,84 @@ def _as_float(v) -> float:
         return 0.0
 
 
+def _load_pages_doc(subject_id: str, entry: dict) -> dict:
+    """读某份材料留档的页面记录（`*.pages.json`）；没有/读坏了 → 空 dict（**不猜**）。"""
+    name = str((entry or {}).get("pages_file") or "")
+    if not name:
+        return {}
+    f = materials_dir(subject_id) / name
+    if not f.exists():
+        return {}
+    try:
+        return json.loads(f.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def import_state(subject_id: str, entry: dict) -> dict:
+    """**R67 任务 A**：这份材料"上次读到哪了"（读 `*.pages.json` 里的 `progress` 块）。
+
+    - 正在读 → ``state="importing"``（重启后仍留着；界面据此说"上次没读完，还剩哪些页"）；
+    - 读完/取消 → ``state="done" / "cancelled"``；
+    - 老材料（没有 `progress` 块）→ 用页面记录自己的页数说话，``state=""``（**不编状态**）。
+    """
+    doc = _load_pages_doc(subject_id, entry)
+    pages = list(doc.get("pages") or [])
+    render = dict(doc.get("render") or {})
+    p = dict(doc.get("progress") or {})
+    if not p:
+        if not pages:
+            return {}
+        return {"state": "", "strategy": "", "sampled": bool(render.get("sampled")),
+                "read": len(pages), "total": len(pages), "pending": [], "failed": [],
+                "book_total": len(pages), "unread": [], "updated_at": "", "note_zh": ""}
+    pending = list(p.get("pending") or [])
+    return {"state": str(p.get("state") or ""), "strategy": str(p.get("strategy") or ""),
+            "sampled": bool(p.get("sampled")), "read": int(p.get("read") or 0),
+            "total": int(p.get("total") or 0), "pending": pending,
+            # **R67 D/F**：这本书**还有哪几页没读**（快读没进计划的页也算"没读"）
+            "book_total": int(p.get("book_total") or 0),
+            "unread": list(p.get("unread") or pending),
+            "failed": list(p.get("failed") or []), "updated_at": str(p.get("updated_at") or ""),
+            "note_zh": str(p.get("note_zh") or "")}
+
+
+def switch_suggestion(subject_id: str, entry: dict, health: dict) -> dict:
+    """**R67 任务 E**：这份材料"该走哪条路"+ 能不能**一键改道**（人话，不堆术语）。
+
+    - 只看文字（文字教材路径）但**图很多** → 建议改走"连图一起看"（图里的内容才读得到）；
+    - 连图一起看（图示教材模式）且原始 PDF 还在缓存里 → 可以改走"只看文字"（更快更省）。
+    """
+    from . import pdfrender
+
+    mid = str(entry.get("id") or "")
+    cached = bool(mid) and pdfrender.pdf_cache_path(subject_id, mid).exists()
+    mode = str(entry.get("mode") or "")
+    ex = dict((health or {}).get("extract") or {})
+    images = int(ex.get("images") or 0)
+    image_pages = int(ex.get("image_pages") or 0)
+    grade = str((health or {}).get("grade") or "")
+    if mode == MODE_ALL_AI:
+        return {"better": "text" if cached else "",
+                "reason_zh": ("这份材料现在走的是「连图一起看」：每一页都要问一次模型，更慢也更贵；"
+                              "这份 PDF 的文字层也能用「只看文字」的方式读一遍（更快），两种都会留着。"
+                              if cached else
+                              "这份材料现在走的是「连图一起看」：看图这条路能读到公式和版式，"
+                              "但判对错与评分都由模型给出，程序不替你复核。"),
+                "can_switch_to_pages": False, "can_switch_to_text": cached,
+                "images": images, "image_pages": image_pages, "grade": grade}
+    if images >= 10 or image_pages >= 5 or grade == "差":
+        return {"better": "pages",
+                "reason_zh": (f"这份材料里有 {images} 张图（分布在 {image_pages} 页），"
+                              "只看文字的话，图里的内容系统读不到——"
+                              "如果这本书主要靠图讲，建议改用「连图一起看」把每页交给 AI 读一遍。"),
+                "can_switch_to_pages": cached, "can_switch_to_text": False,
+                "images": images, "image_pages": image_pages, "grade": grade}
+    return {"better": "", "reason_zh": "", "can_switch_to_pages": cached,
+            "can_switch_to_text": False, "images": images, "image_pages": image_pages,
+            "grade": grade}
+
+
 def list_materials(db, subject_id: str) -> list[dict]:
     d = materials_dir(subject_id)
     out = []
@@ -420,6 +514,10 @@ def list_materials(db, subject_id: str) -> list[dict]:
                         "role": e.get("role") or ROLE_UNSET,
                         "role_explicit": bool(e.get("role")),
                         "role_zh": ROLE_LABELS_ZH.get(e.get("role") or ROLE_UNSET),
+                        # **R67 任务 A**：这份材料"上次读到哪了"（进度块；老材料为空）
+                        "import_state": import_state(subject_id, e),
+                        # **R67 任务 E**：该走哪条路 + 能不能一键改道（按材料特征给建议）
+                        "suggest": switch_suggestion(subject_id, e, health),
                         "text_health": health})
     return out
 
@@ -485,6 +583,29 @@ def reparse_material(db, subject_id: str, material_id: str) -> dict:
         return {"id": material_id, "title": e["title"], "changed": changed,
                 "text_health": health}
     raise OutlineError(f"材料不存在: {material_id}")
+
+
+def update_material_body(db, subject_id: str, material_id: str, *, text: str,
+                         page_count: int | None = None) -> bool:
+    """**R67 任务 A**：就地更新某份材料的正文（frontmatter 一字不动）。
+
+    给"导入分段落盘"用：第一次落盘建材料，之后每次落盘只换正文与页数——
+    **材料 id / 文件名都不变**，于是"已读的页"始终在同一份材料里越攒越多，
+    不会出现"读了 60 页却有三份半截材料"。更新失败返回 False（调用方如实记账，不静默）。
+    """
+    d = materials_dir(subject_id)
+    for p in sorted(d.glob("*.md")):
+        e = _parse_entry(p)
+        if not e or e["id"] != material_id:
+            continue
+        raw = p.read_text(encoding="utf-8")
+        fm, _body = _split_frontmatter(raw)
+        if page_count is not None:
+            fm["page_count"] = str(int(page_count))
+        lines = ["---"] + [f"{k}: {v}" for k, v in fm.items()] + ["", "---", ""]
+        p.write_text("\n".join(lines) + (text or "").strip() + "\n", encoding="utf-8")
+        return True
+    return False
 
 
 def set_material_pages_file(db, subject_id: str, material_id: str, pages_file: str) -> bool:
@@ -622,13 +743,15 @@ def material_sections(body: str, *, max_sections: int = MAX_SECTIONS_PER_MATERIA
     return sections[:max_sections]
 
 
-def material_structure(body: str) -> dict:
+def material_structure(body: str, toc: list[dict] | None = None) -> dict:
     """R37 S1/S2/S8：材料正文 → **章 → 节**结构（完整正文，不截断）。
 
     返回 ``{"kind", "note", "entries": [MapEntry], "chapter_map": [dict]}``；
     解析器是 ``outline.bookmap``（唯一实现；大纲起草与单元出稿共用同一份地图）。
+    ``toc``（**R67 任务 C**）：材料自带的**书签目录**——有就优先用（书自己写的目录），
+    没有/认不出才回落目录页文字解析（回落路径与 R67 之前逐字一致）。
     """
-    parsed = bookmap.parse_book(body or "")
+    parsed = bookmap.parse_book(body or "", toc=toc or None)
     entries = parsed["entries"]
     return {
         "kind": parsed["kind"],
@@ -639,12 +762,32 @@ def material_structure(body: str) -> dict:
     }
 
 
+def load_material_toc(subject_id: str, entry: dict) -> list[dict]:
+    """读某份材料留档的**书签目录**（`*.toc.json`）；没有/读坏了 → 空表（回落目录页解析）。
+
+    **只读**：文件不存在、JSON 坏掉、结构怪 —— 一律当"没有书签"，绝不让认章失败。
+    """
+    name = str((entry or {}).get("toc_file") or "")
+    if not name:
+        return []
+    f = materials_dir(subject_id) / name
+    if not f.exists():
+        return []
+    try:
+        data = json.loads(f.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return []
+    out = [dict(x) for x in (data.get("bookmarks") or []) if isinstance(x, dict)]
+    return out
+
+
 def _material_index(db, subject_id: str) -> list[dict]:
     """材料索引（服务端用）：正文 + 章/节结构 + 健康度 + 角色（R38 B2）。"""
     out = []
     for e in _entries_with_body(subject_id):
         body = e.get("body", "")
-        structure = material_structure(body)
+        # **R67 任务 C**：有书签就用书签认章（没有 → 与 R67 之前逐字一致）
+        structure = material_structure(body, toc=load_material_toc(subject_id, e))
         health = text_health(body)
         if e.get("text_healthy") is False:
             health["healthy"] = False
@@ -653,6 +796,9 @@ def _material_index(db, subject_id: str) -> list[dict]:
         out.append({
             "id": e["id"], "title": e["title"], "source": e["source"], "url": e["url"],
             "kind": e.get("kind", "local"), "filename": e.get("filename", ""),
+            # **R67**：`pages_file`（页面记录文件）与 `mode` 要带给下游——
+            # 否则"读到哪了 / 是不是抽样读"在覆盖账里查不到（账就说不实话了）
+            "pages_file": str(e.get("pages_file") or ""), "mode": str(e.get("mode") or ""),
             "body": body, "sections": material_sections(body),
             "structure": structure, "text_health": health,
             "role": role or ROLE_UNSET, "role_explicit": bool(role),
@@ -1972,6 +2118,89 @@ def material_ids_for_titles(db, subject_id: str, titles: list[str]) -> tuple[lis
 
 
 # ---------- R37 S6 ＋ R38 B1：覆盖账本（跨全部材料） ----------
+def _page_account(m: dict, blocks: list[dict], *, kept: set[tuple[str, str]],
+                  skipped: set[tuple[str, str]]) -> dict:
+    """**R67 任务 D**：这份材料的"读书账"——进流程多少字 / 没进去多少字 / **差在哪**。
+
+    两个恒等式（都对得上才算"账面说实话"）：
+
+    ① ``正文 = 成块字数 + 没成块的页文字 + 分页标记``（逐页核对，不留糊涂账）；
+    ② ``成块字数 = 真进流程的 + 因上限没读的``（与 `_full_blocks` 同一批块，逐块相加）。
+
+    "没成块的页文字"再按位置分成三类（书前页 / 书中间 / 书末页），并给出页号样例——
+    用户一眼能看出"差的是封面、版权页、目录、前言、参考文献这些"。
+    """
+    from . import bookmap
+
+    mid = str(m["id"])
+    entries = list((m["structure"] or {}).get("entries") or [])
+    body_chars = len(m.get("body") or "")
+    blocks_chars = sum(int(b.get("chars") or 0) for b in blocks
+                       if str(b.get("material_id") or "") == mid)
+    injected = sum(int(b.get("chars") or 0) for b in blocks
+                   if str(b.get("material_id") or "") == mid
+                   and (mid, str(b.get("label") or "")) in kept)
+    cap_chars = sum(int(b.get("chars") or 0) for b in blocks
+                    if str(b.get("material_id") or "") == mid
+                    and (mid, str(b.get("label") or "")) in skipped)
+    pages = bookmap._split_pages(m.get("body") or "")
+    used: set[str] = set()
+    for e in entries:
+        used |= {str(x) for x in (e.pages or [])}
+    first_idx = last_idx = -1
+    label_pos = {str(p["label"]): i for i, p in enumerate(pages)}
+    for e in entries:
+        for lb in (e.pages or []):
+            i = label_pos.get(str(lb))
+            if i is None:
+                continue
+            first_idx = i if first_idx < 0 else min(first_idx, i)
+            last_idx = max(last_idx, i)
+    groups: list[dict] = []
+    for kind, label_zh, keep in (
+        ("front", "书前页（封面、版权页、目录、前言这类）", lambda i: first_idx >= 0 and i < first_idx),
+        ("back", "书末页（参考文献、索引这类）", lambda i: last_idx >= 0 and i > last_idx),
+        ("middle", "书中间的页（没归到任何一章）",
+         lambda i: first_idx >= 0 and first_idx <= i <= last_idx),
+    ):
+        hit = [p for i, p in enumerate(pages)
+               if str(p["label"]) not in used and keep(i)]
+        if hit:
+            groups.append({"kind": kind, "label_zh": label_zh,
+                           "count": len(hit), "chars": sum(len(p["text"]) for p in hit),
+                           "pages": [str(p["label"]) for p in hit],
+                           "sample_zh": "、".join(str(p["label"]) for p in hit[:6])
+                           + ("…" if len(hit) > 6 else "")})
+    unused_chars = sum(int(g["chars"]) for g in groups)
+    marker_chars = max(0, body_chars - blocks_chars - unused_chars)
+    return {
+        "body_chars": body_chars,
+        "blocks_chars": blocks_chars,
+        "injected_chars": injected,
+        "cap_skipped_chars": cap_chars,
+        "not_injected_chars": max(0, body_chars - injected),
+        "unused_page_chars": unused_chars,
+        "unused_pages": sum(int(g["count"]) for g in groups),
+        "marker_chars": marker_chars,
+        "groups": groups,
+        "checks": {
+            "by_page": body_chars == blocks_chars + unused_chars + marker_chars,
+            "by_block": blocks_chars == injected + cap_chars,
+        },
+        "note_zh": (
+            ("这份材料一共 {body:,} 字，真正进入流程的是 {inj:,} 字，"
+             "没进去 {gap:,} 字。").format(body=body_chars, inj=injected,
+                                          gap=max(0, body_chars - injected))
+            + ("；没进去的主要是" + "、".join(
+                f"{g['label_zh']} {g['chars']:,} 字（{g['sample_zh']}）" for g in groups)
+               if groups else "")
+            + (f"；另外有 {cap_chars:,} 字是因为你设了「最多读多少」没读（整章停下）"
+               if cap_chars else "")
+            + (f"；分页标记与分段符号约 {marker_chars:,} 字。"
+               if marker_chars else "。")),
+    }
+
+
 def coverage_ledger(db, subject_id: str) -> dict:
     """**覆盖账本**：章节地图 ↔ 单元映射 ↔ 单元覆盖状态（大纲页与 API 的唯一数据源）。
 
@@ -2009,6 +2238,16 @@ def coverage_ledger(db, subject_id: str) -> dict:
     _keep, _skipped, cap = _apply_inject_cap(valve["batches"], int(eff["inject_max_chars"]), subject_id)
     cap_skips = _cap_skip_entries(_skipped, index)
     skipped_keys = {(str(x.get("material_id") or ""), str(x.get("label") or "")) for x in cap_skips}
+    # **R67 任务 D**：逐材料的"读书账"（进流程多少字 / 没进去多少字 / 差在哪）。
+    # 口径与 `_full_blocks` **同一批块**逐块相加 → 账面数字与实际成块字数对得上。
+    kept_keys = {(str(b.get("material_id") or ""), str(b.get("label") or ""))
+                 for batch in _keep for b in (batch.get("blocks") or [])}
+    skip_keys = {(str(b.get("material_id") or ""), str(b.get("label") or ""))
+                 for batch in _skipped for b in (batch.get("blocks") or [])}
+    accounts = {str(m["id"]): _page_account(m, blocks, kept=kept_keys, skipped=skip_keys)
+                for m in index}
+    # **R67 任务 F**：哪份材料是"抽样读"的（快读会把没读的章标出来，不许装成"全书都读了"）
+    read_state = {str(m["id"]): import_state(subject_id, m) for m in index}
     entries: list[dict] = []
     uncovered: list[str] = []
     skipped_short: list[dict] = []
@@ -2076,6 +2315,14 @@ def coverage_ledger(db, subject_id: str) -> dict:
             "image_count": int((m["text_health"].get("extract") or {}).get("images") or 0),
             "figure_unavailable": fig_labels,
             "figure_unavailable_count": len(fig_labels),
+            # **R67 任务 D**：这份材料的读书账（进流程/没进去/差在哪）——账面与成块字数同源
+            "text_account": accounts.get(str(m["id"])) or {},
+            # **R67 任务 F**：抽样读的事实（读了哪几页 / 还剩哪些页没读）
+            "sampled": bool((read_state.get(str(m["id"])) or {}).get("sampled")),
+            "read_pages": int((read_state.get(str(m["id"])) or {}).get("read") or 0),
+            "planned_pages": int((read_state.get(str(m["id"])) or {}).get("total") or 0),
+            "pages_pending": list((read_state.get(str(m["id"])) or {}).get("unread") or []),
+            "import_state": str((read_state.get(str(m["id"])) or {}).get("state") or ""),
         })
         if miss:
             uncovered_by_material.append({
@@ -2124,6 +2371,25 @@ def coverage_ledger(db, subject_id: str) -> dict:
         "total": len(entries),
         "covered": len(entries) - len(uncovered),
         "uncovered": uncovered,
+        # **R67 任务 D**：账面总览（跨材料）——进入流程多少字 / 没进去多少字 / 差在哪。
+        # ``by_material[].text_account`` 是逐材料的同一笔账；这里给"一眼看全"的合计。
+        "text_account": {
+            "body_chars": sum(int(a.get("body_chars") or 0) for a in accounts.values()),
+            "injected_chars": sum(int(a.get("injected_chars") or 0) for a in accounts.values()),
+            "blocks_chars": sum(int(a.get("blocks_chars") or 0) for a in accounts.values()),
+            "not_injected_chars": sum(int(a.get("not_injected_chars") or 0)
+                                      for a in accounts.values()),
+            "cap_skipped_chars": sum(int(a.get("cap_skipped_chars") or 0)
+                                     for a in accounts.values()),
+            "unused_page_chars": sum(int(a.get("unused_page_chars") or 0)
+                                     for a in accounts.values()),
+            "marker_chars": sum(int(a.get("marker_chars") or 0) for a in accounts.values()),
+            "all_checks_ok": all(bool((a.get("checks") or {}).get("by_page"))
+                                 and bool((a.get("checks") or {}).get("by_block"))
+                                 for a in accounts.values()),
+            "materials": [{"material_id": m["id"], "title": m["title"],
+                           **(accounts.get(str(m["id"])) or {})} for m in index],
+        },
         # **R42 B1**：过短条目（按规则跳过/未成为单元）——**不计入 uncovered 缺口**，但显式列出
         "skipped_short": {"count": len(skipped_short), "labels": [x["label"] for x in skipped_short],
                           "items": skipped_short, "min_chars": short_cap},

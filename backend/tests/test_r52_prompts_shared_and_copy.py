@@ -37,10 +37,14 @@ def test_r52_a1_system_shared_count_matches_actual_texts(app_client):
     所以调用点数 15 → **24**、互不相同的 user 数 15 → **24**、互不相同的 system 6 → **15**；
     "最大一组 10 处共用 system"这个分组事实不变——新增那些都是**自带 system** 的独立调用点
     （模式内 8 条共用 `_MODE_COMMON` 前缀但整段文本各不相同）。
+
+    **R67 更新**：新增了调用点「读教材页/图（一次几页）」（一次几页的**批量读**，工单 §6），
+    它同样**自带 system 与 user**（一页一条记录的硬口径写在这份提示词里），
+    所以调用点数 24 → **25**、互不相同的 user 数 24 → **25**；system 分组事实不变（15 份）。
     """
     data = app_client.get("/api/prompts").json()
     items = data["prompts"]
-    assert len(items) == 24, len(items)
+    assert len(items) == 25, len(items)
     for it in items:
         assert isinstance(it.get("system_shared_with"), int), it.get("call_name")
         assert isinstance(it.get("user_shared_with"), int), it.get("call_name")
@@ -60,15 +64,17 @@ def test_r52_a1_system_shared_count_matches_actual_texts(app_client):
     # 事实锚点（R52 立案实测）：15 个调用点只有 6 份不同 system；最大一组 10 处共用（＝ N=9）
     # **R56 更新**：新增的 9 条（读页 + 模式 8 环节）各自带 system → 不同 system 6 → 15；
     # 共用分组不变（仍是那 10 条路径②调用点共用一份）。
-    assert len({it["raw_template"] for it in items}) == 15
+    # **R67 更新**：批量读（一次几页）也自带 system → 不同 system 15 → **16**；共用分组不变。
+    assert len({it["raw_template"] for it in items}) == 16
     biggest = max(it["system_shared_with"] for it in items)
     assert biggest == 9, biggest
     assert sum(1 for it in items if it["system_shared_with"] == biggest) == 10
     # user 互不相同 → 每处 user_shared_with 都是 0（界面上"每处都不一样"这句话是真的）
-    assert len({it["raw_user_template"] for it in items}) == 24
+    assert len({it["raw_user_template"] for it in items}) == 25
     assert all(it["user_shared_with"] == 0 for it in items)
     # 独有 system 的调用点（界面应显示"只有这一处在用"）
-    for name in UNIQUE_SYSTEM_CALLS + ("read_page", "mode_judge", "mode_lesson", "mode_outline"):
+    for name in UNIQUE_SYSTEM_CALLS + ("read_page", "read_pages", "mode_judge", "mode_lesson",
+                                       "mode_outline"):
         hit = next(it for it in items if it["call_name"] == name)
         assert hit["system_shared_with"] == 0, hit["call_name"]
 
