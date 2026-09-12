@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { Link, NavLink, Route, Routes } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DashboardPage from "./pages/DashboardPage";
 import FeedbackPage from "./pages/FeedbackPage";
@@ -72,10 +72,29 @@ export default function App() {
             <Route path="/prompts" element={<PromptsPage />} />
             <Route path="/ai-traces" element={<AiTracePage />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            {/* R65 任务 A：以前这里静默 `Navigate to="/"` —— 用户会以为"程序坏了"。
+                现在给一句中文说明 + 两个能点回去的入口（不新造页面，就用现有卡片样式）。 */}
+            <Route path="*" element={<UnknownPath />} />
           </Routes>
         </ErrorBoundary>
       </main>
+    </div>
+  );
+}
+
+/** 打不开的地址：说清最可能的原因（学科停用/链接过期），并给出口。 */
+function UnknownPath() {
+  return (
+    <div className="card">
+      <h2>这个页面打不开</h2>
+      <p className="muted">
+        多半是这个学科已经停用了（停用的学科不再显示内容），也可能是链接过期了。
+        停用的学科可以在「学科列表」里重新启用，启用后内容与进度都还在。
+      </p>
+      <div className="actions">
+        <Link className="button-link primary" to="/subjects">去学科列表（可重新启用）</Link>
+        <Link className="button-link" to="/">回主页</Link>
+      </div>
     </div>
   );
 }
