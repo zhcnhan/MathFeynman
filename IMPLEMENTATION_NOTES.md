@@ -2692,6 +2692,20 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     ③ **`content_missing` 时 `/session/start` 不建会话**（返回 `session.id=""`）：前端据此不进空会话；
     若将来要求"没内容也能开会话"，需要内容库里先有占位节点（内容库语义变更，未擅改）。
 
+24. **【R55 待架构侧确认】（2026-09-12）**：
+    ① **"图句窗口"取 2 句**（引用句 ＋ 紧随其后 1 句）：这是在"少丢"与"别拿图里的内容当依据"之间的
+    取舍——真实教材上 2 句窗口实测误丢 0 条（§77.2），但换一本书可能误伤"图注后的正文"。
+    若要求更严（整段都算图段）或更松（只算引用句本身），改一处常量 `FIGURE_SENTENCE_WINDOW` 即可，请裁定；
+    ② **"整节靠图"的判据是"该章每一段都引用了图/表"**（`figure_only`）：真实教材里 20 个章级条目
+    有 15 个含图指代，但**没有**任何一章是"每段都引图"，所以本批在真实书上**不会**触发"不出稿"；
+    这个判据是否足够（或希望改成"图句占比 ≥ X%"）？本批按"宁缺勿造但不过度拒稿"取现状；
+    ③ **体检的"图片数"来自 pypdf**（能数到 47 张图/20 页）；某些 PDF 的图是矢量绘图或无 XObject，
+    pypdf 数不到 → 体检会**少报**图片数。要更准需换解析器（PyMuPDF 等），涉及新依赖，请裁定是否值得；
+    ④ **"重新整理文字"目前只在界面上按材料点**（`POST /materials/{id}/reparse`，幂等）。
+    若希望"导入旧学科时批量重整理"，需要一次批处理入口 + 每个学科的重整理账目（本批未做）；
+    ⑤ **页眉装饰性间隔号**会留下一个 `·`（§77.3 承认的不足①）：不做"行首/行尾删点"是怕误删项目符号；
+    若要清理，建议按"同一页页眉/页脚位置的固定字形"另立规则（避免影响正文）。
+
 
 ---
 
@@ -3688,6 +3702,38 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
   - **复用点**：既有 `LedgerAlerts` 组件与大纲页单元行（**不新建页面/组件**）；生成走既有 `POST /subjects/{sid}/units/{uid}/content`
   - **断言/用例**：后端断言 `action`/`usable`/`content_missing`（前端无测试运行器）+ `npx tsc --noEmit` exit 0
 
+### 67.4j 融合对照表（**R55 行**：新增件 → 复用点 → 断言）
+
+> 写法同 §67.4d–i：按 docs/13 §2 写成**并列列表项**，不新建表格。
+
+- **新增件**：抽取体检 `pdfparse.extract_quality`（四指标 + 三档 + 一句"所以会怎样"）
+  - **复用点**：`materials.text_health`（R37 S7 已有入口，**只加字段** `extract/grade/summary_zh/fixed/raw_file`）；
+    R37 扫描版 `healthy/checked/note` **一字未改**
+  - **断言/用例**：`test_r55_a1/a2/a3_*`、`test_r55_a4_*`（阈值分界线 + 图片不改档 + 稳定性）
+- **新增件**：私用区两层折叠 `_fold_private_use` + 拆字空格合并 `_merge_broken_spaces`（都在既有
+  `pdfparse._clean` 里，**不新建清洗管线**）
+  - **复用点**：`parse_pdf_bytes` 既有产出；引文尺子 `content/citations.normalize`（合并后仍要能过锚定）
+  - **断言/用例**：`test_r55_c1_*`、`test_r55_c2_*`（含 `A B C D E F` 误伤防护、幂等、引文仍成立）
+- **新增件**：原始抽取留档（`*.raw.txt` + `extract_fixed/raw_file`）+ `POST /materials/{id}/reparse`
+  - **复用点**：既有材料 frontmatter 与 `materials_dir`（**不新建目录/表**；`*.md` glob 天然不会读到 `*.raw.txt`）
+  - **断言/用例**：`test_r55_c3_*`、`test_r55_c4_*`（第二次 `changed=false`、不动原始文件与内容文件）
+- **新增件**：图示指代 `materials.figure_refs` / `annotated_entry_text` / `figure_text_of` / `non_figure_text`
+  - **复用点**：既有材料注入包 `unit_material_pack` 与块结构 `_full_blocks`（**只加键**，注入文本仍是原文 + 标注）
+  - **断言/用例**：`test_r55_b1_*`、`test_r55_b2_*`
+- **新增件**：图段不得当依据 `answerability` 的 `figure_text` 形参（`clean_facts`/`check_basis`/`gate_node`
+  → `drop_kind="figure_unavailable"`）
+  - **复用点**：R37 S5 教材锚定的既有三道校验（**同一函数、同一调用点**，只是多一个"图句"判据）
+  - **断言/用例**：`test_r55_b1_same_paragraph_*`、`test_r55_b1_fact_from_clean_paragraph_*`、`test_r55_b3_*`
+- **新增件**：整节靠图 → 不出稿（`generate` 的 `figure_only` 早返回 + `CAT_COVERAGE` 记账 +
+  `outline_gate.unit_content_status.figure_unavailable` → 会话 `content_missing` 说真原因）
+  - **复用点**：R37"教材未覆盖不编造"的既有早返回分支与 R54 的 `content_missing` 卡片（**不新建状态**）
+  - **断言/用例**：`test_r55_b1_figure_unit_is_marked_ledgered_and_visible`、
+    `test_r55_b1_figure_unit_explains_in_chinese_at_the_session_entry`
+- **新增件**：前端「体检」徽标 + 覆盖账两列（体检 / 图示不可用）+ 单元「图示不可用 · 没出内容」徽标 +
+  「重新整理文字」按钮
+  - **复用点**：既有材料列表与覆盖账卡（**不新建页面/组件**）；数据源＝既有 `GET /materials`、`GET /coverage`
+  - **断言/用例**：后端字段断言 + 文案守卫（`test_r52_b1_*`，前端无测试运行器）+ `npx tsc --noEmit` exit 0
+
 ### 67.4b 融合对照表（**R38 / R39 行**：新增件 → 复用点 → 断言）
 
 | 新增件 | 复用点（禁新建平行机制） | 断言/用例 |
@@ -4643,6 +4689,157 @@ B5 线程断言更新 + 本 NOTES/docs 同步）。
 
 `461ef6c`（A 守卫）→ `ef8ae95`（B 丢弃出路 + 覆盖账内容状态）→ `b714357`（C 大纲页可见性）→
 本批收尾（docs/06 · docs/07 · docs/14 + 本 NOTES + 融合对照表 §67.4i + 挂账 §58-23）。
+
+
+## 77. R55：教材体检 + 图示认输 + 抽取修正（用户真实教材实测驱动）（2026-09-12）
+
+来源：用户在第 4 步 import 那份 126 页真实教材（《行星科学（更新第二版）》PDF）时看到
+"内容照样生成、题照样出"，而系统**从没说过它读不到图**；同时导入的正文里有大量
+"认不出的字形"和"被空格拆开的字"（实测私用区 17,607 字＝6.47%）。
+工单 `.runtime/EULER_TICKET_R55.md`；验收批 **R56**。**红线**：不改架构（文本仍只在程序里流动，
+**绝不把文件发给模型**）、不放松 R37 三条保证（覆盖账 / 教材锚定 / 扫描版诚实边界）、
+**用户 `content/stages|subjects/s-f2decfcf/` 只读**（本批一字未动，实测见 §77.5）。
+
+### 77.1 任务 A · 教材体检（导入时就把"这本书抽得好不好"讲成人话）
+
+- **四个指标**（`pdfparse.extract_quality`）：`unrecognized_ratio`（私用区字形 + 替换字符占比）·
+  `broken_space_ratio`（含"汉字 空格 汉字"或"单字母 空格 单字母"的行占比，另给 `*_heavy_*`
+  ＝"一行 ≥3 处"的宽严两口径）· `formula_symbols`（`$ √ ∫ ∑ ^ _ ≤ ≥ ± × ÷ ∞ π` 计数）·
+  `images/image_pages`（pypdf 能数到的图片数与含图页数）。
+- **三档阈值与理由**（写成用例 `test_r55_a4_grade_thresholds_are_where_we_say_they_are`）：
+  - `unrecognized_ratio ≥ 5%` → **差**：公式/图注这类"符号密集"的地方会成片认不出，**后果不可控**
+    （用户真实材料正是 6.47%，落在这一档）；
+  - `≥ 0.5%` 或 **拆得厉害的行 ≥ 60%**（`≥ 20%` 亦同，文案不同）→ **一般**；
+  - 其余 → **好**；
+  - **为什么"拆字"最高只判到"一般"**：空格问题系统**能自动合并**（C2 已做），后果轻；
+    而"认不出"系统救不了 → 只有它能把档位压到"差"。**为什么用 heavy 口径判档**：
+    偶尔一处（正常英文缩写/`A 站`）不该把整本书判低。
+  - **图片数不参与判档**（实测：47 张图、20 个含图页）——图多不等于抽得差，它只让体检多说一句
+    "有 N 张图读不到"（用例 `test_r55_a4_images_never_change_the_grade_only_add_a_sentence`）。
+- **"数字后面必须跟一句人话"**：`summary_zh` 由 `_health_summary_zh` 生成，先说档位原因、再说后果与
+  下一步；用例断言摘要含汉字与句号、**不含** `ratio/grade/MF_/§` 等内部字样（`_assert_plain_chinese`）。
+- **体检在"原始抽取文本"上算**：粘贴文本且给了 `raw_text` 时，档位按 `raw_text` 算
+  （否则"我修好了"会掩盖"这份 PDF 有多脏"）；用 `test_r55_a2_*` 锁住。
+- **R37 扫描版口径原样保留**（`healthy/checked/note` 一字未改）：`pages<5` 仍"未判定"，
+  几乎没读到文字仍给 OCR 提示；`summary_zh` 在这个分支直接说"请先做文字识别（OCR）"
+  （用例 `test_r55_a3_*`）。
+
+### 77.2 任务 B · 图示不可用要显式认输（本轮最重要）
+
+- **指代判定**（`materials.figure_refs`）：**指示词**（如/见/参见/根据/结合 + 上·下·本·附 + 图/表；
+  以及 `图中/如下图/见下表/见附图`）**或** **编号**（`图 3.2`/`表 2-1`/`Fig. 4`/`Table 5`）；
+  同一处的重叠命中**只留最长的那个**（给用户看"图 1.1"，不是"如图、图 1.1"）。
+  误判防护：**不认孤立的"图"字**（地图/图书/图解/书名不会命中），
+  参考文献行（`[12] …`）、含网址/DOI/ISBN 的行**整行跳过**（用例 `test_r55_b2_*`）。
+- **三处可见（同源）**：
+  ① 注入给模型的文本：**段前**加中文标注 `【图示不可用：这里引用了图片/表格（…），本系统读不到图片内容——不要据此编造】`
+  （**只加标注、不删正文**；用例断言标注后原文仍在）；
+  ② 账本：材料级一条（`CAT_MATERIAL`，`kind=figure_unavailable`，含被标注的章/节与指代清单）
+  ＋ 单元级一条（`CAT_COVERAGE`，整节靠图未出稿时）；
+  ③ 覆盖账：`by_material[].figure_unavailable[]/figure_unavailable_count`、`units[].figure_unavailable`
+  ——界面在大纲页两处显示（材料行徽标 + 单元行「图示不可用 · 没出内容」）。
+- **不许当依据**：`answerability.clean_facts/check_basis/gate_node` 收 `figure_text`；
+  引文若**只**出现在图段文本里（`_in_figure_only`：在图句里找得到、在"去掉图句的正文"里找不到）
+  → 丢弃 + 中文原因 + `drop_kind="figure_unavailable"`。
+- **整节靠图 → 不出内容**：`unit_material_pack.figure_only`（该章**每一段**都引用了图/表）→
+  `generate` 在**调模型之前**就返回 `status="uncovered"`，记 `未覆盖：图示不可用` + 中文原因，
+  **不落盘任何内容**（用例断言文件不存在）；会话入口的原因也换成**真正的原因**
+  （"这一节的内容基本都在图里，系统读不到图片内容"），不再含糊地说"还没有内容"
+  （`session._missing_node_card` → 复用 `outline_gate.unit_content_status` 的 `figure_unavailable`）。
+- **粒度口径（实测决定，本批最重要的一次自我纠错）**：
+  - **可见标注＝段落级**，**"不许当依据"＝句子级**（引用句 ＋ 紧随其后 1 句；"该图显示…"这类
+    描述句往往不带"图"字，故给 1 句窗口）；
+  - 为什么不用段落级当硬边界：真实教材抽出来的"段落"常常是**整页**（页内没有空行）。
+    实测（`.runtime/r55_granularity_probe.py`，用户真实教材 + 现有 17 条事实句/6 条题目引文）：
+    - 段落级图段＝全书 17.9% → 判"只落在图里"**事实句 10/17、引文 4/6**（**会把好内容误丢**）；
+    - 句子级图段＝全书 1.1% → **0/17、0/6**；
+    - 句子级 + 后 1 句＝2.1% → **0/17、0/6**（多一点保守，实测不多丢），**采用这一档**；
+  - 用例把这三种粒度都锁住：`test_r55_b1_same_paragraph_clean_sentence_survives_a_figure_sentence`
+    （同段里没引用图的那句必须留下）、`test_r55_b1_fact_from_clean_paragraph_survives_a_figure_in_the_same_chapter`。
+
+### 77.3 任务 C · 抽取修正（不许硬编码某本书）
+
+- **私用区两层**（`_fold_private_use`）：① **已知码位表**（`_PUA_KNOWN`，8 个码位，逐条用真实材料
+  的上下文核对：目录点线 `U+1001BA`→空白、句点/缩写点 `U+1001B0`→`.`、人名间隔号 `U+100170`→`·`、
+  撇号 `U+1001B3`→`'`、页眉装饰 `U+1000FC/FD/FE/FF`→删）；② **通用兜底**：**同一码位连排 ≥3**
+  ＝排版填充（点线/表格线），**任何书都适用**。**未知私用区字符原样保留**并计入"认不出"
+  （不猜、不乱删；用例 `test_r55_c1_generic_fallback_and_unknown_kept`）。
+- **拆字空格**（`_merge_broken_spaces`）：汉字之间**直接合并**；拉丁字母**只在**同时满足
+  ① 被拆片段（1~3 字母）连成的词长 ≥5、② 该行孤立单字母 ≥5、③ 孤立单字母占该行字母数 ≥60%、
+  ④ 该行字母**不是清一色大写** 时合并。→ `S o l a r` → `Solar`、`P l a n e t a ryS c i e n c e s` →
+  `PlanetarySciences`；`A B C`/`A B C D`/`A B C D E F`/`I V X L`（选项/缩写）**不动**；
+  正常英文句子不动（用例 `test_r55_c2_*` 逐条锁）。
+- **保留原始抽取文本**（C3）：`add_material(..., raw_text=...)` 与 PDF 上传都把**原始抽取**写进
+  `<材料名>.raw.txt`，frontmatter 记 `extract_fixed: yes` + `raw_file`；材料列表/上传响应回
+  `fixed/raw_file`，界面写明"已做抽取修正（原始文本留了一份备查）"（**不静默改内容**）。
+- **重新整理入口**（C4）：`POST /subjects/{sid}/materials/{mid}/reparse` → `materials.reparse_material`
+  ——优先用 `*.raw.txt` 为重算源；**幂等**（第二次 `changed=false`，正文一字不变）；老材料首次修正前
+  先把当前正文存成 `*.raw.txt`；**不动原始上传文件、不动已生成的内容文件**（用例 `test_r55_c4_*`）。
+- **实测（用户真实教材，`.runtime/r55_real_evidence.py`）**：
+  - 私用区 17,607 字（6.47%）→ **0**；档位 **差 → 好**（认不出按原始抽取算：修正后 ≤0.01%）；
+  - 拆字行 3,621/4,663（77.6%，拆得厉害 65.5%）→ 1,325/4,661（28.4%，拆得厉害 **7.0%**）；
+  - 同一段落 before/after：
+    `P l a n e t a ryS c i e n c e s` → `PlanetarySciences`；
+    `行 星 科 学` → `行星科学`；
+    `杰克 􀆰乔纳森 􀆰利斯奥尔 (J a c k J􀆰L i s s a u e r)` → `杰克·乔纳森·利斯奥尔 (JackJ.Lissauer)`。
+- **承认的不足（写进用例，免得日后当成"没实现"）**：
+  ① 整段被拆成小片段时**词与词的分界**会一并消失（`Solar System` → `SolarSystem`）——
+  影响有限：教材锚定用的是**去掉空格/标点后**的比较，引用照样成立；只是给人看的文本略"挤"；
+  ② 页眉/页脚上的**装饰性间隔号**会留下一个 `·`（如 `·北京 ·`）——它确实被映射成了"真标点"，
+  只是那个位置本来就是装饰，未再做位置判断（不另加"行首/行尾删点"的规则，避免误删项目符号）。
+
+### 77.4 必交用例（23 条，实际名）
+
+- **A（6）**：`test_r55_a1_clean_material_grades_good_and_says_it_in_plain_chinese`、
+  `test_r55_a2_polluted_extract_grades_bad_and_still_reports_after_fix`、
+  `test_r55_a3_scanned_material_keeps_r37_honest_path`、
+  `test_r55_a4_grade_thresholds_are_where_we_say_they_are`、
+  `test_r55_a4_images_never_change_the_grade_only_add_a_sentence`、
+  `test_r55_a4_metrics_are_stable_on_repeated_reads`。
+- **B（10）**：`test_r55_b1_figure_paragraphs_are_marked_and_kept_verbatim`、
+  `test_r55_b1_figure_unit_is_marked_ledgered_and_visible`、
+  `test_r55_b1_figure_unit_explains_in_chinese_at_the_session_entry`、
+  `test_r55_b1_mixed_entry_is_not_refused_but_figure_part_is_stripped`、
+  `test_r55_b1_same_paragraph_clean_sentence_survives_a_figure_sentence`、
+  `test_r55_b1_fact_from_clean_paragraph_survives_a_figure_in_the_same_chapter`、
+  `test_r55_b2_plain_words_about_maps_and_books_are_not_figure_refs`、
+  `test_r55_b3_facts_and_basis_from_figure_paragraphs_are_dropped`、
+  `test_r55_b3_material_body_is_never_rewritten_by_marking`。
+- **C（7）**：`test_r55_c1_known_private_use_codepoints_map_to_real_punctuation`、
+  `test_r55_c1_generic_fallback_and_unknown_kept`、
+  `test_r55_c1_health_counts_unknown_but_not_known_after_cleaning`、
+  `test_r55_c2_cjk_spaces_are_merged`、
+  `test_r55_c2_shredded_latin_word_is_merged_but_abbreviations_are_not`、
+  `test_r55_c2_merge_is_idempotent_and_keeps_citation_matching`、
+  `test_r55_c3_raw_text_is_kept_and_marked`、`test_r55_c4_reparse_endpoint_is_idempotent`。
+
+### 77.5 回归与验收自证（**实测，非推算**）
+
+- **开工基线**（HEAD `0ee4912`）：`pytest backend/tests` ＝ **519 passed + 2 skipped / 521 collected**，
+  0 failed；`content validate` ＝ `ok=True nodes=27 exercises=56`；roadmap audit ＝ `27/31/81/59/60`。
+- **收尾实测**（`.runtime/r55_full2.xml`）：**542 passed + 2 skipped / 544 collected**，0 failed / 0 error，
+  exit 0 —— **+23 用例全绿**（A 6 + B 10 + C 7）。
+- **接地审计前后一致**（`backend/tests/audit_material_binding.py`，用户真实内容 u01+u02）：
+  taught_facts **17/17**、basis.quote **6/6**、讲解整句 **9/83**、含逐字片段 **37/83** —— **四条均未下降**；
+  另外实测 R55 B 的丢弃规则在这批既有内容上**误丢 0 条**（见 §77.2 的粒度对比）。
+- `content validate` ＝ `ok=True nodes=27 exercises=56`；roadmap audit ＝ `27/31/81/59/60`（`ok: True`）；
+  `npx tsc --noEmit` exit 0；`npx vite build` exit 0；文案守卫（前端）0 处。
+- **用户内容只读**：`content/stages|subjects/s-f2decfcf/` 一字未动
+  （u01 19,090 B / u02 12,600 B / outline.yaml 30,691 B / 材料 458,950 B，字节数与修改时间均未变）；
+  所有"会写盘"的验证都在测试临时副本（`MF_CONTENT_ROOT`）或只读探针上做。
+- **本批踩到并修掉的两个自查缺口（如实登记）**：
+  ① 一次编辑覆盖了 `pdfparse.PdfParseError` 类定义（`ImportError`）——已恢复，并把
+  `test_pdf_upload.py` 4 条用例重新纳入自查（首轮全量曾因它 4 failed）；
+  ② 首版把 `figure_text` 收成**整章**、后来收成**整页段落**，实测都会误丢真实内容——
+  最终改为**句子级**（§77.2 有实测数字）。
+
+### 77.6 提交链（标 R55，不与 R52/R53/R54 混提）
+
+`02b475b`（A+C：体检 + 抽取修正 + 重新整理入口）→ `475515e`（B：图示认输 + 覆盖账可见）
+→ 本批收尾（docs/06 · docs/07 · docs/14 + 本 NOTES + 融合对照表 §67.4j + 挂账 §58-24）。
+> 三个任务的改动**共用** `outline/materials.py`（材料注入/体检/覆盖账的唯一入口）与
+> `OutlinePage.tsx`，按文件切会让中间提交不可导入；故 A+C 一个提交、B 一个提交
+> （A+C 提交里含 B 的**判定与展示**小部分，B 的**校验接线与用例**在第二提交）。
 
 
 
