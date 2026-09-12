@@ -155,6 +155,33 @@ export default function SessionPage() {
     }
   };
 
+  // R54 A：内容不足时的一键生成（走既有的"单元出稿"入口；生成完就地重取会话继续）
+  const generateContent = async () => {
+    const info = (payload?.content_missing ?? {}) as { subject_id?: string; unit_id?: string };
+    if (!info.subject_id || !info.unit_id) {
+      setError("这个单元的内容由系统按课程安排生成，请稍后再试。");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    setNotice("");
+    try {
+      const r = await api.post<{ status: string; note?: string }>(
+        `/subjects/${info.subject_id}/units/${info.unit_id}/content`, {}
+      );
+      setNotice(
+        r.status === "created" || r.status === "exists"
+          ? "内容已生成，正在回到学习…"
+          : `生成结果：${r.status}${r.note ? ` · ${r.note}` : ""}`
+      );
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // docs/10 §3 + 工单 B 段：内容纠错反馈 → 复核/自动重生成（auto 节点后台替换后可见处理结果）
   const reportContentIssue = async () => {
     if (!resp) return;
@@ -340,6 +367,8 @@ export default function SessionPage() {
       </header>
 
       {notice && <div className="banner ok">{notice}</div>}
+      {/* R54 A：被守卫退回/需要先看讲解 → 中文说明（不是报错） */}
+      {!!payload?.rewound_zh && <div className="banner warn">{String(payload.rewound_zh)}</div>}
 
       {error && <div className="banner error">{error}</div>}
       {thinkingSince !== null && (
@@ -381,6 +410,16 @@ export default function SessionPage() {
             />
           )}
           {step === "done" && <DoneView payload={payload} onHome={() => nav("/")} onHistory={() => nav("/feynman-history")} />}
+          {/* R54 A：内容不足 → 不给学习步骤、不给作答入口，只说清缺什么 + 一键生成 */}
+          {step === "content_missing" && (
+            <ContentMissingView
+              info={payload.content_missing}
+              busy={submitting}
+              onGenerate={() => void generateContent()}
+              onRetry={() => void refresh()}
+              onHome={() => nav("/")}
+            />
+          )}
 
           {/* R35 S4：追问无据/学生无可引用内容 → 退回讲解补讲（不发无法回答的追问） */}
           {reteach && (
@@ -481,6 +520,39 @@ function ExplainView({ payload, submitting, question, setQuestion, onAsk, onNext
         <button className="ghost" disabled={submitting} onClick={onRegen} title="讲解显示异常（如残留 LaTeX 源码）时，重新生成讲解">
           🔄 重新生成讲解
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** R54 A：内容不足卡片——说清缺什么，给一键生成；不给学习步骤、不给作答入口。 */
+function ContentMissingView({ info, busy, onGenerate, onRetry, onHome }: any) {
+  const title = info?.node_title || info?.node_id || "这个单元";
+  const canGenerate = !!info?.can_generate;
+  return (
+    <div className="card" style={{ borderColor: "#e6a23c" }}>
+      <h2 style={{ marginTop: 0 }}>先补上内容，再开始学</h2>
+      <div className="banner warn">{info?.reason_zh || "这个单元还没有内容。"}</div>
+      <ul className="objectives">
+        <li>单元：<strong>{title}</strong></li>
+        {typeof info?.content_status?.exercises === "number" && (
+          <li>现有练习：{info.content_status.exercises} 道
+            {info.content_status.dropped_exercises > 0
+              ? `（另有 ${info.content_status.dropped_exercises} 道因找不到教材依据没有采用）` : ""}
+          </li>
+        )}
+        <li>内容一律以你导入的教材为准；教材里找不到依据的，程序不会编造（所以可能用不上）。</li>
+      </ul>
+      <div className="input-row">
+        {canGenerate ? (
+          <button className="primary" disabled={busy} onClick={onGenerate}>
+            {busy ? "正在生成…" : "生成这个单元的内容"}
+          </button>
+        ) : (
+          <span className="dim">这个单元的内容由系统按课程安排生成，暂时不需要手动生成。</span>
+        )}
+        <button className="ghost" disabled={busy} onClick={onRetry}>重新检查</button>
+        <button className="ghost" disabled={busy} onClick={onHome}>回仪表盘</button>
       </div>
     </div>
   );

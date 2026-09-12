@@ -50,6 +50,8 @@ STAGE_EXAMPLE = "example"
 STAGE_PRACTICE = "practice"
 STAGE_FEYNMAN = "feynman"
 STAGE_DONE = "done"
+# **R54 A**：内容不足时下发的"卡片"步骤（不是学习阶段——只给中文说明 + 一键生成）
+STEP_CONTENT_MISSING = "content_missing"
 
 STAGE_ORDER = [STAGE_EXPLAIN, STAGE_EXAMPLE, STAGE_PRACTICE, STAGE_FEYNMAN, STAGE_DONE]
 
@@ -108,6 +110,9 @@ def new_flow() -> dict[str, Any]:
     return {
         "stage": STAGE_EXPLAIN,
         "lecture_cache": None,  # {lecture_md, asks, degraded}
+        # **R54 A**：讲解**是否真的展示过**——学生没看到讲解，就不许被要求开讲（费曼）。
+        # 置位点：explain 阶段正常下发讲解正文之后（`_response`）；老会话默认 False → 会被退回讲解。
+        "explained_seen": False,
         "practice": {
             "issued": 0,
             "streak": 0,
@@ -232,6 +237,7 @@ def _ensure_flow_shape(flow: dict[str, Any] | None) -> dict[str, Any]:
     for key, default, types in (
         ("regen_reissue_used", 0, (int,)),
         ("regen_think_override", False, (bool,)),
+        ("explained_seen", False, (bool,)),   # R54 A：讲解是否展示过（老会话默认 False）
     ):
         if key in flow and not isinstance(flow[key], types):
             flow[key] = default
@@ -284,7 +290,12 @@ class SessionService:
     def start(self, db: Session, node_id: str) -> dict[str, Any]:
         lib = get_library()
         loaded = lib.by_id.get(node_id)
-        if loaded is None:
+        from . import outline_gate
+
+        # **R54 C**：单元在大纲里但**还没有内容** → 不算"节点不存在"，而是"先补内容"：
+        # 建会话并回卡片（界面就地给一键生成），不让用户撞 404/409 的墙、更不进空会话。
+        res_unit = outline_gate.resolve_subject_unit(db, node_id)
+        if loaded is None and res_unit is None:
             raise SessionError(f"节点不存在: {node_id}", code="not_found")
         ensure_user(db, self.user_id)
         # 已有进行中会话 → 恢复
@@ -305,47 +316,57 @@ class SessionService:
             db.flush()
             return self.resume(db, existing.id)
 
-        # 门禁：先判学科停用（B4"移除可恢复"：停用学科不可进入学习），再按学科分流——
-        # 通用学科（custom）走大纲权威（service.outline_gate）；math 走蓝图总序（service.path）。
-        # 仅"进入新节点"受控（既有会话恢复/练习费曼续走不受影响）。
-        from . import outline_gate
-
-        subj_id = outline_gate.subject_of_node(db, node_id)
-        if subj_id is not None and outline_gate.is_subject_disabled(db, subj_id):
-            raise SessionError(
-                f"学科「{subj_id}」已停用（可从学科页重新启用后继续学习）",
-                code="invalid_state",
-            )
-        res = outline_gate.resolve_subject_unit(db, node_id)
-        if res is not None:
-            ok_gate, missing = outline_gate.unit_allowed(db, self.user_id, res[0], res[1])
-        else:
-            from .path import make_engine
-
-            mastered = {
-                nid
-                for (nid,) in db.query(models.UserNode.node_id)
-                .filter(
-                    models.UserNode.user_id == self.user_id,
-                    models.UserNode.state == "mastered",
+        blocked = (self._missing_node_card(db, node_id) if loaded is None
+                   else self._content_gate(db, loaded.doc))
+        if blocked is None:
+            # 门禁：先判学科停用（B4"移除可恢复"：停用学科不可进入学习），再按学科分流——
+            # 通用学科（custom）走大纲权威（service.outline_gate）；math 走蓝图总序（service.path）。
+            # 仅"进入新节点"受控（既有会话恢复/练习费曼续走不受影响）。
+            subj_id = outline_gate.subject_of_node(db, node_id)
+            if subj_id is not None and outline_gate.is_subject_disabled(db, subj_id):
+                raise SessionError(
+                    f"学科「{subj_id}」已停用（可从学科页重新启用后继续学习）",
+                    code="invalid_state",
                 )
-                .all()
-            }
-            eng = make_engine(mastered, lib=lib)
-            ok_gate, missing = eng.node_allowed(
-                node_id,
-                kind=loaded.doc.kind or "",
-                level=loaded.doc.level or "",
-                topic=loaded.doc.topic or "",
-                prereqs=list(loaded.doc.prereqs or ()),
-            )
-        if not ok_gate:
-            raise SessionError(
-                "当前节点尚未解锁（须按课程顺序先学前置）：" + "；".join(missing or ["总序前置未达成"]),
-                code="invalid_state",
-            )
+            if res_unit is not None:
+                ok_gate, missing = outline_gate.unit_allowed(db, self.user_id, res_unit[0], res_unit[1])
+            else:
+                from .path import make_engine
+
+                mastered = {
+                    nid
+                    for (nid,) in db.query(models.UserNode.node_id)
+                    .filter(
+                        models.UserNode.user_id == self.user_id,
+                        models.UserNode.state == "mastered",
+                    )
+                    .all()
+                }
+                eng = make_engine(mastered, lib=lib)
+                ok_gate, missing = eng.node_allowed(
+                    node_id,
+                    kind=loaded.doc.kind or "",
+                    level=loaded.doc.level or "",
+                    topic=loaded.doc.topic or "",
+                    prereqs=list(loaded.doc.prereqs or ()),
+                )
+            if not ok_gate:
+                raise SessionError(
+                    "当前节点尚未解锁（须按课程顺序先学前置）：" + "；".join(missing or ["总序前置未达成"]),
+                    code="invalid_state",
+                )
 
         sess_id = _new_session_id(node_id)
+        if blocked is not None:
+            # **R54 C/A**：内容不足或还没有内容 → **不建会话**（内容库还没有这个节点，会话外键也挂不上），
+            # 直接回"先补内容"卡片：界面据此就地提示 + 一键生成，不把人带进空会话。
+            return {
+                "step": STEP_CONTENT_MISSING,
+                "payload": {"first_open": False, "content_missing": blocked},
+                "events": [{"type": "content_missing", "reason": blocked["reason_zh"]}],
+                "session": {"id": "", "node_id": node_id, "state": "blocked",
+                            "stage": STEP_CONTENT_MISSING},
+            }
         sess = models.Session(
             id=sess_id,
             user_id=self.user_id,
@@ -371,10 +392,22 @@ class SessionService:
             raise SessionError(f"未知 action: {action}", code="validation_error")
         payload = payload or {}
         sess = self._get_session(db, session_id)
-        node = self._node_of(db, sess)
         # R29 引申：flow schema 演进自愈（缺键/错类型/整块缺失）——step() 是真正的 choke point，
         # 不能只挂在 resume()（R29 首修只改 _ensure_invariants → 探针仍复现的教训）。
         sess.flow_json = _ensure_flow_shape(sess.flow_json)
+        # **R54 A：前置内容守卫**——内容不足（或节点已不在库）时，除"退出"外的任何动作都不该继续：
+        # 不调模型、不判题、不评费曼，只回"缺什么 + 一键生成"的卡片。
+        if action != "quit":
+            node, blocked = self._node_or_gate(db, sess)
+            if blocked is not None:
+                return self._content_missing_response(db, sess, blocked)
+        else:
+            node = None
+            try:
+                node = self._node_of(db, sess)
+            except SessionError:
+                node = None
+        assert node is not None or action == "quit"
         if action == "next":
             return self._act_next(db, sess, node)
         if action == "ask_question":
@@ -645,6 +678,10 @@ class SessionService:
         flow = sess.flow_json = _ensure_flow_shape(sess.flow_json)  # R29 引申：进费曼前再自愈一次
         p = flow["practice"]
         f = flow["feynman"]
+        # **R54 A**：没看过讲解就不许开讲（用户实测场景）——不报错，直接把人送回讲解。
+        if not flow.get("explained_seen"):
+            return self._rewind_to_explain(db, sess,
+                                           "你还没有看过这一节的讲解——先看完讲解，再讲一遍就能继续。")
         if not p["passed"]:
             raise SessionError("费曼环节需要先完成练习达标（连续答对 3 题）", code="invalid_state")
         dims = [d.model_dump() for d in node.feynman.rubric.dimensions]
@@ -853,6 +890,10 @@ class SessionService:
         flow = sess.flow_json = _ensure_flow_shape(sess.flow_json)  # R29 引申：补答前再自愈一次
         p = flow["practice"]
         f = flow["feynman"]
+        # **R54 A**：没看过讲解就不许补答（同 `_act_feynman`：送回讲解而不是报错）
+        if not flow.get("explained_seen"):
+            return self._rewind_to_explain(db, sess,
+                                           "你还没有看过这一节的讲解——先看完讲解，再继续作答。")
         if not p["passed"]:
             raise SessionError("费曼环节需要先完成练习达标（连续答对 3 题）", code="invalid_state")
         dims = [d.model_dump() for d in node.feynman.rubric.dimensions]
@@ -1548,15 +1589,24 @@ class SessionService:
         return loaded.doc
 
     def _ensure_invariants(self, db: Session, sess: models.Session) -> None:
-        """读取时自愈：flow 结构（R30 单一入口 `_ensure_flow_shape`）+ stage 回退等不变量。"""
+        """读取时自愈：flow 结构（R30 单一入口 `_ensure_flow_shape`）+ stage 回退等不变量。
+
+        **R54 A**：进费曼前必须"讲解已展示过"——老会话/历史数据里 `practice.passed=True`
+        但这轮从没下发过讲解（用户实测：打开一章直接被要求开讲）→ **退回讲解**，不许把人留在半步上。
+        """
         # R29 → R30：老会话缺键/错类型/整块缺失一律由单一入口深度补齐（含 R27 费曼键）
         flow = _ensure_flow_shape(sess.flow_json)
         sess.flow_json = flow
         stage = flow["stage"]
+        if stage in (STAGE_FEYNMAN, STAGE_DONE) and not flow.get("explained_seen"):
+            # 讲解没看过就想进费曼（或已"完成"）——退回讲解，先看讲解
+            flow["stage"] = STAGE_EXPLAIN
+            stage = STAGE_EXPLAIN
+            flow["_rewound_zh"] = "之前没有看过这一节的讲解，已退回讲解：看完再讲一遍就能继续。"
         if stage == STAGE_PRACTICE and flow["practice"]["current"] is None:
             node = self._node_of(db, sess)
-            if flow["practice"]["passed"] and not flow["feynman"]["passed"]:
-                flow["stage"] = STAGE_FEYNMAN  # 练习已过而卡在 practice → 推进费曼
+            if flow["practice"]["passed"] and not flow["feynman"]["passed"] and flow.get("explained_seen"):
+                flow["stage"] = STAGE_FEYNMAN  # 练习已过且讲解看过 → 推进费曼
             else:
                 self._issue_next(db, sess, node)
 
@@ -1569,7 +1619,12 @@ class SessionService:
         sess.flow_json = flow
         stage = flow["stage"]
         payload: dict[str, Any] = {"first_open": first_open}
-        node = self._node_of(db, sess)
+        # **R54 A：前置内容守卫**——内容不足以学（或节点已不在内容库）→ 只下发说明 + 一键生成，
+        # 绝不下发学习步骤/作答入口（用户实测："我都没看过他的讲解我讲什么"）。
+        node, blocked = self._node_or_gate(db, sess)
+        if blocked is not None:
+            return self._content_missing_response(db, sess, blocked)
+        assert node is not None
 
         # R27：费曼账本/预算永远随响应下发（回炉/达标后仍可展示"当时的进度"）
         f = flow.get("feynman") or {}
@@ -1586,6 +1641,9 @@ class SessionService:
 
         if stage == STAGE_EXPLAIN:
             payload.update(self._payload_explain(db, sess, node))
+            # **R54 A**：讲解**真的下发过**（正文非空）才算"已展示"——之后才允许进费曼。
+            if str(payload.get("lecture_md") or "").strip():
+                flow["explained_seen"] = True
         elif stage == STAGE_EXAMPLE:
             payload["worked_examples"] = [
                 {"prompt": w.prompt, "solution_steps": w.solution_steps}
@@ -1613,6 +1671,10 @@ class SessionService:
             payload["mastered"] = True
 
         payload.update(extra_payload or {})
+        # **R54 A**：被守卫退回时，把中文说明带给界面（"之前没看过讲解，已退回讲解"）——只带一次
+        rewound = str(flow.pop("_rewound_zh", "") or "")
+        if rewound:
+            payload["rewound_zh"] = rewound
         # flow_json 是嵌套 dict：原地修改后须以新对象 + flag_modified 强制触发 UPDATE
         sess.flow_json = deepcopy(flow)
         flag_modified(sess, "flow_json")
@@ -1752,6 +1814,79 @@ class SessionService:
             "state": sess.state,
             "stage": sess.flow_json.get("stage"),
         }
+
+    # ------------------------------------------------------------------
+    # **R54 A**：前置内容守卫（"没看到讲解不许进讲解环节"）
+    # ------------------------------------------------------------------
+    def _content_gate(self, db: Session, node: NodeDoc) -> dict[str, Any] | None:
+        """当前节点内容是否足以进入学习流程；不足 → 返回中文说明 + 生成入口（含学科/单元）。
+
+        口径与大纲页/覆盖账**同源**（`outline_gate.unit_content_status`）：讲解正文非空
+        且至少 1 道练习。缺失时**不抛异常**（抛异常＝用户看到红字报错），而是让状态机下发
+        ``content_missing`` 卡片：说清缺什么、给一键生成。
+        """
+        from . import outline_gate
+
+        status = outline_gate.unit_content_status(node.id)
+        if status["usable"]:
+            return None
+        res = outline_gate.resolve_subject_unit(db, node.id)   # 通用学科才有"生成该单元"入口
+        subject_id, unit_id = (res if res is not None else ("", ""))
+        return {"kind": f"no_{status['missing']}" if status["missing"] else "no_content",
+                "missing": status["missing"], "reason_zh": status["reason_zh"],
+                "node_id": node.id, "node_title": node.title,
+                "subject_id": subject_id, "unit_id": unit_id,
+                "can_generate": bool(subject_id and unit_id),
+                "content_status": status}
+
+    def _missing_node_card(self, db: Session, node_id: str) -> dict[str, Any]:
+        """**R54 A/C**：单元还没有内容（或内容文件已被删）→ 中文说明 + 生成入口。
+
+        不许直接 404/409 把人卡住（老会话恢复、点了没内容的单元，都是常见路径）。
+        """
+        from . import outline_gate
+
+        res = outline_gate.resolve_subject_unit(db, node_id)
+        subject_id, unit_id = (res if res is not None else ("", ""))
+        return {"kind": "no_content", "missing": "content",
+                "reason_zh": "这个单元还没有生成内容（或者内容已经不在了）。"
+                             "先生成内容，才能开始学。",
+                "node_id": node_id, "node_title": node_id,
+                "subject_id": subject_id, "unit_id": unit_id,
+                "can_generate": bool(subject_id and unit_id),
+                "content_status": {"exists": False, "usable": False, "missing": "content",
+                                   "reason_zh": "这个单元还没有生成内容",
+                                   "exercises": 0, "taught_facts": 0}}
+
+    def _node_or_gate(self, db: Session, sess: models.Session) -> tuple[NodeDoc | None, dict | None]:
+        """取节点并判断内容是否够学；返回 ``(node, 阻断说明)``（两者必有一个为 None）。"""
+        try:
+            node = self._node_of(db, sess)
+        except SessionError:
+            return None, self._missing_node_card(db, sess.node_id)
+        return node, self._content_gate(db, node)
+
+    def _content_missing_response(self, db: Session, sess: models.Session,
+                                  blocked: dict[str, Any]) -> dict[str, Any]:
+        """\"内容不足\"卡片：不给学习步骤、不给作答入口，只给说明 + 一键生成。"""
+        flow = _ensure_flow_shape(sess.flow_json)
+        sess.flow_json = deepcopy(flow)
+        flag_modified(sess, "flow_json")
+        db.flush()
+        return {
+            "step": STEP_CONTENT_MISSING,
+            "payload": {"first_open": False, "content_missing": blocked},
+            "events": [{"type": "content_missing", "reason": blocked["reason_zh"]}],
+            "session": self._session_meta(db, sess),
+        }
+
+    def _rewind_to_explain(self, db: Session, sess: models.Session, why_zh: str) -> dict[str, Any]:
+        """**R54 A**：把人退回讲解阶段并说明原因（不报错、不留在半步）。"""
+        flow = _ensure_flow_shape(sess.flow_json)
+        flow["stage"] = STAGE_EXPLAIN
+        flow["_rewound_zh"] = why_zh
+        sess.flow_json = flow
+        return self._response(db, sess, events=[{"type": "need_explain", "reason": why_zh}])
 
     # ------------------------------------------------------------------
     # AI 调用兜底

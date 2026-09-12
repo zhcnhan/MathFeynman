@@ -247,7 +247,8 @@ export interface StepEvent {
 }
 
 export interface StepResponse {
-  step: "explain" | "example" | "practice" | "feynman" | "done";
+  /** R54 A：`content_missing` ＝ 内容不足（只给中文说明 + 一键生成，不给学习步骤） */
+  step: "explain" | "example" | "practice" | "feynman" | "done" | "content_missing";
   payload: Record<string, unknown>;
   events: StepEvent[];
   session: SessionMeta;

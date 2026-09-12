@@ -260,6 +260,76 @@ def subject_node_allowed(db: Session, user_id: str, node_id: str) -> bool:
     return resolve_subject_unit(db, node_id) is not None
 
 
+# ---------------------------------------------------------------------------
+# **R54**：单元内容状态（**唯一口径**：会话守卫 / 大纲页 / 覆盖账同源）
+# ---------------------------------------------------------------------------
+# 可用线（阈值与理由见 NOTES §76 / 工单汇报）：
+#   - 讲解正文非空：费曼环节要求学生"讲"，没有讲解＝没得可讲（用户实测撞到的正是这个）；
+#   - 至少 1 道练习：练不成闭环就永远是半步。
+# 注意：**这不是放松 R37 锚定**——丢弃记录照样如实记；这里只回答"丢完之后还能不能学"。
+MIN_EXERCISES = 1
+MIN_EXPLANATION_CHARS = 1
+
+
+def unit_content_status(node_id: str) -> dict:
+    """单元内容可用性（内容文件口径；不读账本、不猜）。
+
+    返回：``exists`` 内容是否已生成；``usable`` 能否走完学习闭环；
+    ``reason_zh`` 中文原因（可用时为空串）；``missing`` ∈ ``""|"content"|"explanation"|"exercise"``；
+    以及 ``explanation_chars/exercises/taught_facts/asks/dropped_exercises`` 计数。
+
+    ``dropped_exercises`` 取自大纲单元的覆盖记录（与覆盖账**同源**，不另算一套）。
+    """
+    from .library import get_library
+
+    out = {"exists": False, "usable": False, "reason_zh": "这个单元还没有生成内容",
+           "missing": "content", "explanation_chars": 0, "exercises": 0, "taught_facts": 0,
+           "asks": 0, "dropped_exercises": 0, "title": ""}
+    loaded = get_library().by_id.get(node_id)
+    if loaded is None:
+        return out
+    doc = loaded.doc
+    explanation = ""
+    if getattr(doc, "explanation", None) is not None:
+        explanation = str(getattr(doc.explanation, "body", "") or "").strip()
+    exercises = len(list(getattr(doc, "exercises", None) or []))
+    facts = len(list(getattr(doc, "taught_facts", None) or []))
+    asks = len(list(getattr(doc, "asks", None) or []))
+    out.update({"exists": True, "title": str(getattr(doc, "title", "") or ""),
+                "explanation_chars": len(explanation), "exercises": exercises,
+                "taught_facts": facts, "asks": asks})
+    # 丢弃计数（同源：大纲单元的覆盖记录）
+    subject_id = None
+    head, sep, _ = str(node_id).partition(".")
+    if sep:
+        subject_id = head
+    if subject_id:
+        outline = _outline_of(subject_id)
+        unit = (outline.by_id().get(node_id) if outline is not None else None)
+        if unit is not None:
+            cov = dict((getattr(unit, "meta", None) or {}).get("coverage") or {})
+            out["dropped_exercises"] = int(cov.get("dropped_exercises") or 0)
+            out["dropped_facts"] = int(cov.get("dropped_facts") or 0)
+    dropped_facts = int(out.get("dropped_facts") or 0)
+    if not explanation and not exercises:
+        out.update({"missing": "content", "reason_zh": "这个单元还没有讲解和练习，先生成内容才能开始学"})
+    elif not explanation:
+        out.update({"missing": "explanation", "reason_zh": "这个单元还没有讲解正文，先生成讲解才能开始学"})
+    elif exercises < MIN_EXERCISES:
+        out.update({"missing": "exercise",
+                    "reason_zh": "这个单元还没有可用的练习题（题目可能因为找不到教材依据被丢弃了），"
+                                 "重新生成后才能开始练习"})
+    elif facts == 0 and dropped_facts > 0:
+        # 声明过事实句却一条都没留下：讲解的每句话都失去了教材依据（R35 S6/R37 的死结），
+        # 这种单元**不可用**——宁可不学，也不编造。
+        out.update({"missing": "facts",
+                    "reason_zh": f"这个单元的事实依据全被丢弃了（{dropped_facts} 条在教材里找不到对应原文），"
+                                 "重新生成后才能学"})
+    else:
+        out.update({"usable": True, "missing": "", "reason_zh": ""})
+    return out
+
+
 __all__ = [
     "resolve_subject_unit",
     "unit_allowed",
@@ -273,4 +343,6 @@ __all__ = [
     "disabled_subject_ids",
     "is_node_subject_disabled",
     "visible_node_ids",
+    "unit_content_status",
+    "MIN_EXERCISES",
 ]
