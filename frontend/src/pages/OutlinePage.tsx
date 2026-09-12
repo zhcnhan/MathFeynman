@@ -358,6 +358,33 @@ export default function OutlinePage() {
   };
 
   // R57 任务 B-①：本模式一键起草大纲（走本模式提示词；依据是页/图号）
+  // R58 任务 C：按需重读某几页（后端 /read-pages 已可用，这里补界面入口）
+  const [rereadPages, setRereadPages] = useState("");
+
+  const rereadMaterialPages = async (mid: string, title: string) => {
+    const spec = rereadPages.trim();
+    if (!spec) {
+      setErr("请先填要重读的页（例如 3 或 3-5；页号从 1 开始数）");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const r = await api.post<{ title: string; reread: string[]; count: number }>(
+        `/subjects/${id}/materials/${mid}/read-pages`, { pages: spec }
+      );
+      setMsg(`「${title}」已重新读：${r.reread.join("、")}（共 ${r.count} 页）。` +
+        "其它页的记录没有动；这一步同样要问模型，也会花钱。");
+      setRereadPages("");
+      await loadMaterials();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const draftModeOutline = async () => {
     setDraftingMode(true);
     setErr("");
@@ -930,6 +957,20 @@ export default function OutlinePage() {
                             title="重新整理这份 PDF 的文字（修掉认不出的字和被空格拆开的字）；可反复点，结果一致">
                       重新整理文字
                     </button>
+                  )}
+                  {/* R58 C：按需重读某几页（图示教材模式；只重读你填的那几页，其它页不动） */}
+                  {m.mode === "all_ai" && (
+                    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                      <input value={rereadPages} onChange={(e) => setRereadPages(e.target.value)}
+                             placeholder="重读第几页（如 3 或 3-5）"
+                             style={{ width: 150, padding: 4, borderRadius: 6, border: "1px solid #c5cdd6" }}
+                             title="页号从 1 开始数；可以写 3 或 3-5（按页范围重读）" />
+                      <button className="ghost" disabled={busy}
+                              onClick={() => void rereadMaterialPages(m.id, m.title)}
+                              title="只把这几页重新读一遍（会再问一次模型，所以会花钱）；其它页的记录不动">
+                        重读这几页
+                      </button>
+                    </span>
                   )}
                   {/* R38 B2：材料角色（主教材定顺序与范围；未标注 → 按导入顺序并在覆盖账注明） */}
                   <select
