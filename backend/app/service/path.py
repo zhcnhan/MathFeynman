@@ -20,7 +20,6 @@
 """
 from __future__ import annotations
 
-import functools
 from dataclasses import dataclass
 from typing import Any
 
@@ -46,9 +45,18 @@ def _registry() -> dict[str, tuple[str, Any]]:
     return all_entries()
 
 
-@functools.lru_cache(maxsize=8)
 def _cached_maps() -> tuple[dict[str, Any], dict[str, tuple[str, Any]]]:
-    """蓝图注册表/roadmaps 缓存：会话内蓝图文件不变；R18 门禁每次状态重算复用，避免重复 IO。"""
+    """蓝图注册表 + 各学段 roadmaps（**不自持副本**）。
+
+    R18 门禁每次状态重算都要这份数据（`make_engine()` → `progress.state_map` → `/api/dashboard`、
+    `/api/campaign`；会话开局也走）。
+
+    **R65 任务 D-①**：这里以前是 `@functools.lru_cache(maxsize=8)` —— 那份副本**永不失效**：
+    改了蓝图文件、甚至调了 `roadmap.clear_roadmap_cache()` 之后，`load_roadmap()` 已经看到新内容，
+    而路径引擎返回的还是旧蓝图（同一个对象被 lru_cache 焊死）。
+    现在不再自持副本，**直接向已带文件指纹缓存的 `content.roadmap` 要数据**：
+    稳态下每请求只多 5 次 `stat`，零重新解析（不会把 R63 拿到的性能吐回去）。
+    """
     return _roadmaps(), _registry()
 
 
