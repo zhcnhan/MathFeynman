@@ -259,11 +259,16 @@ export default function OutlinePage() {
   const [modeLabel, setModeLabel] = useState("");
   const [modeEntry, setModeEntry] = useState<{
     vision_ready: boolean; vision_note_zh: string; vision_model: string;
+    pdf_render_ready?: boolean; pdf_render_note_zh?: string;
+    pdf_render_options?: { width: number; format: string; dpi_cap: number };
     entry_zh: {
       label: string; what_zh: string; pros_zh: string; costs_zh: string[];
       not_better_zh: string; need_images_zh: string;
     };
   } | null>(null);
+  // R57：PDF 页范围（如 1-20；留空＝整本）+ 起草大纲的忙碌状态
+  const [modePages, setModePages] = useState("");
+  const [draftingMode, setDraftingMode] = useState(false);
   // R39 §1：最近一次"单元出稿"的就地账目（丢弃/降级/失败——界面必须能看见）
   const [lastUnitLedger, setLastUnitLedger] = useState<LedgerEntry[] | null>(null);
 
@@ -340,7 +345,8 @@ export default function OutlinePage() {
     try {
       const r = await api.get<{
         mode: string; mode_label_zh: string; vision_ready: boolean; vision_note_zh: string;
-        vision_model: string;
+        vision_model: string; pdf_render_ready?: boolean; pdf_render_note_zh?: string;
+        pdf_render_options?: { width: number; format: string; dpi_cap: number };
         entry_zh: { label: string; what_zh: string; pros_zh: string; costs_zh: string[];
                     not_better_zh: string; need_images_zh: string };
       }>(`/subjects/${id}/mode`);
@@ -351,11 +357,32 @@ export default function OutlinePage() {
     }
   };
 
+  // R57 任务 B-①：本模式一键起草大纲（走本模式提示词；依据是页/图号）
+  const draftModeOutline = async () => {
+    setDraftingMode(true);
+    setErr("");
+    setMsg("");
+    try {
+      const r = await api.post<{
+        units: Unit[]; note: string; absorbed_pages: string[]; page_count: number;
+      }>(`/subjects/${id}/mode/outline/draft`, { brief: draftBrief, count: draftCount });
+      setCandidate({ units: r.units, source: "all_ai", problems: [], ok: true } as never);
+      setMsg(`${r.note}（可下面预览后采纳）` +
+        (r.absorbed_pages.length
+          ? `；模型没提到的 ${r.absorbed_pages.length} 页已并进最后一个单元：${r.absorbed_pages.slice(0, 8).join("、")}`
+          : ""));
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setDraftingMode(false);
+    }
+  };
+
   const uploadPages = async () => {
     const inp = pagesFileRef.current;
     const list = Array.from(inp?.files ?? []);
     if (!list.length) {
-      setErr("请先选择教材的页面图片（可以一次选多张，按文件名顺序当页序）");
+      setErr("请先选择教材的页面图片或 PDF（PDF 会自动按页转成图片；也可以一次选多张图片）");
       return;
     }
     setBusy(true);
@@ -364,11 +391,18 @@ export default function OutlinePage() {
     try {
       const fd = new FormData();
       if (matTitle.trim()) fd.append("title", matTitle.trim());
+      if (modePages.trim()) fd.append("pages", modePages.trim());
       for (const f of list) fd.append("files", f);
-      const r = await api.upload<{ id: string; title: string; page_count: number; unreadable: string[]; note_zh: string }>(
-        `/subjects/${id}/materials/upload-pages`, fd
-      );
+      const r = await api.upload<{
+        id: string; title: string; page_count: number; unreadable: string[]; note_zh: string;
+        render?: { source?: string; pages?: number[]; width?: number; dpi?: number };
+      }>(`/subjects/${id}/materials/upload-pages`, fd);
+      const fromPdf = r.render?.source === "pdf_render";
       setMsg(`「${r.title}」已按「图片为主的教材」入库：${r.note_zh}。` +
+        (fromPdf
+          ? `（把 PDF 的第 ${(r.render?.pages ?? []).slice(0, 6).join("、")} 页转成图片后读的，`
+            + `出图宽 ${r.render?.width ?? "—"} px；页面图片本身没有存进内容目录）`
+          : "") +
         (r.unreadable.length ? `读不出来的页：${r.unreadable.join("、")}（已如实标注，不会当成内容用）` : ""));
       if (inp) inp.value = "";
       await loadMaterials();
@@ -820,16 +854,36 @@ export default function OutlinePage() {
               {modeEntry.vision_note_zh}
             </div>
           )}
+          {modeEntry && modeEntry.pdf_render_ready === false && (
+            <div className="banner warn" style={{ marginTop: 6 }}>
+              这台机器上还不能自动把 PDF 转成页面图片。{modeEntry.pdf_render_note_zh}
+            </div>
+          )}
           <div className="input-row" style={{ gap: 8, marginTop: 6 }}>
-            <input type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif"
+            <input type="file" multiple
+                   accept=".pdf,application/pdf,image/png,image/jpeg,image/webp,image/gif"
                    ref={pagesFileRef} disabled={busy} style={{ flex: 1 }} />
             <button className="primary" disabled={busy || !modeEntry?.vision_ready}
                     onClick={() => void uploadPages()}>
-              导入页面图片（全 AI 模式）
+              导入页面图片 / PDF（全 AI 模式）
+            </button>
+          </div>
+          <div className="input-row" style={{ gap: 8, marginTop: 4, alignItems: "center" }}>
+            <input placeholder="PDF 页范围（可选，如 1-20；留空＝整本）" value={modePages}
+                   onChange={(e) => setModePages(e.target.value)}
+                   style={{ width: 260, padding: 6, borderRadius: 8, border: "1px solid #c5cdd6" }} />
+            <button className="ghost" disabled={busy || draftingMode || !modeEntry?.vision_ready}
+                    onClick={() => void draftModeOutline()}>
+              {draftingMode ? "正在按页面记录排大纲…" : "一键起草大纲（本模式）"}
             </button>
           </div>
           <div className="dim" style={{ fontSize: 12 }}>
-            一次最多 60 页；按选择顺序当页序；读不出来的页会**如实标注**、不会被当成内容用。
+            可以**直接选 PDF**：装了渲染组件就**按页转成图片**再交给模型（一页一张、页号留痕；
+            出图宽 {modeEntry?.pdf_render_options?.width ?? 1024} px、格式
+            {" "}{modeEntry?.pdf_render_options?.format ?? "jpeg"}、DPI 上限
+            {" "}{modeEntry?.pdf_render_options?.dpi_cap ?? 200}；参数可在配置里改）；
+            **页面图片不会存进内容目录**（避免仓库膨胀），只留"读到了什么"。
+            一次最多 60 页；读不出来的页会**如实标注**、不会被当成内容用。
             {modeEntry?.vision_model ? `读图用的模型：${modeEntry.vision_model}。` : ""}
           </div>
         </div>

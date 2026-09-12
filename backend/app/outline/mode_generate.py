@@ -23,6 +23,97 @@ from . import mode_pages
 MAX_AI_EXERCISES = 6
 
 
+def draft_mode_outline(db, subject_id: str, *, brief: str = "", count: int = 0, provider=None,
+                       provider_factory=None) -> dict:
+    """**R57 任务 B-①**：图示教材模式的**一键起草大纲**（走 `mode_outline`）。
+
+    与路径②的区别（工单 §3 红线）：
+    - **不调**路径②的任何闸门（教材锚定 / 可答性 / 引文比对 / 覆盖校验的"逐字引文"部分）；
+    - 单元依据＝**页/图号**（`source_pages`），不是逐字引文；
+    - **页不丢**：模型没说到的页，机械地**并进最近的一个单元**（在响应与账本里如实列出
+      `absorbed_pages`），这样既能一键采纳，也不会有页面被静默丢掉。
+
+    返回：``{units, brief, page_count, absorbed_pages, uncertain, uncertain_reason, note, ledger}``
+    """
+    from ..service import ledger, mode_ai
+
+    pages = mode_pages.pages_digest(db, subject_id)
+    if not pages.strip():
+        from .schemas import OutlineError
+
+        raise OutlineError("这个学科还没有页面记录：先用「图片为主的教材」导入页面图片或 PDF，再起草大纲")
+    if provider is None:
+        provider = (provider_factory or _build_provider)(db)
+
+    label = ""
+    try:
+        from . import store as ostore
+
+        row = ostore.get_subject(db, subject_id)
+        label = row.label if row else subject_id
+    except Exception:
+        label = subject_id
+
+    out = mode_ai.outline(provider, mode_ai.ModeOutlineIn(
+        subject_label=label, brief=brief or "零基础入门", pages_digest=pages,
+        want_count=int(count or 0)), subject_id=subject_id)
+
+    # 该学科的全部页标签（用于"页不丢"的机械补齐）
+    all_labels: list[str] = []
+    for e in mat._entries_with_body(subject_id):
+        if str(e.get("mode") or "") != mat.MODE_ALL_AI:
+            continue
+        for rec in mode_pages.load_pages(subject_id, str(e.get("id") or "")):
+            lab = str(rec.get("page_label") or "")
+            if lab and lab not in all_labels:
+                all_labels.append(lab)
+
+    units: list[dict] = []
+    covered: set[str] = set()
+    for i, u in enumerate(out.units or [], start=1):
+        src = [str(x) for x in (u.source_pages or []) if str(x).strip()]
+        for s in src:
+            covered.add(s)
+        units.append({"id": f"{subject_id}.u{i:02d}", "title": u.title or f"第 {i} 部分",
+                      "objectives": list(u.objectives or []),
+                      "concept_tags": list(u.concept_tags or []),
+                      "group": "教材", "prereqs": ([f"{subject_id}.u{i - 1:02d}"] if i > 1 else []),
+                      "difficulty": min(3, max(1, i)), "requires_thinking": False,
+                      "materials": [{"title": _pages_title(db, subject_id), "section": s}
+                                    for s in src] or [{"title": _pages_title(db, subject_id),
+                                                       "section": ""}]})
+    absorbed = [lab for lab in all_labels if lab not in covered]
+    if absorbed and units:
+        units[-1]["materials"].extend({"title": _pages_title(db, subject_id), "section": lab}
+                                      for lab in absorbed)
+    if out.uncertain:
+        ledger.note(ledger.CAT_GENERATION, "大纲起草（图示教材模式）",
+                    f"模型对这次起草有保留：{out.uncertain_reason or '（没说原因）'}",
+                    impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM,
+                    subject_id=subject_id, detail={"kind": "mode_outline_uncertain"})
+    if absorbed:
+        ledger.note(ledger.CAT_GENERATION, "大纲起草（图示教材模式）",
+                    f"模型没提到的 {len(absorbed)} 页被**并进最后一个单元**"
+                    f"（{'、'.join(absorbed[:8])}）——这样不会有页面被悄悄丢掉；"
+                    "你可以手工把它们拆到更合适的单元里",
+                    impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
+                    detail={"kind": "mode_outline_absorbed_pages", "pages": absorbed[:40]})
+    return {"subject_id": subject_id, "brief": brief, "units": units,
+            "page_count": len(all_labels), "absorbed_pages": absorbed,
+            "uncertain": bool(out.uncertain), "uncertain_reason": out.uncertain_reason,
+            "mode": mat.MODE_ALL_AI,
+            "note": ("按页面记录排出了 " + str(len(units)) + " 个单元"
+                     "（走的是图示教材模式的提示词；依据是页/图号，不是逐字引文）"),
+            "source_policy": "all_ai"}
+
+
+def _pages_title(db, subject_id: str) -> str:
+    for e in mat._entries_with_body(subject_id):
+        if str(e.get("mode") or "") == mat.MODE_ALL_AI:
+            return str(e.get("title") or "页面图片教材")
+    return "页面图片教材"
+
+
 def generate_mode_unit(db, subject_id: str, unit, *, provider=None, want_count: int = 3) -> dict:
     """给一个单元生成"全 AI 模式"的内容并落盘 → ``{status, node_id, path, note, ...}``。"""
     pages = mode_pages.pages_digest(db, subject_id)
@@ -125,4 +216,4 @@ def _build_provider(db):
         log_sink=make_ai_log_sink())
 
 
-__all__ = ["MAX_AI_EXERCISES", "generate_mode_unit"]
+__all__ = ["MAX_AI_EXERCISES", "draft_mode_outline", "generate_mode_unit"]

@@ -55,6 +55,7 @@ class ModelSettingsBody(BaseModel):
     light: str | None = None
     max_tokens_per_day: int | None = None
     memory_only: bool | None = None
+    vision_model: str | None = None     # **R57 任务 B**：读图用的模型（留空＝跟随文本模型）
 
 
 @router.put("/settings/model")
@@ -75,6 +76,7 @@ def put_model_settings(body: ModelSettingsBody, db: Session = Depends(get_db)) -
             light=patch.get("light", model_config.UNSET),
             max_tokens_per_day=patch.get("max_tokens_per_day", model_config.UNSET),
             memory_only=patch.get("memory_only", model_config.UNSET),
+            vision_model=patch.get("vision_model", model_config.UNSET),
         )
     except OutlineError as e:
         raise _outline_err(e) from e

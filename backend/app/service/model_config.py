@@ -238,8 +238,12 @@ def view(db=None) -> dict:
         "heavy_source_zh": r["heavy"].source_zh,
         "light": str(r["light"].value or DEFAULT_LIGHT),
         "light_source_zh": r["light"].source_zh,
-        # **R56 第 3 步**：图示教材模式用的读图模型 + 能不能读图（中文原因）
+        # **R56 第 3 步 / R57 任务 B**：图示教材模式用的读图模型 + 能不能读图（中文原因 + 来源）
         "vision_model": vision_model(db),
+        "vision_model_set": str(r.get("vision_model", Field("", "default")).value or ""),
+        "vision_model_source_zh": ("你在这里设的"
+                                   if str(r.get("vision_model", Field("", "default")).value or "")
+                                   else f"没单独设 → 跟随文本模型（快档：{str(r['light'].value or DEFAULT_LIGHT)}）"),
         "vision_ok": supports_vision(db)[0],
         "vision_note_zh": supports_vision(db)[1],
         "max_tokens_per_day": int(str(r["max_tokens_per_day"].value or 0) or 0),
@@ -267,7 +271,7 @@ def _set(db, key: str, value: str) -> None:
 
 def save(db, *, provider: Any = UNSET, api_key: Any = UNSET, base_url: Any = UNSET,
          heavy: Any = UNSET, light: Any = UNSET, max_tokens_per_day: Any = UNSET,
-         memory_only: Any = UNSET, subject_id: str = "") -> dict:
+         memory_only: Any = UNSET, vision_model: Any = UNSET, subject_id: str = "") -> dict:
     """保存模型配置（只改传进来的项）；**变更记入唯一账本**（中文，不含 Key 明文）。
 
     返回对外视图（掩码 + configured）。``api_key=""`` 表示**清除** Key。
@@ -302,6 +306,8 @@ def save(db, *, provider: Any = UNSET, api_key: Any = UNSET, base_url: Any = UNS
     _apply(K_BASE_URL, base_url, "服务地址")
     _apply(K_HEAVY, heavy, "模型名（深）")
     _apply(K_LIGHT, light, "模型名（快）")
+    # **R57 任务 B**：读图用的模型（留空＝跟随文本模型；不填 Key）
+    _apply(K_VISION_MODEL, vision_model, "读图用的模型")
     if max_tokens_per_day is not UNSET:
         raw = str(max_tokens_per_day).strip() if max_tokens_per_day is not None else "0"
         try:

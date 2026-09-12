@@ -29,6 +29,12 @@ type ModelSettings = {
   light_source_zh: string;
   max_tokens_per_day: number;
   daily_source_zh: string;
+  /** R57：读图用的模型（留空＝跟随文本模型） */
+  vision_model?: string;
+  vision_model_set?: string;
+  vision_model_source_zh?: string;
+  vision_ok?: boolean;
+  vision_note_zh?: string;
   key_notice_zh: string;
   need_key_zh: string;
 };
@@ -50,6 +56,7 @@ export default function SettingsPage() {
   const [baseUrl, setBaseUrl] = useState("");
   const [heavy, setHeavy] = useState("");
   const [light, setLight] = useState("");
+  const [visionModel, setVisionModel] = useState("");   // R57：读图用的模型（留空＝跟随快档）
   const [daily, setDaily] = useState("0");
   const [memoryOnly, setMemoryOnly] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
@@ -61,6 +68,7 @@ export default function SettingsPage() {
     setBaseUrl(m.base_url);
     setHeavy(m.heavy);
     setLight(m.light);
+    setVisionModel(m.vision_model_set ?? "");
     setDaily(String(m.max_tokens_per_day || 0));
     setMemoryOnly(!!m.memory_only);
   };
@@ -104,6 +112,7 @@ export default function SettingsPage() {
         base_url: baseUrl,
         heavy,
         light,
+        vision_model: visionModel.trim(),
         max_tokens_per_day: Number(daily || 0),
         memory_only: memoryOnly,
       };
@@ -245,6 +254,14 @@ export default function SettingsPage() {
           <input value={light} onChange={(e) => setLight(e.target.value)} style={{ width: "100%" }} />
           <label>模型名（深：讲解、评分、难题）</label>
           <input value={heavy} onChange={(e) => setHeavy(e.target.value)} style={{ width: "100%" }} />
+          <label>读图用的模型（留空＝跟随上面那个"快"档）</label>
+          <input value={visionModel} onChange={(e) => setVisionModel(e.target.value)}
+                 placeholder="留空就跟随快档；要单独指定读图的模型时才填"
+                 style={{ width: "100%" }} />
+          <div className="dim" style={{ fontSize: 12 }}>
+            这一项来自：{model?.vision_model_source_zh ?? "—"}
+            {model?.vision_note_zh ? `；${model.vision_note_zh}` : ""}
+          </div>
           <label>服务地址</label>
           <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} style={{ width: "100%" }} />
           <div className="dim" style={{ fontSize: 12 }}>
