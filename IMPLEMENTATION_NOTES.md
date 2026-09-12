@@ -2706,6 +2706,23 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     ⑤ **页眉装饰性间隔号**会留下一个 `·`（§77.3 承认的不足①）：不做"行首/行尾删点"是怕误删项目符号；
     若要清理，建议按"同一页页眉/页脚位置的固定字形"另立规则（避免影响正文）。
 
+26. **【R56 待架构侧确认】（2026-09-12）**：
+    ① **PDF 怎么变成"能读的东西"**：实测对方接口**只收图片**（webp/png/jpeg/gif），PDF 被拒；
+    工单原话"不渲染 PDF、不要用户截图"在 DeepSeek 上无法同时满足。三条路请择一：
+    (a) 加 PDF→图片 渲染依赖（工单禁新增依赖，需松口）；(b) 换能收 PDF 文档的服务商
+    （代码不用改，设置页换地址/模型名）；(c) 让用户自己导出页面图片（工单说不要求）。
+    **本批按 (c) 的最低可用形态实现（页面图片入口），并把边界写在导入处**；
+    ② **模型名要不要改成规范名**：`.env` 现在用的是旧名 `deepseek-chat`/`deepseek-reasoner`，
+    实测**都被静默转成 `deepseek-flash`**（即"深档"其实一直跑的是快档）。改成规范名
+    `deepseek-flash`/`deepseek-v4-pro` 会让"深档"真正生效，但**成本会变**
+    （输入 1→4.5 元/百万、输出 4→13.5 元/百万，空闲价）——这属于用户该拍板的事，本批**没改**；
+    ③ **本模式的"分数"没有独立核对**（设计如此）：`score_0_1`/维度分原样来自模型。
+    若希望"分数更稳"，可选做法是同一题问两次取一致结果（成本翻倍）——需要架构侧定；
+    ④ **诚实出口的阈值**：本批只在模型自己说 `uncertain` 时走诚实出口（不自作主张判它"不确定"）。
+    若希望"服务端也主动识别低置信"（如 `confidence` 低于某值就不采信），需要定阈值与文案；
+    ⑤ **会话接线与模式内容生成**（§80.5 的两项）请在下一批排期；它们不影响本批已交付的
+    提示词/隔离/边界，但决定"本模式能不能真的学起来"。
+
 
 ---
 
@@ -3733,6 +3750,34 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
   「重新整理文字」按钮
   - **复用点**：既有材料列表与覆盖账卡（**不新建页面/组件**）；数据源＝既有 `GET /materials`、`GET /coverage`
   - **断言/用例**：后端字段断言 + 文案守卫（`test_r52_b1_*`，前端无测试运行器）+ `npx tsc --noEmit` exit 0
+
+### 67.4l 融合对照表（**R56 行**：新增件 → 复用点 → 断言）
+
+> 写法同 §67.4d–k：按 docs/13 §2 写成**并列列表项**，不新建表格。
+
+- **新增件**：`service/model_config.py`（模型与 Key 的运行时配置：页面 > `.env` > 默认、掩码、账本、测试连接）
+  - **复用点**：既有 `app_settings` 键值表（**不新建表**）＋ 既有 `Settings`（`dataclasses.replace`
+    套生效值）＋ 既有唯一账本（`other` 类中文记录，不含 Key 明文）＋ 既有 `ai_trace.redact`（逐字遮蔽）
+  - **断言/用例**：`test_r56_model_settings.py`（8 条：指引/掩码/审计账本提示词均无 Key/成功失败/优先级/账本/只放内存）
+- **新增件**：`GET/PUT /settings/model`、`POST /settings/model/test`；`api/deps.get_gateway` 改按生效配置构建
+  - **复用点**：既有设置页与 `/settings`、既有 `gateway_factory`（按配置签名缓存，改完下次请求生效）
+  - **断言/用例**：同上第 2/4/5 条（含"页面设置真的被拿去调模型"）
+- **新增件**：调用点 `read_page` + `ai/vision.py`（图片 → `image_url` data URL → 既有 `chat_json`）
+  - **复用点**：既有 provider/审计链路（**不新建调用通道**）；图片只放 user 消息（对方接口限制）
+  - **断言/用例**：`test_r56_vision_call.py`（4 条：块形态/结构化+审计/诚实出口/Key 不泄漏）
+- **新增件**：本模式 8 个调用点（`mode_outline/lesson/exercise/judge/feynman/followup/gap_check/qa`）
+  ＋ `service/mode_ai.py`
+  - **复用点**：既有提示词注册表与运行时（可改可恢复默认、改完即生效）＋ 既有唯一账本；
+    **不 import** 路径②的机器（AST 查 import 锁死）
+  - **断言/用例**：`test_r56_mode_prompts.py`（7 条）
+- **新增件**：`outline/mode_pages.py`（页面图片入库）+ `POST /materials/upload-pages` + `GET /subjects/{sid}/mode`
+  ＋ 材料 `mode: all_ai` 标记
+  - **复用点**：既有材料层 `add_material`/`materials_dir`（**只加字段**，不新建材料机制）＋
+    既有账本（`all_ai_pages_imported` / `pages_unreadable`）＋ 既有 `model_config.supports_vision` 前置校验
+  - **断言/用例**：`test_r56_mode_isolation.py`（5 条：拒绝不落库/落库标记/读不出来的页/隔离哨兵/路径②回归）
+- **新增件**：界面「图片为主的教材（全程交给 AI 判断）」入口 + 模式徽标 + 三条代价文案
+  - **复用点**：既有大纲页材料区（**不新建页面**）；数据源＝既有 `GET /materials` 与 `GET /mode`
+  - **断言/用例**：后端字段断言 + 文案守卫 0 处 + `npx tsc --noEmit` exit 0
 
 ### 67.4b 融合对照表（**R38 / R39 行**：新增件 → 复用点 → 断言）
 
@@ -4988,6 +5033,82 @@ B5 线程断言更新 + 本 NOTES/docs 同步）。
 
 `5ccf432`（第 1 步：read_page 调用点 + vision + 4 条往返用例 + `test_r52_a1_*` 计数更新）
 → 本步文档（docs/14 §8.8 + 本 NOTES §79）。
+
+
+## 80. R56 第 2 / 3 步：提示词全套 + 诚实出口 + 模式选择与隔离（2026-09-12）
+
+### 80.1 第 2 步 · 提示词全套（工单 §4 任务 B）
+
+- **9 个独立调用点**（本模式专用；schema + prompt + 用例三处同改）：
+  `read_page`（读页/图）· `mode_outline`（排大纲）· `mode_lesson`（写讲解）· `mode_exercise`（出题，
+  含标准答案与解析）· `mode_judge`（判对错）· `mode_feynman`（费曼评分）· `mode_followup`（追问）·
+  `mode_gap_check`（补答评估）· `mode_qa`（答疑）。挑战题用同一套出题/判题（`kind="challenge"`），
+  **不另起平行机制**。
+- **为什么不与路径②共用**：路径②的提示词写着"必须逐字出自教材段落、服务端会丢弃找不到依据的题"——
+  这套尺子在本模式**不成立**（没有可检索原文，依据只能指到页/图号）。共用会让两条口径互相污染
+  （工单 §1/§3-A 明令禁止）。
+- **四条硬约束写进每一条**（`_MODE_COMMON`）：① 只用给到你的内容；② 读不到就明说；
+  ③ 依据指到页/图号（不许编造逐字引文）；④ 拿不准给出口（`uncertain` + 中文原因）。
+- **调用点计数事实锚点随之更新**（行为先改、断言后改）：`test_r52_a1_*` 的
+  调用点 16 → 24、互不相同的 system 7 → 15、互不相同的 user 16 → 24；
+  "最大一组 10 处共用 system"不变。
+
+### 80.2 第 2 步 · 判题/评分的诚实出口（工单 §5 任务 C，P0）
+
+- `service/mode_ai.py` ＝ "程序只负责四件事"的落点：**装提示词 → 调模型 → 校验 schema → 记账**；
+  用例用 **AST 查 import** 锁死"不 import sympy / answerability / citations / judge / outline_gate"。
+- `judge()` 返回 `{status, verdict, score_0_1, feedback_md, better_md, basis_pages, reason_zh, counted}`：
+  - `verdict="uncertain"` → **不打分、不计掌握**（`counted=False`）、`reason_zh` 给界面用，
+    并记一条中文账（`detail.kind="judge_uncertain"`）；
+  - `partial` 也算"对了一部分"（不给 0/1 二值）；
+  - **分与结论原样来自模型**（用例故意让模型给 0.37，断言服务端没有改成 0/1）。
+- 费曼评分 `verdict="uncertain"` → **清空维度分**（不留"看起来给了分"的痕迹）+ 账
+  （`feynman_uncertain`）；补答评估 `uncertain` → 不给分 + 账（`gap_check_uncertain`）。
+- 用例 `test_r56_mode_prompts.py`（7 条）覆盖：注册/可读可改可恢复默认、四条硬约束在提示词里、
+  删硬约束或占位符 → 中文拒存、改提示词下一次生效（含审计提示词版本）、
+  造"读不出来"的样本 → 诚实出口 + 账 + 界面文案、**没有静默当对/当错**、隔离与"不改分"。
+
+### 80.3 第 3 步 · 模式选择与隔离（工单 §3 任务 A）
+
+- **入口**：`POST /subjects/{sid}/materials/upload-pages`（页面图片）＋ `GET /subjects/{sid}/mode`
+  （当前模式 + 能不能开 + 中文原因 + 诚实边界）；材料列表回 `mode/mode_label_zh`。
+- **前置校验**：`model_config.supports_vision()` —— 没配 Key / 模型不能读图 → **中文 422、不落库**
+  （DeepSeek 只有 fast 档能读图；`deepseek-v4-pro` 不行；自定义服务商按"你能读就能用"并注明）。
+- **落库标记**：材料 frontmatter 加 `mode: all_ai` + `page_count` + `pages_file`
+  （复用既有材料层，**不新建表**）；`kind="pages"`；`materials.subject_mode(db, sid)` 是
+  "这个学科走哪条路"的唯一口径。
+- **页面记录**：`outline/mode_pages.py` 存图片到 `pages-<id>/`、结构化记录到 `*.pages.json`
+  （`*.md` 通配读不到，不污染材料列表）；`load_pages()/pages_digest()` 供出题/判题按页取依据。
+- **读不出来的页**：正文写「这一页读不出来：原因」+ 账本 `pages_unreadable`（写明"没有被当成内容用"）；
+  导入动作本身也记一条（逐页耗时 + "没有独立核对/更贵"的中文说明）。
+- **诚实边界**（`materials.mode_entry_zh()`，界面直接渲染）：三条代价 + 长处 + **"不比文字教材模式
+  更可靠"** + "要的是图片、PDF 本身不收"。
+- **隔离用例**（A1-③）：把 `domain.judge.judge` / `answerability.gate_node` 换成"一被调用就失败"的哨兵，
+  再走本模式的判题（对/判不了两种情况）→ **哨兵全程未被调用**，且账本里能看到诚实出口那条。
+
+### 80.4 回归与自证（实测）
+
+- `pytest backend/tests` ＝ **566 passed + 2 skipped / 568 collected**，0 failed
+  （`.runtime/r56_full3.xml`；开工基线 544 → 本批 +24 条用例）。
+- `npx tsc --noEmit` exit 0；前端文案守卫 **0 处**；`content validate` 与 roadmap audit 未受影响
+  （本批未动内容与路径②）。
+- 用户内容只读：`content/stages|subjects/s-f2decfcf/` 一字未动（用例只在测试临时副本上造数据）。
+
+### 80.5 尚未接线（如实登记，第 3 步的收尾项）
+
+1. **学习会话的状态机还没按 `subject_mode` 路由到本模式**：点"开始学习"目前仍进文字路径的会话
+   （本轮的隔离口径是"本模式的判题/评分类只走 `mode_ai`，且不碰路径②机器"）；
+2. **模式内容的落盘生成还没接**：`mode_lesson` / `mode_exercise` 的产出还没有写成 NodeDoc 的入口
+   （所以本模式暂时还没有"可学的单元"）；
+3. **PDF → 图片**这一步仍未解决（工单要求"不渲染 PDF"，而对方接口只收图片）——需用户/架构侧拍板：
+   加渲染依赖，或换能收 PDF 文档的服务商；
+4. 设置页还没暴露"读图用的模型"这一项（后端 `model.vision_model` 已就绪，界面留到接线时一起加）。
+
+### 80.6 提交链（标 R56）
+
+`041b9b8`（第 2 步：9 个调用点 + mode_ai + 7 条用例）→
+`6541a17`（第 3 步：upload-pages + /mode + 材料模式标记 + 前置校验 + 5 条用例 + 界面）→
+本步文档（docs/06 · docs/07 · docs/14 §8.9 + 本 NOTES §80 + 融合对照表 §67.4l + 挂账 §58-26）。
 
 
 
