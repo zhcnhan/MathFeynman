@@ -4,6 +4,14 @@
 // 铁则：**不许**只在 prompt 尾部提一句、**不许**只在日志里——界面必须能看见。
 import { Link } from "react-router-dom";
 
+/** R54 B：账目上的"出路"（后端只读派生：remedy=可补救 且知道学科/单元 → 一键重新生成该单元） */
+export type LedgerAction = {
+  kind: "regenerate_unit" | string;
+  label_zh: string;
+  subject_id?: string;
+  unit_id?: string;
+};
+
 export type LedgerEntry = {
   id?: number | null;
   at?: string;
@@ -16,6 +24,10 @@ export type LedgerEntry = {
   remedy?: string;
   unit_id?: string;
   detail?: Record<string, unknown>;
+  /** R54 B：可操作出路（丢弃 → 一键重新生成该单元） */
+  action?: LedgerAction | null;
+  /** R54 B：该单元后来已重新生成 → 这条旧记录已作废（界面不该再当作当前问题） */
+  resolved?: boolean;
 };
 
 const CAT_COLOR: Record<string, string> = {
@@ -31,11 +43,14 @@ export default function LedgerAlerts({
   title = "本次的记录",
   subjectId,
   compact = false,
+  onAction,
 }: {
   entries?: LedgerEntry[] | null;
   title?: string;
   subjectId?: string;
   compact?: boolean;
+  /** R54 B：点"重新生成这个单元"时回调（页面负责真正去生成） */
+  onAction?: (action: LedgerAction) => void;
 }) {
   if (!entries || entries.length === 0) {
     return (
@@ -71,7 +86,7 @@ export default function LedgerAlerts({
         )}
       </div>
       {entries.map((e, i) => (
-        <div key={`${e.category}-${i}`} style={{ marginTop: 6, fontSize: 13 }}>
+        <div key={`${e.category}-${i}`} style={{ marginTop: 6, fontSize: 13, opacity: e.resolved ? 0.55 : 1 }}>
           <span
             className="badge"
             style={{ background: CAT_COLOR[e.category] ?? "#546e7a", color: "#fff", border: "none" }}
@@ -79,12 +94,24 @@ export default function LedgerAlerts({
             {e.category_label}
           </span>{" "}
           <strong>{e.object}</strong>
+          {/* R54 B：该单元后来已重新生成 → 旧记录标"已解决"，别让用户以为问题还在 */}
+          {e.resolved && <span className="badge pass" style={{ marginLeft: 6 }}>已解决</span>}
           <div style={{ marginTop: 2 }}>{e.reason}</div>
           {(e.impact || e.remedy) && (
             <div className="dim" style={{ fontSize: 12 }}>
               影响：{e.impact || "—"} · 能不能补救：{e.remedy || "—"}
               {e.unit_id ? ` · 单元：${e.unit_id}` : ""}
             </div>
+          )}
+          {/* R54 B：**丢弃必须有出路**——就地给可点的"重新生成这个单元"（不再只写"可通过重试补救"） */}
+          {!e.resolved && e.action && onAction && (
+            <button
+              className="ghost"
+              style={{ marginTop: 4, padding: "3px 10px", fontSize: 12 }}
+              onClick={() => onAction(e.action as LedgerAction)}
+            >
+              {e.action.label_zh || "重新生成这个单元"}
+            </button>
           )}
         </div>
       ))}

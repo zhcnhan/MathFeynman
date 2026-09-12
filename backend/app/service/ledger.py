@@ -70,6 +70,84 @@ def category_label(cat: str) -> str:
 # ---------------------------------------------------------------------------
 # 数据形状
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# **R54 B**：账目的"出路"（丢弃不能只写"可通过重试补救"却不给入口）
+# ---------------------------------------------------------------------------
+def action_for(*, remedy: str, subject_id: str, unit_id: str) -> dict | None:
+    """一条账目的**可操作出路**（给界面渲染成按钮）。
+
+    - ``remedy == 可补救（重试/重新生成）`` 且知道是哪个学科/单元 → 一键「重新生成这个单元」；
+    - 其它（不可补救 / 只做记录）→ ``None``（界面不给按钮，不给假希望）。
+
+    **只读派生**：不改任何既有字段语义，只在读取时多带一个 ``action`` 键。
+    """
+    if not unit_id or not subject_id or remedy != REMEDY_RETRY:
+        return None
+    return {"kind": "regenerate_unit", "label_zh": "重新生成这个单元",
+            "subject_id": subject_id, "unit_id": unit_id}
+
+
+def resolve_unit_discards(subject_id: str, unit_id: str) -> int:
+    """单元**重新生成成功后**，把该单元此前的"丢弃/失败"账目标记为已解决（**追加一条解决记录**，不改历史行）。
+
+    - 账本仍**只增不改**（历史行保留原样，便于追溯"当时发生了什么"）；
+    - 读取时（``list_entries``）凡在解决记录**之前**、同单元的"可补救"账目 → 标 ``resolved: true``；
+    - **幂等**：该单元没有"尚未被解决"的丢弃账目时不写任何东西（不留噪音）。
+
+    返回本次"解决掉"的账目条数（0 = 无需处理）。
+    """
+    from sqlalchemy import select
+
+    from ..db import SessionLocal
+    from .. import models
+
+    if not unit_id or not subject_id:
+        return 0
+    try:
+        with SessionLocal() as db:
+            rows = list(db.execute(
+                select(models.ContentLedger)
+                .where(models.ContentLedger.unit_id == unit_id)
+                .order_by(models.ContentLedger.id.asc())
+            ).scalars())
+            marks = _resolution_ids(rows)
+            open_rows = [r for r in rows
+                         if _is_resolvable(r) and not _resolved_by(int(r.id), marks)]
+            if not open_rows:
+                return 0
+            write(Entry(category=CAT_OTHER, object=f"单元内容（{unit_id}）· 已重新生成",
+                        reason=(f"这个单元已经重新生成好了：此前 {len(open_rows)} 条"
+                                "「因为依据不足被丢弃 / 没出稿」的记录都作废了（明细保留可追溯）"),
+                        impact=SCOPE_UNIT, remedy=REMEDY_NO, subject_id=subject_id,
+                        unit_id=unit_id,
+                        detail={"kind": "unit_regenerated", "unit_id": unit_id,
+                                "subject_id": subject_id, "resolved_count": len(open_rows)},
+                        created_at=_now_iso()))
+            return len(open_rows)
+    except Exception as e:  # 记账失败不阻塞生成（铁则：不阻塞主流程）
+        _log_failure(e, Entry(category=CAT_OTHER, object=f"单元内容（{unit_id}）· 已重新生成",
+                              reason="标记旧丢弃账目为已解决"))
+        return 0
+
+
+def _is_resolvable(row) -> bool:
+    """该账目是不是"丢弃/失败、可重试"那一类（＝重新生成后应当作废的）。"""
+    if str(getattr(row, "remedy", "") or "") != REMEDY_RETRY:
+        return False
+    return str((getattr(row, "detail_json", None) or {}).get("kind") or "") != "unit_regenerated"
+
+
+def _resolution_ids(rows) -> list[int]:
+    """一组账目里"已重新生成"记录的 id（按单元判定用；读取与写入共用同一口径）。"""
+    return [int(r.id) for r in rows
+            if str((getattr(r, "detail_json", None) or {}).get("kind") or "") == "unit_regenerated"]
+
+
+def _resolved_by(entry_id: int, marks: list[int]) -> bool:
+    """该账目是否被**之后**的"已重新生成"记录作废。"""
+    return any(m > entry_id for m in marks)
+
+
 @dataclass
 class Entry:
     """一条账目（docs/09 R39 §1 要求的最小字段集）。"""
@@ -97,6 +175,9 @@ class Entry:
             "remedy": self.remedy,
             "unit_id": self.unit_id,
             "detail": dict(self.detail or {}),
+            # R54 B：可操作出路（丢什么 → 就地一键重新生成该单元）
+            "action": action_for(remedy=self.remedy, subject_id=self.subject_id,
+                                 unit_id=self.unit_id),
         }
 
 
@@ -279,7 +360,11 @@ def write_via(db, entry: Entry) -> int | None:
 
 def list_entries(db, *, subject_id: str = "", category: str = "", limit: int = 200,
                  offset: int = 0) -> dict:
-    """总账页数据源：按学科/类别筛，时间倒序。"""
+    """总账页数据源：按学科/类别筛，时间倒序。
+
+    **R54 B**：每条带 ``action``（丢弃 → 就地一键「重新生成这个单元」）与 ``resolved``
+    （该单元后来已重新生成 → 此条旧丢弃记录已作废，界面不应再当作"当前问题"）。
+    """
     from sqlalchemy import select
 
     from .. import models
@@ -292,19 +377,37 @@ def list_entries(db, *, subject_id: str = "", category: str = "", limit: int = 2
     stmt = stmt.order_by(models.ContentLedger.id.desc()).offset(max(0, offset)).limit(
         max(1, min(int(limit or 200), 500)))
     rows = list(db.execute(stmt).scalars())
-    items = [{
-        "id": int(r.id),
-        "at": _to_iso(r.created_at),
-        "category": r.category or CAT_OTHER,
-        "category_label": category_label(r.category or CAT_OTHER),
-        "subject_id": r.subject_id or "",
-        "unit_id": r.unit_id or "",
-        "object": r.object or "",
-        "reason": r.reason or "",
-        "impact": r.impact or "",
-        "remedy": r.remedy or "",
-        "detail": dict(r.detail_json or {}),
-    } for r in rows]
+    # 解决标记：{unit_id: [「已重新生成」记录 id…]}（全表扫，量级小；只读不改历史行）
+    marks: dict[str, list[int]] = {}
+    for r in db.execute(select(models.ContentLedger).where(
+            models.ContentLedger.category == CAT_OTHER)).scalars():
+        if str((r.detail_json or {}).get("kind") or "") != "unit_regenerated":
+            continue
+        uid = str(r.unit_id or "")
+        if uid:
+            marks.setdefault(uid, []).append(int(r.id))
+    items = []
+    for r in rows:
+        detail = dict(r.detail_json or {})
+        remedy = r.remedy or ""
+        uid = r.unit_id or ""
+        items.append({
+            "id": int(r.id),
+            "at": _to_iso(r.created_at),
+            "category": r.category or CAT_OTHER,
+            "category_label": category_label(r.category or CAT_OTHER),
+            "subject_id": r.subject_id or "",
+            "unit_id": uid,
+            "object": r.object or "",
+            "reason": r.reason or "",
+            "impact": r.impact or "",
+            "remedy": remedy,
+            "detail": detail,
+            # R54 B：出路与是否已被后续重生成作废
+            "action": action_for(remedy=remedy, subject_id=r.subject_id or "", unit_id=uid),
+            "resolved": bool(detail.get("kind") != "unit_regenerated" and uid
+                             and _resolved_by(int(r.id), marks.get(uid, []))),
+        })
     return {
         "entries": items,
         "count": len(items),
@@ -340,5 +443,6 @@ __all__ = [
     "REMEDY_YES", "REMEDY_NO", "REMEDY_RETRY", "REMEDY_CONFIRM",
     "Entry", "Accumulator", "category_label", "collector", "current", "note", "write",
     "write_via",
+    "action_for", "resolve_unit_discards",
     "list_entries", "counts_by_category",
 ]

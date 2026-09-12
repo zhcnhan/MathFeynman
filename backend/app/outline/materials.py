@@ -1218,6 +1218,21 @@ def coverage_summary(units: list, index: list[dict], *,
             "short_entry_min_chars": cap}
 
 
+def _unit_content_status(unit_id: str) -> dict:
+    """**R54 C**：单元内容状态——**与会话守卫/覆盖账同一实现**（`service.outline_gate.unit_content_status`）。
+
+    同源是硬要求（工单 §3）：大纲页显示的"有没有内容"必须与"能不能进学习会话"完全一致，
+    不许两处口径打架。
+    """
+    try:
+        from ..service import outline_gate
+
+        return outline_gate.unit_content_status(unit_id)
+    except Exception:
+        return {"exists": False, "usable": False, "reason_zh": "内容状态暂时读不到",
+                "missing": "content", "exercises": 0, "taught_facts": 0}
+
+
 def _min_entry_chars(override: int | None = None) -> int:
     """过短条目阈值（R42 B1；默认取 ``MF_MIN_ENTRY_CHARS``=200）。"""
     if override is not None:
@@ -1619,6 +1634,9 @@ def coverage_ledger(db, subject_id: str) -> dict:
     for u in units:
         meta = dict(u.meta or {})
         cov = dict(meta.get("coverage") or {})
+        # **R54 C**：单元"有没有内容 / 能不能学"——与**会话守卫同源**（同一实现就地取），
+        # 供大纲页一眼看出"哪些还没内容"，避免点进空会话。
+        content = _unit_content_status(u.id)
         unit_ledger.append({
             "unit_id": u.id, "title": u.title,
             "sources": [dict(r) for r in (u.materials or [])],
@@ -1628,6 +1646,12 @@ def coverage_ledger(db, subject_id: str) -> dict:
             "material_bound": bool(cov.get("material_bound")),
             "dropped_exercises": int(cov.get("dropped_exercises") or 0),
             "generated_at": str(cov.get("at") or ""),
+            # R54 C：内容状态（同源）
+            "has_content": bool(content.get("exists")),
+            "usable": bool(content.get("usable")),
+            "content_reason_zh": str(content.get("reason_zh") or ""),
+            "exercise_count": int(content.get("exercises") or 0),
+            "taught_fact_count": int(content.get("taught_facts") or 0),
             # R42 B4：**章内该节级**依据（R40 裁决 §2-3 的提升项）——大纲页/覆盖账可显示
             "basis_section": str(cov.get("basis_section") or ""),
             "basis_quote": str(cov.get("basis_quote") or ""),

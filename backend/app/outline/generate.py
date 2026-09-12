@@ -487,6 +487,8 @@ def generate_unit_content(
                 _record_coverage(db, subject_id, unit.id, coverage)
             except Exception:  # 记账失败不改"已在库"结论
                 coverage = None
+        # **R54 B**：内容已在且可用 → 旧的"丢弃/失败"账目作废（别让用户反复看到旧失败）
+        _resolve_discards_if_usable(subject_id, unit.id)
         return {"status": "exists", "node_id": unit.id, "path": "", "subject": subject_id,
                 "unit": unit_id, "coverage": coverage,
                 "note": "内容已在库（懒生成幂等）"
@@ -616,6 +618,8 @@ def generate_unit_content(
     if not out_report.ok:
         return {"status": "failed", "node_id": unit.id, "path": str(path), "subject": subject_id,
                 "unit": unit_id, "note": "；".join(out_report.errors[:3]), "ledger": _acc_list()}
+    # **R54 B**：本次生成成功且内容可用 → 该单元旧的"丢弃/失败"账目作废（不残留旧失败）
+    _resolve_discards_if_usable(subject_id, unit.id)
     return {"status": "created", "node_id": unit.id, "path": str(path), "subject": subject_id,
             "unit": unit_id, "coverage": coverage, "ledger": _acc_list(),
             "note": (f"出稿：{'AI（教材锚定）' if use_ai and has_material else ('AI' if use_ai else '启发式')}"
@@ -629,6 +633,23 @@ def _acc_list() -> list[dict]:
 
     acc = ledger.current()
     return acc.to_list() if acc is not None else []
+
+
+def _resolve_discards_if_usable(subject_id: str, unit_id: str) -> int:
+    """**R54 B**：单元内容**已可用** → 把它此前的"丢弃/失败"账目标记为已解决（追加一条解决记录）。
+
+    - 只增不改：历史行保留（可追溯"当时丢了什么"）；
+    - 不满足"可用"就不标记（内容还缺，旧的失败就仍然算数）；
+    - 失败不阻塞生成（铁则）。
+    """
+    from ..service import ledger, outline_gate
+
+    try:
+        if not outline_gate.unit_content_status(unit_id).get("usable"):
+            return 0
+        return ledger.resolve_unit_discards(subject_id, unit_id)
+    except Exception:
+        return 0
 
 
 def _log_generation_drops(subject_id: str, unit, report, note: str, *, kind: str) -> None:
