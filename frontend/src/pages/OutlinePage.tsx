@@ -98,6 +98,12 @@ type CoverageUnit = {
   grounded_facts: number;
   material_bound: boolean;
   dropped_exercises: number;
+  /** R54 C：内容状态（与"能不能进学习会话"同源） */
+  has_content?: boolean;
+  usable?: boolean;
+  content_reason_zh?: string;
+  exercise_count?: number;
+  taught_fact_count?: number;
   /** R42 B4：章内该节级依据（R40 §2-3 提升项） */
   basis_section?: string;
   basis_quote?: string;
@@ -522,17 +528,45 @@ export default function OutlinePage() {
     }
   };
 
+  // **R54 C**：单元有没有内容——与覆盖账**同源**（后端同一实现）。点"还没内容"的不进空会话，
+  // 就地提示 + 一键生成。
+  const contentOf = (uid: string): CoverageUnit | undefined =>
+    (coverage?.units ?? []).find((x) => x.unit_id === uid);
+  const [hintUnit, setHintUnit] = useState<string>("");
+
   const learnUnit = async (uid: string) => {
+    const c = contentOf(uid);
+    if (c && c.usable === false) {
+      // 还没内容/内容不可用 → 不把人带进空会话；就地说明 + 给生成入口
+      setHintUnit(uid);
+      setErr(c.content_reason_zh || "这个单元还没有内容，先生成内容才能开始学。");
+      return;
+    }
     setBusy(true);
     setErr("");
     try {
-      const r = await api.post<{ session: { id: string } }>("/session/start", { node_id: uid });
+      const r = await api.post<{ session: { id: string }; step?: string; payload?: { content_missing?: { reason_zh?: string; can_generate?: boolean } } }>(
+        "/session/start", { node_id: uid });
+      // R54 C：单元还没有内容 → **不进空会话**；就地提示 + 一键生成
+      if (r.step === "content_missing" || !r.session?.id) {
+        const info = r.payload?.content_missing;
+        setHintUnit(uid);
+        setErr(info?.reason_zh || "这个单元还没有内容，先生成内容才能开始学。");
+        return;
+      }
       nav(`/session/${r.session.id}`);
     } catch (e) {
       setErr(String(e));
     } finally {
       setBusy(false);
     }
+  };
+
+  // **R54 B**：丢弃账目上的"重新生成这个单元"（就地可点，不再只写"可通过重试补救"）
+  const regenerateFromLedger = async (action: { unit_id?: string }) => {
+    if (!action?.unit_id) return;
+    setHintUnit(action.unit_id);
+    await genContent(action.unit_id);
   };
 
   const isPreset = subject?.kind === "preset";
@@ -1077,12 +1111,33 @@ export default function OutlinePage() {
                             )}
                           </td>
                           <td style={{ padding: "6px 4px" }}>
+                            {/* R54 C：有没有内容，一眼看出（与覆盖账/会话守卫同源） */}
+                            {(() => {
+                              const c = contentOf(u.id);
+                              if (!c) return null;
+                              return c.usable === false ? (
+                                <span className="badge deferred" title={c.content_reason_zh}>还没内容</span>
+                              ) : (
+                                <span className="badge pass">有内容</span>
+                              );
+                            })()}
                             {pv && (
                               <span className={`badge ${STATUS_CLS[pv.status] ?? ""}`}>
                                 {STATUS_LABEL[pv.status] ?? pv.status}
                                 {pv.open && pv.status === "todo" ? " · 可学" : ""}
                               </span>
                             )}
+                            {/* R54 B：轻微丢弃 → 单元仍可用，但如实提示丢了几道题 */}
+                            {(() => {
+                              const n = contentOf(u.id)?.dropped_exercises ?? 0;
+                              if (!n) return null;
+                              return (
+                                <span className="badge"
+                                      title="题目的依据引文在教材里查不到；按「不编造」的规矩没有采用">
+                                  {n} 道题没采用
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td style={{ padding: "6px 4px" }}>
                             <input
@@ -1105,6 +1160,16 @@ export default function OutlinePage() {
                                   title={pv?.open ? "开始学习这个单元" : "还没解锁（要先学完前面的单元）"}>
                                   开始学习
                                 </button>
+                                {/* R54 C：点"还没内容"的单元 → 就地提示 + 一键生成（不把人带进空会话） */}
+                                {hintUnit === u.id && contentOf(u.id)?.usable === false && (
+                                  <div className="banner warn" style={{ marginTop: 4, fontSize: 12 }}>
+                                    {contentOf(u.id)?.content_reason_zh || "这个单元还没有内容"}
+                                    <button style={{ marginLeft: 8, padding: "2px 8px" }}
+                                            onClick={() => void genContent(u.id)} disabled={busy}>
+                                      现在生成
+                                    </button>
+                                  </div>
+                                )}
                               </>
                             )}
                             {u.prereqs.length > 0 && <span className="dim"> 前置 {u.prereqs.length}</span>}
@@ -1116,8 +1181,10 @@ export default function OutlinePage() {
               </table>
             </div>
           ))}
-          {/* R39 §1：单元出稿的**就地**账目（题/事实句被丢弃、降级启发式、整单元未出稿…） */}
-          <LedgerAlerts entries={lastUnitLedger} subjectId={id} title="最近一次单元出稿记录" compact />
+          {/* R39 §1：单元出稿的**就地**账目（题/事实句被丢弃、降级启发式、整单元未出稿…）
+              R54 B：每条丢弃账目就地给"重新生成这个单元"；已重新生成的旧账目标"已解决" */}
+          <LedgerAlerts entries={lastUnitLedger} subjectId={id} title="最近一次单元出稿记录" compact
+                        onAction={(a) => void regenerateFromLedger(a)} />
         </div>
       )}
     </div>
