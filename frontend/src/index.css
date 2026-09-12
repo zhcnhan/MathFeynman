@@ -165,7 +165,8 @@ nav .nav-advanced {
 /* R65 任务 A：顶栏学科切换（顺序由 SubjectSwitcher 自己排；这里只管间距与形态） */
 .subject-switch { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .subject-switch .nav-subject { color: var(--text-dim); padding: var(--sp-1) 0; }
-.subject-switch .nav-subject.active { color: var(--accent-text); font-weight: 600; border-bottom: 2px solid var(--accent); }.page-head .row-between { align-items: flex-end; }
+.subject-switch .nav-subject.active { color: var(--accent-text); font-weight: 600; border-bottom: 2px solid var(--accent); }
+.page-head .row-between { align-items: flex-end; }
 .page-head h1 { margin-bottom: var(--sp-2); }
 .page-head .sub { color: var(--text-dim); font-size: var(--fs-md); }
 .page-head .crumb { font-size: var(--fs-sm); color: var(--text-faint); margin-bottom: var(--sp-2); }
