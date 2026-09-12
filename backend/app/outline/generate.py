@@ -396,6 +396,13 @@ def _frontmatter_md(doc: NodeDoc) -> str:
         elif e.check.mode == "fill_text":
             item["expected"] = e.expected
             item["aliases"] = list(e.aliases)
+        elif e.check.mode == "ai":
+            # **R56**：图示教材模式的题——把"模型给的标准答案/解析/依据页"一并落盘
+            item["check"] = {"mode": "ai", "answer": e.check.answer,
+                             "explanation": e.check.explanation,
+                             "basis_pages": list(e.check.basis_pages or []),
+                             "answer_kind": e.check.answer_kind}
+            item["options"] = list(e.options)
         if e.basis is not None:  # R35 S2：依据（引文纪律）随题落盘
             item["basis"] = e.basis.model_dump()
         exercises.append(item)
@@ -474,6 +481,14 @@ def generate_unit_content(
     unit = outline.by_id().get(unit_id)
     if unit is None:
         raise OutlineError(f"单元不存在: {unit_id}")
+    # **R56 第 3 步 · 模式隔离**：图示教材模式（全 AI 模式）的学科 → 走本模式的内容生成
+    # （模型写讲解 + 出题；题目 `check.mode="ai"`，判对错由模型做）。**不碰**路径②任何机器。
+    from . import materials as _mat
+
+    if _mat.subject_mode(db, subject_id) == _mat.MODE_ALL_AI:
+        from . import mode_generate
+
+        return mode_generate.generate_mode_unit(db, subject_id, unit)
     lib = load_library()
     from ..config import get_settings
 

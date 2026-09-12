@@ -41,9 +41,17 @@ class RenderedExercise:
     options: list[str] = field(default_factory=list)
     answer_index: int | None = None
     aliases: list[str] = field(default_factory=list)
+    # **R56 mode="ai"**：模型给的标准答案 / 解析 / 依据页（判对错由模型做，程序只搬运）
+    ai_answer: str = ""
+    ai_explanation: str = ""
+    ai_basis_pages: list[str] = field(default_factory=list)
+    ai_answer_kind: str = ""
 
     def judge_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {"mode": self.mode}
+        if self.mode == "ai":
+            # 本模式**不走** sympy：本载荷只用于界面/审计展示（判题在 mode_ai 分支）
+            return payload
         if self.mode == "equation_solution":
             payload["equation"] = self.equation
         elif self.mode == "single_choice":
@@ -173,6 +181,18 @@ def _render_fixed(ex: ExerciseDoc, out: RenderedExercise) -> RenderedExercise:
         out.expected = ex.expected
         out.aliases = list(ex.aliases)
         out.canonical_answer = ex.expected
+    elif mode == "ai":
+        # **R56**：图示教材模式——标准答案/解析由模型给；**不做自检**（没有独立验算就是本模式的定义）
+        if not (ex.check.answer or "").strip():
+            raise ValueError("图示教材模式的题需要 check.answer")
+        out.options = list(ex.options)
+        out.ai_answer = ex.check.answer
+        out.ai_explanation = ex.check.explanation
+        out.ai_basis_pages = list(ex.check.basis_pages or [])
+        out.ai_answer_kind = ex.check.answer_kind or ("choice" if ex.options else "short")
+        out.canonical_answer = ex.check.answer      # 仅供测试/审计，不参与判题
+        out.detail = "ok（图示教材模式：判对错由模型做）"
+        return out
     else:
         raise ValueError(f"fixed 不支持判题模式 {mode}")
     _selfcheck(out)

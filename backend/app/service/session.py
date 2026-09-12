@@ -566,6 +566,126 @@ class SessionService:
             extra_payload={"hint_md": out.hint_md, "degraded": degraded, "strategy": decision.strategy},
         )
 
+    def _subject_is_all_ai(self, db: Session, node: NodeDoc) -> bool:
+        """该节点所属学科是不是「图片为主的教材（全 AI 模式）」（工单 §3-A 的模式隔离口径）。"""
+        try:
+            head, sep, _ = str(node.id).partition(".")
+            if not sep:
+                return False
+            from ..outline import materials as mat
+
+            return mat.subject_mode(db, head) == mat.MODE_ALL_AI
+        except Exception:      # 判不出来不许影响主流程（宁可当文字路径，也不炸会话）
+            return False
+
+    def _act_submit_ai(self, db: Session, sess: models.Session, node: NodeDoc,
+                       cur: RenderedExercise, user_answer: str) -> dict[str, Any]:
+        """**R56 第 3 步**：图示教材模式的判题（模型判）＋**诚实出口**。
+
+        - 判对/部分对/判错 → 走**同一套流程骨架**（进度、连对、进费曼都由程序决定）；
+        - **判不出来**（模型说 uncertain）→ **不打分、不动进度**，如实告诉学生并记一条中文账；
+        - 分数与结论**原样来自模型**（程序不验算、不改分）。
+        """
+        p = sess.flow_json["practice"]
+        from ..outline import mode_pages
+        from . import mode_ai
+
+        head, _, _ = str(node.id).partition(".")
+        pages_digest = ""
+        try:
+            pages_digest = mode_pages.pages_digest(db, head)
+        except Exception:
+            pages_digest = ""
+        # 判题要"能直接问模型的 provider"：真网关藏在 `_p` 后面；离线网关没有 → 走诚实出口
+        gw = self.gateway
+        provider = gw if hasattr(gw, "chat_json") else getattr(gw, "_p", None)
+        if provider is None or not hasattr(provider, "chat_json"):
+            from . import ledger as _ledger
+
+            reason = "现在没有可用的模型（离线），这道题判不了"
+            _ledger.note(_ledger.CAT_MODEL_CALL, "判题（图示教材模式）",
+                         reason + "——已如实告诉学生（不算对也不算错）。",
+                         impact=_ledger.SCOPE_UNIT, remedy=_ledger.REMEDY_CONFIRM,
+                         subject_id=head, unit_id=node.id,
+                         detail={"kind": "judge_uncertain", "reason": "no_model"})
+            return self._response(db, sess, events=[{"type": "judge_uncertain", "node_id": node.id}],
+                                  extra_payload={"verdict": "uncertain", "judged_by": "model",
+                                                 "reason_zh": reason + "（不算对也不算错）",
+                                                 "progress": self._progress_view(p)})
+        out = mode_ai.judge(
+            provider,
+            mode_ai.ModeJudgeIn(
+                prompt=cur.prompt, kind=str(getattr(cur, "ai_answer_kind", "") or "short"),
+                options=list(getattr(cur, "options", []) or []),
+                reference_answer=str(getattr(cur, "ai_answer", "") or ""),
+                explanation=str(getattr(cur, "ai_explanation", "") or ""),
+                student_answer=user_answer, pages_digest=pages_digest),
+            subject_id=head, unit_id=node.id, pages=pages_digest)
+
+        status = str(out.get("status") or "uncertain")
+        if status == "uncertain":
+            # **诚实出口**：不算对也不算错；模型给的分不落地（`counted=False` 在 mode_ai 里已记账）
+            return self._response(db, sess, events=[{"type": "judge_uncertain", "node_id": node.id}],
+                                  extra_payload={
+                                      "verdict": "uncertain",
+                                      "reason_zh": out.get("reason_zh") or "这一次没判出来",
+                                      "feedback_md": out.get("feedback_md") or "",
+                                      "progress": self._progress_view(p),
+                                      "judged_by": "model"})
+
+        correct = status == "correct"
+        result = JudgeResult(correct=correct, expected=str(getattr(cur, "ai_answer", "") or ""),
+                             detail=f"[图示教材模式·模型判] {status}"
+                                    + (f"｜{str(out.get('feedback_md') or '')[:120]}"))
+        self._record_attempt(db, sess, node, cur, user_answer, result)
+        events: list[dict] = [{"type": "exercise_judged_by_model", "node_id": node.id,
+                               "status": status}]
+        extra: dict[str, Any] = {"judged_by": "model", "verdict": status,
+                                 "feedback_md": out.get("feedback_md") or "",
+                                 "better_md": out.get("better_md") or "",
+                                 "basis_pages": list(out.get("basis_pages") or []),
+                                 "score_0_1": float(out.get("score_0_1") or 0.0)}
+        if correct:
+            p["attempts_this"] = 0
+            p["streak"] += 1
+            p["streak_min"] = (float(cur.difficulty) if p["streak_min"] is None
+                               else min(p["streak_min"], float(cur.difficulty)))
+            events.append({"type": "exercise_correct", "node_id": node.id,
+                           "consecutive_correct": p["streak"]})
+            if p["streak"] >= TARGET_STREAK:
+                p["passed"] = True
+                events.append({"type": "practice_passed", "consecutive_correct": p["streak"]})
+                self._enter_feynman(db, sess, node, events)
+                return self._response(db, sess, events=events, extra_payload=extra)
+            if p["issued"] >= PRACTICE_CAP:
+                self._cap_fail_cycle(db, sess, node, events)
+            else:
+                self._issue_next(db, sess, node)
+                events.append({"type": "question_issued"})
+            extra["progress"] = self._progress_view(p)
+            return self._response(db, sess, events=events, extra_payload=extra)
+
+        # 部分对 / 判错：**不扣连对**（部分对）或按答错处理；提示直接用模型给的反馈
+        if status == "partial":
+            extra["progress"] = self._progress_view(p)
+            return self._response(db, sess, events=events + [{"type": "exercise_partial"}],
+                                  extra_payload=extra)
+        p["streak"] = 0
+        p["streak_min"] = None
+        p["attempts_this"] += 1
+        events.append({"type": "exercise_wrong", "retry_left": max(0, 2 - p["attempts_this"])})
+        if p["attempts_this"] >= 2:
+            # 两次判错 → 回炉看讲解（本模式直接回讲解阶段；讲解就是本单元的正文）
+            sess.flow_json["stage"] = STAGE_EXPLAIN
+            sess.flow_json["explained_seen"] = False
+            p["attempts_this"] = 0
+            events.append({"type": "relearn_explain"})
+        else:
+            self._issue_next(db, sess, node)
+            events.append({"type": "question_issued"})
+        extra["progress"] = self._progress_view(p)
+        return self._response(db, sess, events=events, extra_payload=extra)
+
     def _act_submit(self, db: Session, sess: models.Session, node: NodeDoc, payload: dict[str, Any]) -> dict[str, Any]:
         p = sess.flow_json["practice"]
         cur = self._require_current(sess, node)
@@ -573,6 +693,11 @@ class SessionService:
         if ex_id != cur.exercise_id or int(payload.get("params_seed", -1)) != cur.seed:
             raise SessionError("提交的题目与当前题目不一致，请刷新", code="invalid_state")
         user_answer = str(payload.get("user_answer", "")).strip()
+
+        # **R56 第 3 步 · 模式隔离**：图示教材模式的题（check.mode == "ai"）**判对错由模型做**——
+        # 走本模式分支，**不碰** sympy 判题（工单 §1/§3-A：两条路不许共用判题逻辑）。
+        if str(getattr(cur, "mode", "")) == "ai":
+            return self._act_submit_ai(db, sess, node, cur, user_answer)
 
         # 判题：只走 sympy（domain.judge）
         try:
@@ -1689,6 +1814,13 @@ class SessionService:
 
     def _payload_explain(self, db: Session, sess: models.Session, node: NodeDoc) -> dict[str, Any]:
         flow = sess.flow_json
+        # **R56 第 3 步**：图示教材模式（全 AI 模式）**不重写讲解**——直接把本单元讲解正文给出来。
+        # 理由：这条路的内容本来就是模型按页面记录写好的（`mode_lesson`），再让路径②的
+        # 「讲解演绎」调用点改写一遍，等于把两条口径混在一起（工单 §3-A 禁止）。
+        if self._subject_is_all_ai(db, node):
+            return {"lecture_md": node.explanation.body or node.body_md,
+                    "asks": [], "asks_basis": [], "degraded": False,
+                    "strategy": "mode", "lecture_from": "all_ai"}
         cache = flow.get("lecture_cache")
         # 档位联动（R21）：缓存非"手动单次指定"（explicit）且其档位 ≠ 当前全局解析档位 →
         # 自动作废，按新档位重生成（用户切换 快/深 后旧讲解不残留旧档）。

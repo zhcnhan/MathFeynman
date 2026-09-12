@@ -108,9 +108,16 @@ class CheckDoc(BaseModel):
         "fill_text",       # B2：填空（fixed；expected+aliases）
         "ordering",
         "manual_review",
+        # **R56**：图示教材模式（全 AI 模式）的题——**判对错由模型做**，程序不验算
+        "ai",
     ]
     tolerance: Optional[float] = None
     equation: Optional[str] = None  # 简化冗余：允许在 check 层覆盖（优先级最高）
+    # **R56 mode="ai" 专用**：模型给的标准答案与解析（本模式没有可检索原文，依据只到页/图号）
+    answer: str = ""
+    explanation: str = ""
+    basis_pages: list[str] = Field(default_factory=list)
+    answer_kind: str = ""          # choice | boolean | short（答题界面按它渲染）
 
 
 class ExerciseDoc(BaseModel):
@@ -165,6 +172,10 @@ class ExerciseDoc(BaseModel):
         elif mode == "fill_text":
             if not self.expected.strip():
                 raise ValueError(f"练习 {self.id}: fill_text 需要 expected 标准答案")
+        elif mode == "ai":
+            # **R56**：本模式的题必须带"模型给的标准答案"（判题由模型做，程序只搬运）
+            if not (self.check.answer or "").strip():
+                raise ValueError(f"练习 {self.id}: 图示教材模式的题需要 check.answer（模型给的标准答案）")
         return self
 
 
