@@ -2727,6 +2727,21 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     含真实端到端实测）；剩下两项非阻塞小缺口（本模式一键大纲起草、设置页的"读图用的模型"输入框）
     记在 §80.7。
 
+27. **【R57 待架构侧确认】（2026-09-12）**：
+    ① **渲染参数的默认值**：本批取"目标宽 **1024 px** / jpeg q85 / **DPI 上限 200**"（架构侧实测
+    1024 px ≈960 token 且能读对整页；我这边实测 1389 token / 页 = 0.0025 元）。若希望更清晰
+    （1457 px，架构侧实测 1049 token）只需改 `MF_PAGE_IMAGE_WIDTH`——**要不要把默认调高**请定；
+    ② **缓存保留期**：默认 `MF_PDF_CACHE_KEEP_DAYS=7`，清理只在**显式调用** `cleanup_pdf_cache()`
+    时发生（没有挂到启动/定时任务上，因为 R42 C3/R46 B 那套定时清理目前只服务审计目录）。
+    要不要把 PDF 缓存也挂到同一个定时清理？请定；
+    ③ **DPI 与宽度的语义**：本批实现为"**宽度是主参数、DPI 上限是天花板**"
+    （实际 dpi = min(宽度隐含 dpi, dpi_cap)）——这是为了让 150/200 dpi 两个参数都能生效且不被放大；
+    若希望"DPI 是主参数、宽度是上限"（反过来），改一处 `render_pages()` 即可，请裁定口径；
+    ④ **按需重读的粒度**：目前 `read-pages` 只支持"页范围重读 + 按页合并"，不支持"只重读读不出来的那几页"
+    的一键入口（界面也还没给按钮）。若要在界面上提供"重读这几页"，需要一个小按钮 + 文案（下一批可做）；
+    ⑤ **模式学科的页面记录会越来越大**：`*.pages.json` 把每页的结构化记录都留着（这是"依据可追"的前提），
+    126 页大约几十 KB——若希望"只留页号 + 摘要"，需要一个压缩口径（会影响判题依据，需一起定）。
+
 
 ---
 
@@ -3781,6 +3796,37 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
   - **断言/用例**：`test_r56_mode_isolation.py`（5 条：拒绝不落库/落库标记/读不出来的页/隔离哨兵/路径②回归）
 - **新增件**：界面「图片为主的教材（全程交给 AI 判断）」入口 + 模式徽标 + 三条代价文案
   - **复用点**：既有大纲页材料区（**不新建页面**）；数据源＝既有 `GET /materials` 与 `GET /mode`
+  - **断言/用例**：后端字段断言 + 文案守卫 0 处 + `npx tsc --noEmit` exit 0
+
+### 67.4m 融合对照表（**R57 行**：新增件 → 复用点 → 断言）
+
+> 写法同 §67.4d–l：按 docs/13 §2 写成**并列列表项**，不新建表格。
+
+- **新增件**：`outline/pdfrender.py`（PDF→页图：按页渲染、页范围、参数可配、可选依赖检测、缓存清理）
+  - **复用点**：既有 `config.py`（参数走环境变量，**不写死**）＋ 既有 `read_page` 一页一图的分片口径
+    ＋ 既有唯一账本（缓存清理记账）；**PDF 缓存放 `.runtime/pdf_cache`（gitignored）**，不碰材料层
+  - **断言/用例**：`test_r57_pdf_render.py`（8 条：渲染+页号、页号以我们为准、按需重读、库缺失回落、
+    页数超限、参数生效、参数从配置读、路径②不受影响）
+- **新增件**：`backend/pyproject.toml` 的可选依赖组 `render = [pypdfium2, Pillow]`
+  - **复用点**：既有可选依赖写法（`dev` 组同款）；`dependencies` 不动 ⇒ 不装渲染库也能跑
+  - **断言/用例**：`test_r57_a2_*`（模拟未装 → 中文回落方案 c）
+- **新增件**：导入入口支持 PDF（`upload-pages` 的 `pages` 字段 + `render` 响应）＋
+  `POST /materials/{mid}/read-pages`（按需取页范围）
+  - **复用点**：既有 `mode_pages.import_pages` 与 `*.pages.json` 页面记录（**只加字段**）；
+    既有 `ai_trace` 审计链路；既有材料层 `add_material`
+  - **断言/用例**：`test_r57_a1_*`（含"渲染后 `content/` 无新增图片"）
+- **新增件**：`POST /subjects/{sid}/mode/outline/draft`（本模式一键大纲）
+  - **复用点**：既有 `mode_outline` 提示词与 `mode_ai.outline`；既有大纲结构（可直接 `PUT /outline` 采纳）；
+    **不调**路径②的锚定/可答性/引文闸门
+  - **断言/用例**：`test_r57_b1_*`（4 条：一键+哨兵未被调用+可采纳、跳过的页并进末单元、没页面中文 422、
+    AST 查 import）
+- **新增件**：`model.vision_model`（读图用的模型）+ `view()` 的来源标注
+  - **复用点**：既有 `app_settings` 键表与 `model_config` 优先级（页面 > `.env` > 默认）＋
+    既有唯一账本（不含 Key 明文）
+  - **断言/用例**：`test_r57_b2_*`（保存/回读/来源/清空跟随；读图模型真的被 `read_page` 用）
+- **新增件**：界面「导入页面图片 / PDF」+「PDF 页范围」+「一键起草大纲（本模式）」+
+  设置页「读图用的模型」输入框
+  - **复用点**：既有大纲页材料区与设置页（**不新建页面**）；数据源＝既有 `GET /mode` 与 `GET /settings/model`
   - **断言/用例**：后端字段断言 + 文案守卫 0 处 + `npx tsc --noEmit` exit 0
 
 ### 67.4b 融合对照表（**R38 / R39 行**：新增件 → 复用点 → 断言）
@@ -5166,6 +5212,100 @@ B5 线程断言更新 + 本 NOTES/docs 同步）。
 `8809c96`（模式题在会话里能答 + 真实端到端证据）→ `ecd6953`（收尾文档）→
 本步（模型裁定：全部换 `deepseek-flash` + 测试连接 budget 修正 + 文档）→
 文档（docs/06 · docs/07 · docs/14 §8.9 + 本 NOTES §80 + 融合对照表 §67.4l + 挂账 §58-26）。
+
+
+## 81. R57：PDF → 页图渲染（方案 a）+ 收尾两个小缺口（2026-09-12）
+
+来源：`docs/09` **R57**（R56 验收裁决）§4-1，用户拍板「**选 a，b 可选，c 保留**」；
+工单 `.runtime/EULER_TICKET_R57.md`；验收批 **R58**。
+开工基线（HEAD `5f4f304`，架构侧先把方案 a 实测打通）：`pytest` 570 passed + 2 skipped / 572。
+
+### 81.1 任务 A · PDF → 页图渲染（P0 · 方案 a）
+
+- **新模块 `outline/pdfrender.py`**：
+  - `render_available() -> (bool, 中文原因)`：可选依赖 `pypdfium2`（BSD-3-Clause / Apache-2.0，
+    PDFium 打包在 wheel 里，无系统依赖）＋ `Pillow`；**没装不许崩**，也不许假装支持；
+  - `render_pages(data, pages=…) -> [{page_no, mime, data, width, height, dpi_used, bytes, ms, format}]`
+    ——**内存里出图**，页号 1 起留痕；
+  - `parse_pages("1-5,8", total)` 页范围（中文报错：写法看不懂 / 超范围）；
+  - `render_options()`：全部来自 `config.py`（`MF_PAGE_IMAGE_WIDTH` 默认 **1024**、
+    `MF_PAGE_IMAGE_FORMAT` **jpeg**、`MF_PAGE_IMAGE_QUALITY` **85**、`MF_PAGE_IMAGE_DPI_CAP` **200**、
+    `MF_PAGE_IMAGE_MAX_BYTES` **4MB**、页数上限沿用 `MF_PDF_MAX_PAGES`）——**不写死在代码里**；
+    单页超字节上限先**降质量重出一次**，仍超则中文报错；
+  - 参数语义（用例锁）：**宽度是主参数，DPI 上限是天花板**（实际 dpi = min(宽度隐含 dpi, dpi_cap)），
+    所以 150/200 dpi 都能生效、也不会把小页面放大到爆；
+  - 缓存：`MF_PDF_CACHE_DIR`（默认 `.runtime/pdf_cache`，**已进 `.gitignore`**）存**上传的 PDF 本体**，
+    `cleanup_pdf_cache(keep_days)` 按保留期**先记账再删**。
+- **导入入口**（`mode_pages.import_pages`）：第一个文件是 PDF（`%PDF` 文件头）→ **按页渲染再读**
+  （`pages` 表单字段＝页范围）；非 PDF 仍走"页面图片"老路。响应多一项
+  `render{source,pages,width,dpi,format,bytes_avg,ms_total,pages_spec,key,cache}`。
+- **红线落实**：**渲染出来的图片一张都不落盘**（只发给模型）；用户上传的图片也**不进 `content/`**
+  （改放 gitignored 缓存 `pdf_cache/images/`）——用例 ④ 断言"渲染 N 页后 `content/` 无新增图片"。
+- **页号以我们为准**（`ai/vision.read_page` 覆盖模型回的 `page_label`）：依据必须追到"第 N 页"，
+  不许由模型决定（模型回错/回空都不影响；用例锁）。
+- **按需取页范围**：`POST /materials/{mid}/read-pages {pages:"7-9"}` → 从缓存重渲染那几页（PDF 材料）
+  或取原始图片（图片材料）→ 再读一遍 → 按页合并（同页替换、新页追加、可重跑）+ 账 `pages_reread`。
+- **`GET /subjects/{sid}/mode`** 增 `pdf_render_ready` / `pdf_render_note_zh` / `pdf_render_options`。
+- **依赖声明**：`backend/pyproject.toml` 新增 `[project.optional-dependencies].render =
+  ["pypdfium2>=4.30", "Pillow>=10.0"]`（注释写明许可与"⛔ 不用 PyMuPDF（AGPL）、
+  ⛔ 不用 pdf2image（要 poppler 系统依赖）"）。
+- **方案 b/c 未动**：换服务商免渲染（设置页本来就支持，文档写清、无硬编码绑定）；
+  "用户自己导出图片"路径一个字未改。
+- **用例** `test_r57_pdf_render.py`（8 条）：① 按页渲染+页号留痕+审计元数据（`subject_id`/提示词版本）；
+  ①b **页号以我们为准**（模型乱回"这一页"也覆盖）；①c 按需重读并合并；② **库缺失 → 中文 422
+  回落方案 c 且不落库**（并断言 `/mode.pdf_render_ready=false`）；③ 页数超限中文 422；
+  ⑤ 参数生效（宽/DPI 语义/格式/质量）；⑤b 参数从配置读（环境变量一改就变）；⑥ 路径②不受影响
+  （pypdf 文本链路 + 抽取体检照旧）。
+
+### 81.2 任务 B · 两个小缺口（P1）
+
+- **① 一键大纲起草**：`POST /subjects/{sid}/mode/outline/draft` → `mode_generate.draft_mode_outline`
+  ——走 `mode_outline`（依据＝**页/图号**）；**不调**路径②闸门（用例：AST 查 import + 四个哨兵
+  `domain.judge.judge` / `answerability.gate_node` / `answerability.clean_facts` /
+  `outline.draft.draft_outline` 全程未被调用）；**页不丢**（模型没提到的页机械并进最后一个单元，
+  响应 `absorbed_pages` + 账 `mode_outline_absorbed_pages` 如实列出）；返回的 `units` 可直接
+  `PUT /outline` 采纳（用例走通）；没页面 → 中文 422。
+- **② 设置页「读图用的模型」**：`PUT /settings/model` 增 `vision_model`；`view()` 增
+  `vision_model_set` 与 `vision_model_source_zh`（"你在这里设的" / "没单独设 → 跟随文本模型（快档：xxx）"）；
+  未设时跟随快档；`/mode` 与 provider 构建都用它（用例断言 `model_light` 真的是用户设的那个）；
+  优先级与 Key 红线口径不变。
+- **前端**：设置页新增「读图用的模型」输入框 + 来源说明；导入处文件选择器接受 `.pdf`、
+  新增「PDF 页范围」与「一键起草大纲（本模式）」、没装渲染组件时给中文横幅（方案 c 提示）。
+- **用例** `test_r57_mode_tail.py`（6 条）。
+
+### 81.3 必交证据（实测）
+
+- **① 两组数字**：开工 572 collected（570+2）→ 收尾 **586 collected（584 passed + 2 skipped）**，
+  0 failed；`content validate` ok=True 27/56；roadmap audit 27/31/81/59/60；接地审计
+  **17/17、6/6、9/83、37/83**（未降）；`npx tsc --noEmit` exit 0；`npx vite build` exit 0；
+  文案守卫 0 处；用户内容四文件字节与 mtime 未变。
+- **② 真实渲染 + 调用（`.runtime/r57_live_evidence.py`）**：
+  - 渲染（3 页，1024 px / jpeg / dpi 上限 200）：**第 1 页 16.1 ms、第 2 页 9.5 ms、第 3 页 8.8 ms**
+    （平均 12.8 ms/页，126 页外推 ≈1.6 s）；出图 **1024×1450 px（123.9 dpi）**、
+    JPEG **33–36 KB**；
+  - 真实调用（`read_page`，页范围 `1-3`）：3 条审计，`model=deepseek-flash`，
+    **prompt=1389/1389/1389、completion=379/228/218、耗时 1537/1926/2273 ms**；
+    模型把每页读对（"Planetary Science - page N"、正文句子、Jupiter 那句）；
+  - 成本：prompt 合计 4167 + completion 825 ⇒ **0.0075 元（空闲）** ⇒ **≈0.0025 元/页**；
+    126 页读一遍 ≈**0.31 元**，每页读 2–3 次 ≈**0.63–0.94 元/本**；
+  - 审计全文抽查：三条 trace 各自含**自己的页号**（第 1/2/3 页）、**含图片块**
+    （`data:image/jpeg`）、**不含 Key 明文**。
+  - 与架构侧实测对照：架构侧 1024 px ≈960 token、200 dpi ≈16 ms/页、PNG 170 KB/JPEG 113 KB
+    —— 我这边 token 1389（我的样张文字行更多、提示词更长）、渲染 8.8–16.1 ms/页、
+    JPEG 33–36 KB（样张内容少），**量级一致**。
+- **③ 回落路径证据**：`test_r57_a2_*` 用 `sys.modules["pypdfium2"]=None` 模拟未装 →
+  `render_available()` 返回 False + 中文原因（含"自己把 PDF 每页导出成图片"与"换服务商"两条路）；
+  导入接口回 **中文 422** 且材料列表仍为空；`/mode.pdf_render_ready=false`。
+- **④ 依赖改动**：`backend/pyproject.toml` 新增可选组 `render = ["pypdfium2>=4.30", "Pillow>=10.0"]`
+  （不动 `dependencies`，不装也能跑）。
+- **⑤ 缓存不膨胀**：用例 ④ 断言渲染后 `content/` 无新增图片；PDF 只在
+  `MF_PDF_CACHE_DIR`（默认 `.runtime/pdf_cache`，`.gitignore` 已覆盖）。
+
+### 81.4 提交链（标 R57）
+
+`1156da2`（任务 A：pdfrender + 导入/重读接口 + 8 条用例 + 依赖与 gitignore）→
+`13afa43`（任务 B：一键大纲 + 读图模型 + 前端两处 + 6 条用例）→
+本步文档（docs/06 · docs/07 · docs/14 §8.10 + 本 NOTES §81 + 融合对照表 §67.4m + 挂账 §58-27）。
 
 
 
