@@ -140,41 +140,56 @@ def render_pages(data: bytes, *, pages: str | list[int] | None = None, width: in
 
     try:
         doc = pdfium.PdfDocument(io.BytesIO(data))
-        total = len(doc)
     except Exception as e:
         raise PdfRenderError(f"PDF 打不开（文件可能损坏或加密）：{type(e).__name__}") from e
-    if total <= 0:
-        raise PdfRenderError("这份 PDF 没有任何页面")
-    if total > max_pages:
-        raise PdfRenderError(f"这份 PDF 有 {total} 页，超过上限 {max_pages} 页——"
-                             "请拆分后分批导入，或只读其中一段（页范围）")
-
-    picked = parse_pages(pages, total)
-    out: list[dict] = []
-    for page_no in picked:
-        page = doc[page_no - 1]
-        w_pt, h_pt = page.get_size()
-        dpi = min(width / max(1.0, w_pt) * 72.0, float(dpi_cap))
-        scale = dpi / 72.0
-        t0 = time.perf_counter()
+    # **R58 任务 A（真缺陷修复）**：PDFium 的原生句柄必须**显式关闭**——
+    # 之前只 `PdfDocument(...)`，句柄要等 GC 才释放：长跑进程反复导入 PDF 会累积原生内存，
+    # **出错路径必然泄漏**（例如"某页图太大"抛错那条分支，doc 永远不会被关）。
+    # 口径：`try/finally` 包住，`finally` 里关 doc；循环里的 page / bitmap 也各自关掉。
+    # ⚠️ 关闭顺序：`to_pil()` 可能与 bitmap 共享内存（零拷贝），所以 **bitmap 要等编码完再关**。
+    try:
         try:
-            bitmap = page.render(scale=scale)
-            img = bitmap.to_pil()
+            total = len(doc)
         except Exception as e:
-            raise PdfRenderError(f"第 {page_no} 页渲染失败：{type(e).__name__}") from e
-        buf = _encode(img, fmt, quality)
-        if max_bytes and buf.getbuffer().nbytes > max_bytes:
-            buf = _encode(img, fmt, max(30, quality - 25))       # 先降质量重试一次
-        data_bytes = buf.getvalue()
-        if max_bytes and len(data_bytes) > max_bytes:
-            raise PdfRenderError(f"第 {page_no} 页渲染出来太大（{len(data_bytes) // 1024} KB > "
-                                 f"{max_bytes // 1024} KB）——请把目标宽度调小"
-                                 "（MF_PAGE_IMAGE_WIDTH）后重试")
-        out.append({"page_no": page_no, "mime": _MIME[fmt], "data": data_bytes,
-                    "width": int(img.width), "height": int(img.height),
-                    "dpi_used": round(dpi, 1), "bytes": len(data_bytes),
-                    "ms": round((time.perf_counter() - t0) * 1000, 1), "format": fmt})
-    return out
+            raise PdfRenderError(f"PDF 页数读不出来（文件可能损坏）：{type(e).__name__}") from e
+        if total <= 0:
+            raise PdfRenderError("这份 PDF 没有任何页面")
+        if total > max_pages:
+            raise PdfRenderError(f"这份 PDF 有 {total} 页，超过上限 {max_pages} 页——"
+                                 "请拆分后分批导入，或只读其中一段（页范围）")
+
+        picked = parse_pages(pages, total)
+        out: list[dict] = []
+        for page_no in picked:
+            page = doc[page_no - 1]
+            try:
+                w_pt, h_pt = page.get_size()
+                dpi = min(width / max(1.0, w_pt) * 72.0, float(dpi_cap))
+                scale = dpi / 72.0
+                t0 = time.perf_counter()
+                try:
+                    bitmap = page.render(scale=scale)
+                except Exception as e:
+                    raise PdfRenderError(f"第 {page_no} 页渲染失败：{type(e).__name__}") from e
+                try:
+                    img = bitmap.to_pil()
+                    data_bytes, px_w, px_h = _encode_with_limit(
+                        img, fmt=fmt, quality=quality, max_bytes=max_bytes, page_no=page_no)
+                finally:
+                    bitmap.close()          # 原生位图先关（图已编码完）
+                    try:
+                        img.close()         # PIL 侧也放掉（可能是零拷贝视图）
+                    except Exception:
+                        pass
+                out.append({"page_no": page_no, "mime": _MIME[fmt], "data": data_bytes,
+                            "width": px_w, "height": px_h,
+                            "dpi_used": round(dpi, 1), "bytes": len(data_bytes),
+                            "ms": round((time.perf_counter() - t0) * 1000, 1), "format": fmt})
+            finally:
+                page.close()                # 每页的页对象也关（别等 GC）
+        return out
+    finally:
+        doc.close()                         # **成功/出错/中断都关**（这条就是本次修的真缺陷）
 
 
 def _encode(img, fmt: str, quality: int) -> io.BytesIO:
@@ -184,6 +199,25 @@ def _encode(img, fmt: str, quality: int) -> io.BytesIO:
     else:
         img.save(buf, format="PNG", optimize=True)
     return buf
+
+
+def _encode_with_limit(img, *, fmt: str, quality: int, max_bytes: int,
+                       page_no: int) -> tuple[bytes, int, int]:
+    """编码（超字节上限先降质量重试一次）→ ``(字节, 宽, 高)``。
+
+    与 R57 的行为逐位一致：正常路径只编码一次、质量不变；只有超限时才降 25 质量重出一次。
+    宽高在**编码时**就取下来（图片随后会被关掉，不能再取）。
+    """
+    px_w, px_h = int(img.width), int(img.height)
+    buf = _encode(img, fmt, quality)
+    if max_bytes and buf.getbuffer().nbytes > max_bytes:
+        buf = _encode(img, fmt, max(30, quality - 25))       # 先降质量重试一次
+    data_bytes = buf.getvalue()
+    if max_bytes and len(data_bytes) > max_bytes:
+        raise PdfRenderError(f"第 {page_no} 页渲染出来太大（{len(data_bytes) // 1024} KB > "
+                             f"{max_bytes // 1024} KB）——请把目标宽度调小"
+                             "（MF_PAGE_IMAGE_WIDTH）后重试")
+    return data_bytes, px_w, px_h
 
 
 # ---------------------------------------------------------------------------
@@ -207,8 +241,15 @@ def load_pdf_cache(subject_id: str, key: str) -> bytes | None:
     return p.read_bytes() if p.exists() else None
 
 
-def cleanup_pdf_cache(keep_days: int | None = None, *, note: bool = True) -> dict:
-    """按保留期清理缓存（**先记账再删**，与审计清理同款口径）。"""
+def cleanup_pdf_cache(keep_days: int | None = None, *, note: bool = True,
+                      trigger: str = "手动") -> dict:
+    """按保留期清理缓存（**先记账再删**，与审计清理同款口径）。
+
+    **R58 任务 B**：``trigger`` 写进账目 ``detail.trigger``（``启动`` / ``定时`` / ``手动``）——
+    与 R48 B 的审计清理口径**完全一致**；本函数被既有 `ai_trace.cleanup_once` 复用
+    （启动/定时/手动三处**同一套定时器**，不新建第二个机制）。
+    异常只 warning、不抛（清理不影响主流程）。
+    """
     import datetime as _dt
 
     days = int(get_settings().pdf_cache_keep_days if keep_days is None else keep_days)
@@ -233,10 +274,11 @@ def cleanup_pdf_cache(keep_days: int | None = None, *, note: bool = True) -> dic
                     f"按保留期（{days} 天）清掉了 {len(removed)} 个渲染用的 PDF 缓存文件"
                     f"（释放 {freed // 1024} KB）——缓存里只有你上传的 PDF，页面图片本来就没落盘",
                     impact=ledger.SCOPE_GLOBAL, remedy=ledger.REMEDY_YES,
-                    detail={"kind": "pdf_cache_cleanup", "removed": removed[:20],
+                    detail={"kind": "pdf_cache_cleanup", "trigger": str(trigger or "手动"),
+                            "removed": removed[:20],
                             "keep_days": days, "freed_bytes": freed})
     return {"keep_days": days, "removed": removed, "removed_count": len(removed),
-            "freed_bytes": freed, "dir": str(d)}
+            "freed_bytes": freed, "dir": str(d), "trigger": str(trigger or "手动")}
 
 
 def _safe(s: str) -> str:
