@@ -6269,4 +6269,175 @@ docs/14 §8.14 + 本 NOTES §85 · 融合对照表 §67.4q + 挂账 §58-31）�
 
 
 
+## 89. R69 收尾批：提交 R67 / 接地审计样本入库 / 图片导入接着读 / 两处小收口
+
+（工单：`.runtime/EULER_TICKET_R69.md`；**验收批次 = R70**）
+
+### 89.0 开工复核（本任自己复测，不抄上一任的数字）
+
+- 进门时 HEAD = `bb80e38`（R68 文档），工作树里躺着 R67 的 14 个文件（**未提交**）—— 没动它们。
+- `pytest backend/tests`：**655 collected / 653 passed + 2 skipped / 0 failed**（exit 0）。
+- `content validate`：**ok=True nodes=25 exercises=50**。
+  ⚠️ 口径：这是**不含**用户自己的学科内容时的读数；含用户那份历史内容是 27/56——
+  **两个数都对，只是口径不同，报数必须写明是哪种**。
+- roadmap audit 五学段：**27/31/81/59/60**，五段 `ok=True`；
+  cycles / prereq_missing / anchors_missing / content_prereq_violations / boss_unmatched **全 0**。
+- 接地审计（当时还只能用 `.runtime/r61_live/content/` 快照）：**17/17、6/6、9/83、37/83**。
+- `npx tsc --noEmit` / `npx vite build`：exit 0；`content/` 零改动。
+
+### 89.1 任务 ①：把 R67 的成果提交掉（先跑回归确认，再分两次提交）
+
+跑的命令与结果（离线，没起服务、没花模型钱）：
+
+- `.venv\Scripts\python.exe -m pytest backend/tests -q` → **655 / 653+2 / 0**（exit 0）；
+- `npx tsc --noEmit` → exit 0；`npx vite build` → exit 0（1.20s）；
+- `content validate` → **ok=True nodes=25 exercises=50**。
+
+提交链（2 个，中文、写清是什么）：
+
+1. `ca3b3d7` **R67 任务 A-F（代码+用例）：导入改后台任务 + 进度 + 可取消 + 边读边落盘**
+   —— 14 个文件（含新增 `backend/app/service/page_import.py`、
+   `backend/tests/test_r67_import_jobs_and_modes.py`），3213 insertions / 132 deletions；
+2. `60b6fb5` **R67 文档：IMPLEMENTATION_NOTES 补记本批六项任务的证据与口径** —— 1 个文件 / +112。
+
+- **只提交 R67 相关文件**：`content/` 一个字节没进（`git status --porcelain content/` 为空）；
+  `.runtime/` 是 gitignore 的，本来也进不去。
+- 提交后 `git status --porcelain` **完全为空**。
+- ⚠️ 踩坑一条（留给下一个人）：用 PowerShell here-string 拼提交信息时**反引号是转义符**——
+  第一版把 `` `backend/tests/...` `` 里的 `b` 吃成了退格符（提交信息成了 `ackend/tests/...`）。
+  改用 `git commit -F <文件>`（信息用 write 工具写成 UTF-8 文件）后正常，第一版已 `--amend` 修掉。
+
+### 89.2 任务 ②：接地审计样本入库（不再依赖 gitignored 的 `.runtime/`）
+
+**放在哪**：`backend/tests/fixtures/grounding_sample/`
+
+- `materials/researchgate-17551026c7.md` —— 用户那份 `_researchgate` 教材（271,991 字）；
+- `stages/node_s-f2decfcf.u01_auto.md`、`stages/node_s-f2decfcf.u02_auto.md`
+  —— 由它生成的 2 个内容节点（讲解正文 + `taught_facts` + 练习及 `basis.quote`）；
+- `README.md` —— 写清三件事：**这份样本是什么 / 它从哪来 / 怎么跑（可直接复制的命令）**，
+  并写明四条期望读数与"判据不许改"。
+
+**逐字节一致**：三件东西都取自 R61 那一轮的内容根快照 `.runtime/r61_live/content/`，
+用 `Get-FileHash` 逐个比对（`identical=True`），没有改写、清洗或重新生成。
+
+**顺手补了一个只读的"默认真空档"**：原先 `audit_material_binding.py` 不带参数＝审"当前内容库里的
+`s-f2decfcf`"，而用户已把这门学科自己删掉 ⇒ 那条默认命令只剩一句"找不到教材正文"。
+现在三种入口：**不给参数＝审计仓库内固定样本**（并打印"样本来源"）；给学科名＝照旧审线上内容；
+`--dir/--material`＝照旧指定任意样本。**判据/阈值/口径一个字都没动**
+（`MIN_LECTURE_SENTENCE=12`、引文尺子 `content/citations.py`、零接地判定全未触碰）。
+
+**干净 worktree 里复现**（工单验收口径）：
+
+```powershell
+git worktree add --detach D:\DeepseekHarness\_r69_verify_wt HEAD
+# 该 worktree 里根本没有 .runtime/ 目录（Test-Path = False）
+<主工作树>\.venv\Scripts\python.exe <worktree>\backend\tests\audit_material_binding.py
+```
+
+实测输出（exit 0）：
+
+- 样本来源：仓库内固定样本 `backend\tests\fixtures\grounding_sample`（不依赖 `.runtime/`）；
+- `taught_facts` 命中教材：**17/17**；
+- `basis.quote` 命中教材：**6/6**；
+- 讲解句子(≥12 字)整句命中教材：**9/83**；
+- 讲解句内含教材逐字片段(≥12 字)：**37/83**。
+
+复现命令里**不出现 `.runtime/`**；审计是只读的（跑完 worktree 的 `status` 仍干净）；
+验完已 `git worktree remove` 清掉。命令同时写进了仓库现有说明
+`docs/13-agent-handover.md` 的「R37 教材锚定审计」那一条。
+
+### 89.3 任务 ③：图片导入的"接着读"复用后台任务（**不另造一套**）
+
+**复用而不是新造**：本批只新增一个**只读的取材函数** `mode_pages.resume_source(...)`，
+它回答"接着读要读哪几页、从哪儿取原图"；真正干活仍然走 R67 那套
+`service.page_import` → `mode_pages.import_pages` —— **同一份后台任务表、同一套进度事件、
+同一个取消旗子、同一套分段落盘**。没有第二个任务机制。
+
+- PDF 材料：与 R67 **逐字一致**（回缓存里的 PDF 本体，页仍由页范围决定）；
+- 页面图片材料：回缓存目录里的**原始页面图**（`.runtime/pdf_cache/images/`，gitignored），
+  并把**真实页号**作为 `page_labels` 传下去 —— 读出来仍记成「第 5 页」…「第 20 页」，
+  **不重新编号**（"逐页留痕不许破"的落点）；
+- 没给页范围时，图片材料默认只取 `progress.pending`（这份材料还没读到的页）；
+- 缓存不在 → **中文说明 + 出路**（422），**不静默降级**；
+- 界面上"失败就悄悄同步重读前 12 页"那段回落**删掉了**（那是静默降级：
+  用户既看不到进度，也不知道只读了一部分）。
+
+**实测**（假模型、离线；`.runtime/r69_c_out.txt`；新用例
+`backend/tests/test_r69_image_resume_job.py` 共 7 条）：
+
+- 图片导入 8 页、读到第 **4** 页时取消 → 材料里留下 4 页、剩下 4 页如实列着
+  （`progress.pending`）、账本 `all_ai_pages_imported` 的 `detail.stopped=True`；
+- **接着读有进度可看（不是干等）**：4 页的接着读，接口 **9 毫秒**就回了任务号；
+  读的过程中看到「正在读：已读 1 / 共 4 页」，任务里 `planned`＝第 5、6、7、8 页
+  （**不是第 1…4 页**）；
+- **接着读也能取消**：本批 7 页读了 **2** 页就停 → 那 2 页（第 3、第 4 页）留在**新材料**里，
+  `progress.pending` 如实列出剩下 5 页、`state=cancelled`；**原来那份一字不动**；
+- **一页都没读成** → 不留空材料（材料数不变、`fake.calls==[]`、账本 `pages_import_empty`）；
+- 原始页面图缓存被删 → **422 中文**（含「缓存」「重新导入」），没有多出材料；
+- `content/` 里**图片数 = 0**（页图只在 gitignored 缓存目录里）。
+
+### 89.4 任务 ④：两处小收口
+
+**① `index.css` 断行**（`frontend/src/index.css`，原第 168 行）：
+
+```diff
+-.subject-switch .nav-subject.active { … border-bottom: 2px solid var(--accent); }.page-head .row-between { align-items: flex-end; }
++.subject-switch .nav-subject.active { … border-bottom: 2px solid var(--accent); }
++.page-head .row-between { align-items: flex-end; }
+```
+
+纯断行，两条规则一字未改（用例里用正则钉住：两条规则都还在、且各自成行；另配阳性对照）。
+
+**② 后端文案「管理已移除」→「已移除」**：`backend/app/api/subjects.py` 里
+**两处**都改了（需要 `_require_enabled` 的 409 提示、`GET /subjects/{id}` 的 404 提示）——
+工单说的是"后端那句"，但两处本来就是同一句话，只改一处会留下新的不一致。
+**前端标题一个字没动**（`SubjectsPage.tsx` 的分组标题仍是「已移除（大纲/内容文件留盘 · 可重新启用）」）。
+
+**关于"同步更新锁住这句的既有断言"** —— 按纪律**先搜后改**，结论是：**仓库里原本没有任何断言锁住这句**。
+
+- 搜「管理已移除」→ 只命中 `backend/app/api/subjects.py:88`、`:122`（外加 docs）；
+- **阳性对照**（证明这套"逐行找子串"的搜法不是空转）：同法搜「由易到难」→ 能命中
+  `backend/app` 3 处 + 用例 10 处（`test_r36_outline_materials.py` 正好断言了它）。
+- 所以本批**没有"改断言"这一步**（没有可改的）；为了不让这句再漂回去，新增
+  `backend/tests/test_r69_tail_fixes.py`（4 条）把新文案钉住：停用学科的 404/409 提示都含
+  「已移除」、且整个 `backend/app` 不再出现「管理已移除」；CSS 那条扫描器自带**阳性对照**
+  （能扫出"两条规则挤一行"才算数，且注释里的示例不计——先剥注释）。
+
+### 89.5 回归与自证（本任实测）
+
+- `pytest backend/tests`：**666 collected / 664 passed + 2 skipped / 0 failed**（exit 0）
+  —— 基线 655 / 653+2 → **+11 条本批新用例**（任务③ 7 条 + 任务④ 4 条）。
+- `content validate`：**ok=True nodes=25 exercises=50**（口径：**不含**用户自己的学科内容）。
+- roadmap audit 五学段：**27/31/81/59/60**，五段 `ok=True`，错误项 **0**。
+- 接地审计（仓库内固定样本）：**17/17、6/6、9/83、37/83**（干净 worktree 里逐位复现）。
+- `npx tsc --noEmit` → exit 0；`npx vite build` → exit 0。
+- `content/` 与 `content/roadmap/*.yaml`：**零改动**；`content/` 下图片数 0。
+
+### 89.6 疑点 / 请裁
+
+1. **要不要把接地审计那四条读数锁成 CI 用例？** R37 立项时把审计定成"工具、不随 CI"
+   （文件名不带 `test_` 前缀），所以本批**没有**擅自把它拉进 pytest。代价是：样本放错/被删，
+   CI 不会响。若架构侧要锁，我可以加一条只读用例 —— 但要先知道成本：这份审计跑一次约
+   **10 秒**（对 27 万字教材逐句做逐字片段扫描），是否值得为它加 10 秒回归时间请裁。
+2. **新建 worktree 一 checkout 就有 3 个文件显示"已修改"。**
+   `git worktree add` 出来的树里，`backend/app/__init__.py`、
+   `frontend/src/components/ErrorBoundary.tsx`、`scripts/gen_content.py`
+   一落地就被 `git status` 报 modified，但 `git diff --ignore-cr-at-eol` **为空**
+   （纯 CRLF/LF 差异），而主工作树反而报干净。与 R69 无关（这三个文件我一个都没碰），
+   像是行尾治理（`.gitattributes` 的 `text eol=lf`）留下的历史账。**不影响**审计与回归
+   （我在那个 worktree 里实测过），但"干净 clone 应当干净"这条大概值得单独立一笔。
+3. `resume_source` 对**图片材料**用的是"这份材料还没读到的页"（`progress.pending`）；
+   对**更早的老材料**（R67 之前落的盘、没有 `progress` 块）则是"记录里没出现过的页"反推 ——
+   如果某份老材料的页记录本身不全，反推会偏乐观。R67 之前没有"取消"这个概念，
+   所以实测影响面为零，但口径记在这里。
+4. "接着读**另存一份新材料**（原份不动）"是 R67 定下的口径，本批沿用；欧拉上一批问过
+   "要不要就地并回原材料"，**仍未裁** —— 若要改，是独立一批的事。
+5. 本批**没起服务做浏览器走查**（8000/5173 未运行）。任务③的界面改动只有"删掉那段静默回落"，
+   另加一条源码级断言；要真机走查请示下。
+6. 任务③只测到"假模型 + 小页数"，**没在真模型/大书上压过**（与 R67 同一口径）。
+
+
+
+
+
 
