@@ -3861,6 +3861,31 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
   - **断言/用例**：`test_r58_c_reread_entry.py`（3 条：按页合并+如实显示、其它页逐字段不变、
     前端源码级入口断言）
 
+### 67.4o 融合对照表（**R59 行**：新增件 → 复用点 → 断言）
+
+> 写法同 §67.4d–n：按 docs/13 §2 写成**并列列表项**，不新建表格。
+
+- **新增件**：`pages="unreadable"` 这个**特殊取值**（`mode_pages.reread_pages` 里挑
+  `readable=false` 的页；没有就提前 return）
+  - **复用点**：**同一个** `read-pages` 接口、**同一个** `reread_pages` 函数、**同一个**按页合并
+    `_merge_pages`（**不新建接口、不新建平行机制**）；页号映射复用既有 `pdfrender.parse_pages` 口径
+  - **断言/用例**：`test_r59_unreadable_reread.py` ①②③（只重读坏页 / 全可读则不调模型不记账 /
+    连点两次幂等）
+- **新增件**：账本 `pages_reread` 的 `detail.trigger`(`unreadable`/`pages`) 与 `detail.still_unreadable`
+  ＋ 中文原因前缀区分两种入口
+  - **复用点**：**唯一账本** `service/ledger`（口径抄 R48 B 的 `detail.trigger`），不新增类别
+  - **断言/用例**：`test_r59_unreadable_reread.py` ①（`trigger=="unreadable"`、原因含"读不出来的页"、
+    no-op 不新增账目）
+- **新增件**：旧记录里认不出页号的页标签 → 中文 422 说清楚（`bad_map` 护栏）
+  - **复用点**：既有 `OutlineError` + `_outline_err` 中文错误口径；**不**把 `PdfRenderError`
+    的"页范围写法看不懂"直接透给用户
+  - **断言/用例**：`test_r59_unreadable_reread.py` ⑤（422 + "认不出是第几页" + 不出现内部报错文案）
+- **新增件**：材料行「把读不出来的页再读一遍」按钮 + no-op 中文回显（`OutlinePage.tsx`）
+  - **复用点**：既有材料列表行与既有 `rereadMaterialPages`（**加一个可选 `spec` 参数**，
+    不新建组件/不复制一份请求函数）；提示复用后端返回的 `note_zh`
+  - **断言/用例**：`test_r59_unreadable_reread.py` ④（前端源码级：按钮在、传 `unreadable`、
+    hover 写明"没有就不调用模型"、no-op 有话说、该段无内部字样）
+
 ### 67.4b 融合对照表（**R38 / R39 行**：新增件 → 复用点 → 断言）
 
 | 新增件 | 复用点（禁新建平行机制） | 断言/用例 |
@@ -5423,6 +5448,99 @@ B5 线程断言更新 + 本 NOTES/docs 同步）。
    （后端可加一个 `pages="unreadable"` 的口径）——需要的话下一批做；
 4. `cleanup_once` 的返回体新增了 `pdf_cache` 键（**只增不改**）；若已有调用方按严格 schema 解析，
    需要同步（本仓库内只有设置页的手动清理端点，未受影响）。
+
+
+## 83. R59：一键重读"读不出来的页"（单条小补丁 · 2026-09-12）
+
+**来源**：`docs/09` R59（R58 验收裁决）§3-3 · 工单 `.runtime/EULER_TICKET_R59.md`。
+**基线**：`a262090`（架构侧验收提交为 `4d719ac`），`pytest` **596/594+2/0**。
+
+### 83.1 任务 · 后端 `pages="unreadable"`（P2）
+
+- **特殊取值，不是新接口**：仍走 `POST /materials/{id}/read-pages`、仍进 `mode_pages.reread_pages`；
+  `pages="unreadable"` 时**只挑 `readable=false` 的页**（`bad_labels`），
+  用 `_label_to_page_no()` 把"第 N 页"映射成页号，再交给**既有**页范围渲染/取图路径。
+- **没有就不花钱（工单 §1.2 硬要求）**：`bad_labels` 为空 → **在渲染与 provider 之前**直接
+  `return {id,title,reread:[],count:0,pages,unreadable:[],model_calls:0,note_zh,reason_zh}`；
+  **不调用模型、不写账本**（"没发生的事不记"，与 R39 铁则一致：只有真的偏离才记账）。
+  中文说明："这份材料没有读不出来的页，不用重读。"／
+  "…（没有调用模型，也没花钱）。" —— 界面直接显示，不让人以为"点了没反应"。
+- **幂等**：因为只挑"读不出来"的页，第二次点击自然落进同一个 no-op 分支 ⇒ **不重复读、不重复计费**；
+  已 readable 的页**永不重读**。页数上限仍由既有 `pdfrender`（`MF_PDF_MAX_PAGES` / 导入时的 60）约束。
+- **如实回显**：重读后重新算 `still_bad`（合并记录里仍 `readable=false` 的页）→ 响应 `unreadable`
+  ＋ `note_zh`（"把读不出来的页又读了一遍（第 2 页）；这次都读到了" /
+  "…；还是读不出来：第 3 页"）。
+- **账本沿用 `pages_reread`**（不新建机制）：`detail` 只**增**两个键
+  `trigger`(`"unreadable"`/`"pages"`) 与 `still_unreadable`；中文原因前缀区分两种入口
+  （"把**读不出来的页**再读一遍：…" vs "按你的要求把 … 重新读了一遍"），
+  并如实追加"这次仍然读不出来：…"。
+
+### 83.2 任务 · 前端按钮与回显
+
+- `rereadMaterialPages(mid, title, spec?)`：**加一个可选 `spec`**（不复制一份请求函数）；
+  点按钮传 `"unreadable"`，输入框那条路仍传自己填的页范围。
+- 材料行（`mode=all_ai`）新增按钮「**把读不出来的页再读一遍**」，hover 写明
+  "把这份材料里读不出来的页一起再读一遍（**没有读不出来的页就不会调用模型**）"。
+- 回显：`count===0` → 显示后端 `note_zh`（兜底"没有需要重读的页"）；
+  `count>0` → "已重新读：第 N 页（共 N 页）。" + 若仍有坏页"还是读不出来：第 M 页。"
+  + "其它页的记录没有动；这一步同样要问模型，也会花钱。"
+
+### 83.3 边界 · 旧记录里认不出页号的页标签
+
+- 更早版本可能在页面记录里留下非"第 N 页"的标签（如"封面"）。这类页**定位不到页号**，
+  既不能静默跳过（那页就白点了），也不该拿它去撞页范围解析、弹一句内部报错
+  "页范围写法看不懂"。
+- 处理：`bad_map` 护栏 → `OutlineError("这几页读不出来、又认不出是第几页，没法一键重读：
+  …——请重新导入这份材料")` ⇒ 中文 **422**，点名是哪几页。
+- 说明：R56 起页面标签由**我们这侧**给出（`read_page` 覆盖模型返回值），
+  所以这条护栏只在"R56 早期记录 / 手改过 files"时才会触发。
+
+### 83.4 回归与自证（实测）
+
+- **用例** `backend/tests/test_r59_unreadable_reread.py`（**5 条**，含工单四条 + 边界一条）；
+  共用工具复用 `tests/r58_support.py` 的 `isolate_model_and_cache()` 与 `sample_pdf()`：
+  1. `test_r59_1_unreadable_only_rereads_those_pages` —— 造"第 2 页读不出来"→ 只重读第 2 页
+     （`fake.calls == ["第 2 页"]`、`model_calls == 1`）、第 1/3 页记录未动、
+     `note_zh` 含"第 2 页"、账本 `trigger=="unreadable"` 且原因含"读不出来的页"；
+  2. `test_r59_2_all_readable_makes_no_model_call` —— 全可读 → `count==0`、`model_calls==0`、
+     **`fake.calls` 长度不变**、账本 `pages_reread` 条数不变、`pages` 原样返回；
+  3. `test_r59_3_idempotent_second_click_does_not_reread` —— 连点两次：第一次读 2 页，
+     第二次 `count==0`、`fake.calls` 不再增长、账本仍只有 1 条；
+  4. `test_r59_4_frontend_button_is_plain_chinese` —— 前端源码级（按钮在、传 `unreadable`、
+     hover 写明不调用模型、no-op 有中文说明、该段无 `R59`/`§`/`docs/`/`read_pages` 等内部字样）；
+  5. `test_r59_5_legacy_label_without_page_no_is_explained` —— 旧标签"封面" → 422 +
+     "认不出是第几页" + 不出现"页范围写法看不懂"。
+- **反证**（`.runtime/r59_neg_probe.py` → `.runtime/r59_neg_probe.out`）：抹掉前端五处文案任一处
+  → 源码守卫必须变红（五道闸门逐个验证）；抹掉后端"没有坏页就提前返回"→ 该分支消失；
+  `_label_to_page_no` 五个样本逐一验证，认不出的标签**原样返回**（不猜页号）。
+- `pytest backend/tests` ＝ **599 passed + 2 skipped / 601 collected，0 failed，exit 0**
+  （`.runtime/r59_full.xml`；开工 596 → **+5 条**；全部用例 exit 0、无一条跳过新增）；
+  `content validate` ＝ ok=True nodes=27 exercises=56；roadmap audit 五学段 **27/31/81/59/60**（错误项全 0）；
+  接地审计 **17/17、6/6、9/83、37/83**（与开工**逐位一致**，未降）；
+  `npx tsc --noEmit` exit 0；`npx vite build` exit 0（仅既有 chunk 体积提示）。
+- 用户内容只读：四文件字节数与 mtime 未变（u01 19,090 B / u02 12,600 B / outline.yaml 30,691 B /
+  教材 458,950 B）；`content/` 下**零张图片**；路径② 一字未改。
+
+### 83.5 提交链（标 R59，不与 R58 混提）
+
+`0c71222`（后端 `pages="unreadable"` + 前端按钮与回显 + 5 条用例）→ 本步文档
+（docs/06 · docs/07 · docs/14 §8.12 + 本 NOTES §83 + 融合对照表 §67.4o + 挂账 §58-29）。
+
+### 83.6 疑点 / 待确认（已登记 §58-29）
+
+1. **no-op 到底该不该"留痕"**：现在**没有读不出来的页时既不调模型、也不写账本**
+   （口径：没发生的事不记，符合 R39 铁则"只有真偏离才记账"）。但"用户点了按钮"这件事本身
+   在总账页上完全不可见——若验收希望"点了就有痕"，可改成记一条**不计费**的中文账目
+   （`detail.noop=true`）。请裁定（本批按"不记"实现，理由如上）。
+2. **"读不出来"的判据**：现在只认 `readable=false`。若某页 `readable=true` 但 `confidence` 很低
+   （或 `uncertain` 非空），一键重读**不会**带上它。要不要把"低置信"也纳入 `unreadable` 集合
+   （可能要加阈值口径 + 单独的确认文案）？本批不动，等裁定。
+3. **旧标签的处置**：见 §83.3 —— 现在是"中文 422 让用户重新导入"。
+   另一种做法是"跳过定位不到的页、只重读能定位的，并在响应里如实列出被跳过的页"；
+   选了前者是因为"点了按钮却有一页悄悄没读"更糟。若验收偏好后者，改动量约 5 行。
+4. **重读页的"页码权威"**：一键重读会让模型再读一次同一页，若模型这次给出的
+   `page_label` 与请求页不同，仍以**我们这侧**的页号为准（R56 起的既有口径），
+   所以不会出现"页号漂移"。此处只是登记口径，无待办。
 
 
 
