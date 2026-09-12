@@ -237,6 +237,33 @@ U_SEARCH_CANDIDATES = (
     "检索原始结果：{results}"
 )
 
+# **R56 第 1 步**：读教材页/图（全 AI 模式的第一步）
+S_READ_PAGE = (
+    "[角色] 你是**教材阅读助手**：看一张教材页面的图片（可能是扫描页、图表、公式或版式复杂的书页），"
+    "把**你真能看到的东西**记成结构化结果。\n"
+    "**四条硬约束（必须遵守）**：\n"
+    "1. **只看图说话**：图上没有写的，一律不许补（不许凭常识补公式、补结论、补数字）；\n"
+    "2. **看不清就明说**：字太小、被遮挡、图模糊、公式糊成一团 → `readable=false` 并在 "
+    "`unreadable_reason` 写清**哪一部分读不出来、为什么**；能读一部分就把那部分写出来，"
+    "把读不出的写进 `uncertain`；\n"
+    "3. **依据指到页/图号**：`page_label` 原样回填给页面的编号；`figures[].label` 用图上看到的编号"
+    "（如「图 6.1」/「表 2-1」/「图 3」），没有编号就写位置（如「页面上方左图」）；\n"
+    "4. **不确定就给低 confidence**：`confidence` 是你对本次识读的自评（0~1），宁可低不许虚高。\n"
+    + JSON_DISCIPLINE
+)
+
+U_READ_PAGE = (
+    "输出 JSON：\n"
+    '{{"page_label":"…","readable":true,"unreadable_reason":"",'
+    '"key_points":["…"],"visible_text":["…"],"formulas":["…"],'
+    '"figures":[{{"label":"…","kind":"图|表|照片|示意图","description":"图里画了什么（只描述看到的）"}}],'
+    '"uncertain":["…"],"confidence":0.0}}\n'
+    "这一页的编号：{page_label}\n"
+    "本次想读出来的东西：{want}\n"
+    "程序附注：{note}\n"
+    "图片在下面（可能不止一张，按顺序看）："
+)
+
 
 def _outline_system() -> str:
     """大纲起草的 system 默认值（与 R37 S2/S8 原实现逐字一致 + 教材纪律占位符）。"""
@@ -457,6 +484,16 @@ def _specs() -> dict[str, PromptSpec]:
             user_required_placeholders=("query", "subject_label", "subject_brief", "results"),
             user_required_tokens=("items", "url", "summary", "输出 JSON"),
         ),
+        PromptSpec(
+            "read_page", "读教材页/图（图示教材模式）",
+            "看一张教材页面/图表的图片，把真能看到的内容记成结构化结果；看不清就明说。",
+            S_READ_PAGE, U_READ_PAGE,
+            system_required_tokens=("输出 JSON", "readable"),
+            user_required_placeholders=("page_label", "want", "note"),
+            user_required_tokens=("key_points", "figures", "confidence", "输出 JSON"),
+            notes="这条决定「AI 到底从图里读到了什么」，删掉会让本模式失去依据。"
+                  "（`readable=false` + 原因＝读不出来时的诚实出口，建议保留）",
+        ),
     ]
     return {s.call_name: s for s in out}
 
@@ -518,6 +555,9 @@ UI_PLACEHOLDER_DEFAULTS: dict[str, str] = {
     "subject_brief": "（学科简介）",
     "results": "[]",
     "spec": "{}",
+    "want": "这一页的正文要点与公式",
+    "note": "（没有特别说明）",
+    "page_label": "第 12 页",
 }
 
 

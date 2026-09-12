@@ -449,6 +449,36 @@ CALL_SEARCH_CANDIDATES = CallSpec(
     temperature=0.2, max_retries=1,
 )
 
+
+# ---------------------------------------------------------------------------
+# **R56 第 1 步**：读教材页/图（全 AI 模式的第一步——把"这一页/这张图里有什么"变成结构化记录）
+# ---------------------------------------------------------------------------
+class ReadPageIn(BaseModel):
+    """要点：这次要读的是哪一页/哪张图，以及"想让它读出什么"。图片本身在消息里（多模态）。"""
+
+    page_label: str = ""          # 页/图号（如"第 12 页"、"图 6.1"）——依据必须指到它
+    want: str = ""                # 本次想读出来的东西（如"这一页的正文要点与公式"）
+    note: str = ""                # 程序附注（如"整页扫描图，字可能很小"）
+
+
+class ReadPageOut(BaseModel):
+    """结构化"读到了什么"：**读不出来必须明说**（`readable=False` + 原因），不许编。"""
+
+    page_label: str = ""
+    readable: bool = True
+    unreadable_reason: str = ""       # readable=False 时**必填**中文原因
+    key_points: list[str] = Field(default_factory=list)      # 这一页讲了什么（要点）
+    visible_text: list[str] = Field(default_factory=list)    # 图上/页面上真能看到的文字（逐条）
+    formulas: list[str] = Field(default_factory=list)        # 公式（看不清就写在 unreadable_reason 里）
+    figures: list[dict] = Field(default_factory=list)        # 图：[{label, kind, description}]（描述图里画了什么）
+    uncertain: list[str] = Field(default_factory=list)       # 看不清/拿不准的地方（宁可少说）
+    confidence: float = 0.0           # 0~1，自评"读得有多确定"
+
+
+CALL_READ_PAGE = CallSpec(
+    "read_page", "light", ReadPageIn, ReadPageOut, temperature=0.1, max_retries=1,
+)
+
 CALLS: dict[str, CallSpec] = {
     c.name: c for c in (
         CALL_EXPLAIN_NODE,
@@ -466,6 +496,7 @@ CALLS: dict[str, CallSpec] = {
         CALL_OUTLINE_DRAFT,
         CALL_UNIT_CONTENT,
         CALL_SEARCH_CANDIDATES,
+        CALL_READ_PAGE,
     )
 }
 

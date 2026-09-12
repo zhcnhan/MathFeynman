@@ -145,7 +145,8 @@ class OpenAICompatibleProvider:
             used = self.tokens_used_today()
             if used >= cap:
                 reason = (f"当日 token 额度已用尽（已用 {used} / 上限 {cap}），"
-                          "本次未调用模型——请在 .env 调整 LLM_MAX_TOKENS_PER_DAY 或次日再试。")
+                          "本次未调用模型——请到「设置 · 模型」里把「每天最多用多少 token」调大"
+                          "（或设 0 = 不限），也可以次日再试。")
                 self._record_cap_blocked(call, reason, subject_id, unit_id, prompt_versions, sink)
                 raise AiCallError(call.name, reason=reason)
         # R39 §3 的"每次调用一条"：整个重试循环合成**一条**（含 retries 与最终结局）
