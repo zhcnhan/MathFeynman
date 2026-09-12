@@ -12,6 +12,8 @@
 """
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -666,6 +668,54 @@ def material_read_pages(subject_id: str, material_id: str, body: ReadPagesBody,
         raise _outline_err(e) from e
     except ValueError as e:
         raise _err(422, "validation_error", str(e)) from e
+
+
+class PageMappingBody(BaseModel):
+    label: Any = ""      # 标签原样收下（找不到就回中文说明，不甩字段级报错）
+    # 页号**故意不限定类型**：页号写错时也要回一句中文人话（而不是字段级报错）
+    page_no: Any = None
+
+
+# 这两个端点各自的中文错误 → 该用的 HTTP 状态（其余一律按参数不合规处理）
+_MAPPING_CODES_BY_STATUS = {404: "not_found", 409: "conflict"}
+
+
+@router.post("/subjects/{subject_id}/materials/{material_id}/page-mapping")
+def material_page_mapping(subject_id: str, material_id: str, body: PageMappingBody,
+                          db: Session = Depends(get_db)) -> dict:
+    """**R61 任务 A**：把认不出页号的旧标签**人工指定**成"这一页当作第 N 页"。
+
+    - **不调用模型**（这一步只是把用户说的页号记下来，不花钱）；
+    - 只改这一条页面记录（页标签 + 旧标签留痕），其余记录不动；
+    - 页号已被别的页占用 → 中文 409，**不覆盖**；页号不是 1 以上的整数 → 中文 422；
+    - 同一个标签重复指定同一个页号 → 200 + 一句中文说明，不再留第二条账。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import mode_pages
+
+    try:
+        return mode_pages.set_page_mapping(subject_id, material_id, label=body.label,
+                                           page_no=body.page_no)
+    except mode_pages.PageMappingError as e:
+        raise _err(e.status, _MAPPING_CODES_BY_STATUS.get(e.status, "validation_error"),
+                   str(e)) from e
+
+
+@router.delete("/subjects/{subject_id}/materials/{material_id}/page-mapping/{label}")
+def material_page_mapping_undo(subject_id: str, material_id: str, label: str,
+                               db: Session = Depends(get_db)) -> dict:
+    """**R61 任务 A**：撤销人工指定的页号——这一页回到"读不出页号"的那份清单里。
+
+    **不调用模型**；只有人工指定过的页能撤销（其它一律中文 422）。撤销同样留一条账。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import mode_pages
+
+    try:
+        return mode_pages.undo_page_mapping(subject_id, material_id, label)
+    except mode_pages.PageMappingError as e:
+        raise _err(e.status, _MAPPING_CODES_BY_STATUS.get(e.status, "validation_error"),
+                   str(e)) from e
 
 
 @router.delete("/subjects/{subject_id}/materials/{material_id}", status_code=204)

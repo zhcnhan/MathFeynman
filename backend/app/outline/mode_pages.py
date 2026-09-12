@@ -15,6 +15,10 @@ PDF 本体存进**缓存目录**（`.runtime/pdf_cache/`，`.gitignore` 覆盖 +
 以便"以后再读某几页"（`reread_pages`）。**没装渲染库 → 中文说明 + 回落方案 c**（用户自己导出图片）。
 
 前置校验（工单 §3-A / R57 §2.2）：**没配能读图的模型 → 中文明确拒绝，不落库**。
+
+**R61 任务 A**：认不出页号的旧标签（如「封面」）可以由用户**人工指定**"这一页当作第 N 页"
+（`set_page_mapping` / `undo_page_mapping`，**不调用模型**）——指定后这一页就有页号、
+能被引用，也可以再点重读把它读出来；指定与撤销都进账。
 """
 from __future__ import annotations
 
@@ -255,6 +259,27 @@ def _pages_doc(subject_id: str, material_id: str) -> dict | None:
     return None
 
 
+def _write_pages_doc(subject_id: str, material_id: str, records: list[dict],
+                     render: dict) -> bool:
+    """把页面记录写回该材料的 `*.pages.json`（与 `reread_pages` **同一条路径、同一种写法**）。
+
+    返回是否真的写下去了（材料不存在 / 没有页面记录文件 → False，调用方自己决定怎么说话）。
+    """
+    d = mat.materials_dir(subject_id)
+    for p in sorted(d.glob("*.md")):
+        e = mat._parse_entry(p)
+        if not e or e["id"] != material_id:
+            continue
+        name = str(e.get("pages_file") or "")
+        if not name:
+            return False
+        (d / name).write_text(
+            json.dumps({"title": e["title"], "pages": records, "render": render},
+                       ensure_ascii=False, indent=1), encoding="utf-8")
+        return True
+    return False
+
+
 def reread_pages(db, subject_id: str, material_id: str, *, pages: str = "",
                  provider=None, want: str = "") -> dict:
     """**按需取页范围**：从缓存里取原始图（或 PDF 重渲染那几页）→ 再读一遍 → 合并回页面记录。
@@ -354,17 +379,7 @@ def reread_pages(db, subject_id: str, material_id: str, *, pages: str = "",
             rec["page_no"] = page_no
         updated.append(rec)
     merged = _merge_pages(records, updated)
-    d = mat.materials_dir(subject_id)
-    for p in sorted(d.glob("*.md")):
-        e = mat._parse_entry(p)
-        if not e or e["id"] != material_id:
-            continue
-        name = str(e.get("pages_file") or "")
-        if name:
-            (d / name).write_text(
-                json.dumps({"title": e["title"], "pages": merged, "render": render},
-                           ensure_ascii=False, indent=1), encoding="utf-8")
-        break
+    _write_pages_doc(subject_id, material_id, merged, render)
     labels = [str(r.get("page_label") or "") for r in updated]
     # 重读之后仍读不出来的页（如实回显"还剩哪几页读不出来"）
     still_bad = [str(r.get("page_label") or "") for r in merged if r.get("readable") is False]
@@ -395,6 +410,151 @@ def reread_pages(db, subject_id: str, material_id: str, *, pages: str = "",
                           if skipped_labels else "")}
 
 
+# ---------------------------------------------------------------------------
+# **R61 任务 A**：认不出页号的旧标签（如「封面」）→ 用户**人工指定**"这一页当作第 N 页"
+# ---------------------------------------------------------------------------
+class PageMappingError(ValueError):
+    """人工指定页号时的中文错误。
+
+    ``status`` ＝ 这件事该用哪个 HTTP 状态回给界面（页号非法 422 / 找不到页 404 / 撞页 409）；
+    所有 message 都是给人看的中文，不含任何内部字段名。
+    """
+
+    def __init__(self, message: str, *, status: int = 422):
+        super().__init__(message)
+        self.status = int(status)
+
+
+def _clean_page_no(raw) -> int:
+    """用户给的页号（**1 以上的整数**才算数；``True`` 与 "4" 这类字符串一律不接受）。"""
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
+        raise PageMappingError(f"页号得是 1 以上的整数（现在给的是 {raw}）")
+    return int(raw)
+
+
+def _find_page_record(records: list[dict], label: str) -> dict | None:
+    """按标签找那一条页面记录：先认**现在的**标签，再认人工指定前留下的**旧标签**。
+
+    （旧标签是撤销与"重复指定同一页号"两步的入口：指定之后这一页的标签已变成「第 N 页」。）
+    """
+    for r in records:
+        if str(r.get("page_label") or "") == label:
+            return r
+    for r in records:
+        if (str(r.get("page_no_source") or "") == "manual"
+                and str(r.get("original_label") or "") == label):
+            return r
+    return None
+
+
+def skipped_page_labels(records: list[dict]) -> list[str]:
+    """仍需用户自己说页号的页标签：**读不出来 + 标签里没有页号**（＝界面上那份清单）。"""
+    return [str(r.get("page_label") or "") for r in records
+            if r.get("readable") is False
+            and not _label_to_page_no(str(r.get("page_label") or "")).isdigit()]
+
+
+def _mapping_out(material_id: str, doc: dict, records: list[dict], *, label: str,
+                 original_label: str, page_no, note_zh: str) -> dict:
+    """两个端点的同一个返回形状（页面记录 + 还差哪几页没页号 + 一句中文说明）。"""
+    return {"id": material_id, "title": doc.get("title") or "", "label": label,
+            "original_label": original_label, "page_no": page_no, "pages": records,
+            "skipped": skipped_page_labels(records), "note_zh": note_zh}
+
+
+def set_page_mapping(subject_id: str, material_id: str, *, label, page_no) -> dict:
+    """**R61 任务 A**：把某个认不出页号的旧标签，人工指定成"第 N 页"（**不调用模型**）。
+
+    只动这一条记录（页标签 + 三个留痕字段），其余记录一律不碰；同一个标签指定同一个页号
+    是重复点击，直接回一句中文说明，不再记一次账。
+    """
+    user_label = str(label or "").strip()
+    doc = _pages_doc(subject_id, material_id)
+    if doc is None:
+        raise PageMappingError("这份材料找不到页面记录，没法指定页号", status=404)
+    records = list(doc.get("pages") or [])
+    page_no = _clean_page_no(page_no)
+    target = _find_page_record(records, user_label)
+    if target is None:
+        raise PageMappingError(f"这份材料里没有标签为「{user_label}」的一页", status=404)
+
+    original = str(target.get("original_label") or target.get("page_label") or "")
+    manual = str(target.get("page_no_source") or "") == "manual"
+    if manual and int(target.get("manual_page_no") or 0) == page_no:
+        # 重复点了同一个「标签 → 页号」：什么都没变，就不留新账
+        return _mapping_out(material_id, doc, records, label=user_label,
+                            original_label=original, page_no=page_no,
+                            note_zh=f"这一页已经是第 {page_no} 页了")
+    current_no = _label_to_page_no(str(target.get("page_label") or ""))
+    if manual or current_no.isdigit():
+        raise PageMappingError(f"这一页已经有页号了（第 {current_no} 页），不用再指定")
+
+    taken = ""
+    for r in records:
+        if r is target:
+            continue
+        if _label_to_page_no(str(r.get("page_label") or "")) == str(page_no):
+            taken = str(r.get("page_label") or "")
+            break
+    if taken:
+        raise PageMappingError(
+            f"第 {page_no} 页已经有别的页了（标签是「{taken}」）——"
+            "请换一个页号，或先撤销那一页的指定", status=409)
+
+    target["original_label"] = original
+    target["page_label"] = f"第 {page_no} 页"
+    target["manual_page_no"] = page_no
+    target["page_no_source"] = "manual"
+    _write_pages_doc(subject_id, material_id, records, dict(doc.get("render") or {}))
+    ledger.note(
+        ledger.CAT_MATERIAL, f"材料《{doc.get('title') or material_id}》· 旧标签指定页号",
+        f"用户把旧标签「{user_label}」指定为第 {page_no} 页"
+        "（原来没有页号，读不出是第几页）。",
+        impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
+        detail={"kind": "page_mapping", "label": user_label, "original_label": original,
+                "page_no": page_no},
+    )
+    return _mapping_out(
+        material_id, doc, records, label=user_label, original_label=original, page_no=page_no,
+        note_zh=(f"已把「{user_label}」当作第 {page_no} 页；想让它有内容，"
+                 "可以点「重读这几页」把它读一遍（会再问一次模型，也会花钱）。"))
+
+
+def undo_page_mapping(subject_id: str, material_id: str, label) -> dict:
+    """**R61 任务 A**：撤销人工指定的页号，让它回到"读不出页号"的那份清单里（**不调用模型**）。
+
+    只认得 ``page_no_source == "manual"`` 的那一页；撤销后把人工留下的三个字段去掉、
+    页标签还原成旧标签，别的记录一律不动。
+    """
+    user_label = str(label or "").strip()
+    doc = _pages_doc(subject_id, material_id)
+    if doc is None:
+        raise PageMappingError("这份材料找不到页面记录，没法撤销页号", status=404)
+    records = list(doc.get("pages") or [])
+    target = _find_page_record(records, user_label)
+    if target is None or str(target.get("page_no_source") or "") != "manual":
+        raise PageMappingError("这一页不是人工指定的页号，不能撤销")
+
+    back = str(target.get("original_label") or target.get("page_label") or "")
+    was = target.get("manual_page_no")
+    if was is None:
+        was = _label_to_page_no(str(target.get("page_label") or ""))
+    target["page_label"] = back
+    target.pop("manual_page_no", None)
+    target.pop("page_no_source", None)
+    target.pop("original_label", None)
+    _write_pages_doc(subject_id, material_id, records, dict(doc.get("render") or {}))
+    ledger.note(
+        ledger.CAT_MATERIAL, f"材料《{doc.get('title') or material_id}》· 撤销人工指定的页号",
+        f"用户撤销了「{back}」的人工页号（原来指定为第 {was} 页）。",
+        impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
+        detail={"kind": "page_mapping_undo", "label": back, "page_no": was},
+    )
+    return _mapping_out(
+        material_id, doc, records, label=back, original_label=back, page_no=was,
+        note_zh=f"已撤销「{back}」的人工页号，它又回到\"读不出页号\"的清单里了。")
+
+
 def _label_to_page_no(label: str) -> str:
     """页标签（"第 12 页"）→ 页号字符串（"12"）；认不出来就原样返回（调用方据此跳过并列出）。"""
     import re as _re
@@ -404,14 +564,23 @@ def _label_to_page_no(label: str) -> str:
 
 
 def _merge_pages(old: list[dict], new: list[dict]) -> list[dict]:
-    """按 `page_label` 合并（新的替换同页、追加新页；保序：原顺序在前，新页在后）。"""
+    """按 `page_label` 合并（新的替换同页、追加新页；保序：原顺序在前，新页在后）。
+
+    **R61 任务 A**：人工指定过页号的那一页，重读之后**留住"这是人工指定的页号"这条留痕**
+    （否则把它读出来一次，就再也没法撤销了）——只补这三个字段，模型这次读到的内容照旧覆盖。
+    """
     by_label = {str(r.get("page_label") or ""): r for r in new}
     out: list[dict] = []
     used: set[str] = set()
     for r in old:
         label = str(r.get("page_label") or "")
         if label in by_label:
-            out.append(by_label[label])
+            fresh = by_label[label]
+            if str(r.get("page_no_source") or "") == "manual":
+                for key in ("original_label", "manual_page_no", "page_no_source"):
+                    if key in r and key not in fresh:
+                        fresh[key] = r[key]
+            out.append(fresh)
             used.add(label)
         else:
             out.append(r)
@@ -431,5 +600,6 @@ def pages_digest(db, subject_id: str) -> str:
     return _digest(out)
 
 
-__all__ = ["MAX_PAGES", "ALLOWED_MIME", "import_pages", "load_pages", "pages_digest",
-           "reread_pages"]
+__all__ = ["MAX_PAGES", "ALLOWED_MIME", "PageMappingError", "import_pages", "load_pages",
+           "pages_digest", "reread_pages", "set_page_mapping", "skipped_page_labels",
+           "undo_page_mapping"]
