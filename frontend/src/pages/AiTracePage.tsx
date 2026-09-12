@@ -78,13 +78,12 @@ function Block({ title, text }: { title: string; text: string }) {
         {title}（{(text || "").length.toLocaleString("zh-CN")} 字）
       </summary>
       <pre
+        className="panel-soft"
         style={{
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
           fontFamily: "Consolas, Menlo, monospace",
           fontSize: 12,
-          background: "#f7f9fb",
-          border: "1px solid #e3e9ef",
           borderRadius: 8,
           padding: 8,
           maxHeight: 460,
@@ -199,10 +198,10 @@ export default function AiTracePage() {
         {(data?.items ?? []).map((t) => (
           <div
             key={t.id}
+            className="row-divider"
             style={{
               padding: "6px 0",
-              borderBottom: "1px solid #eef2f6",
-              borderLeft: t.is_failure ? "3px solid #b3261e" : "3px solid transparent",
+              borderLeft: t.is_failure ? "3px solid var(--danger)" : "3px solid transparent",
               paddingLeft: 8,
             }}
           >
@@ -220,14 +219,17 @@ export default function AiTracePage() {
               <button className="ghost" onClick={() => void open(t.id)}>看完整对话</button>
             </div>
             {t.error && (
-              <div className="dim" style={{ fontSize: 12, color: "#b3261e" }}>问题：{t.error}</div>
+              <div className="dim" style={{ fontSize: 12, color: "var(--danger)" }}>问题：{t.error}</div>
             )}
           </div>
         ))}
       </div>
 
       {detail && (
-        <div className="card" style={{ borderColor: detail.is_failure ? "#b3261e" : "#90caf9" }}>
+        <div
+          className={"card" + (detail.is_failure ? "" : " accent")}
+          style={detail.is_failure ? { borderColor: "var(--danger)" } : undefined}
+        >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h2 style={{ margin: 0 }}>这一次的完整对话 #{detail.id}</h2>
             <button className="ghost" onClick={() => setDetail(null)}>收起</button>

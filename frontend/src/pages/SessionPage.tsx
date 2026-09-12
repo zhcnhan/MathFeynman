@@ -584,7 +584,7 @@ function ContentMissingView({ info, busy, onGenerate, onRetry, onHome }: any) {
   const title = info?.node_title || info?.node_id || "这个单元";
   const canGenerate = !!info?.can_generate;
   return (
-    <div className="card" style={{ borderColor: "#e6a23c" }}>
+    <div className="card" style={{ borderColor: "var(--warn)" }}>
       <h2 style={{ marginTop: 0 }}>先补上内容，再开始学</h2>
       <div className="banner warn">{info?.reason_zh || "这个单元还没有内容。"}</div>
       <ul className="objectives">
@@ -788,7 +788,7 @@ function FeynmanView({ payload, submitting, text, setText, onSubmit, onAnswerFol
         placeholder={
           hasFollowup
             ? "回答上面的追问，只讲这一点也行（≥20 字）…"
-            : "现在，请你像老师一样把这个概念**完整**讲给我听（打字 ≥20 字）…"
+            : "现在，请你像老师一样把这个概念完整讲给我听（打字 ≥20 字）…"
         }
       />
       <div className="input-row">
@@ -808,7 +808,7 @@ function FeynmanView({ payload, submitting, text, setText, onSubmit, onAnswerFol
           </button>
         )}
         <span className="hint">
-          口述需 ≥20 字。补答只涨账本可见分；**通过必须交完整稿**（≥{Math.round(threshold * 100)} 分）。
+          口述需 ≥20 字。补答只涨账本可见分；<strong>通过必须交完整稿</strong>（≥{Math.round(threshold * 100)} 分）。
         </span>
       </div>
     </div>

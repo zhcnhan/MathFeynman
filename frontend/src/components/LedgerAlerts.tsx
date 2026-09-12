@@ -67,13 +67,8 @@ export default function LedgerAlerts({
   }
   return (
     <div
-      style={{
-        marginTop: 8,
-        padding: compact ? 8 : 10,
-        borderRadius: 10,
-        border: "1px solid #f0d7a8",
-        background: "#fffaf0",
-      }}
+      className={"ledger-alerts" + (compact ? " compact" : "")}
+      style={{ marginTop: 8, padding: compact ? 8 : 10 }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <strong>
@@ -87,6 +82,7 @@ export default function LedgerAlerts({
       </div>
       {entries.map((e, i) => (
         <div key={`${e.category}-${i}`} style={{ marginTop: 6, fontSize: 13, opacity: e.resolved ? 0.55 : 1 }}>
+          {/* 有意保留：实色徽标（CAT_COLOR 语义数据色）上的白字，跨主题都成立 —— 不是浅色底 */}
           <span
             className="badge"
             style={{ background: CAT_COLOR[e.category] ?? "#546e7a", color: "#fff", border: "none" }}

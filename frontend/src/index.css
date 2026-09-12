@@ -161,7 +161,11 @@ nav .nav-advanced {
 }
 
 .page-head { margin-bottom: var(--sp-5); }
-.page-head .row-between { align-items: flex-end; }
+
+/* R65 任务 A：顶栏学科切换（顺序由 SubjectSwitcher 自己排；这里只管间距与形态） */
+.subject-switch { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.subject-switch .nav-subject { color: var(--text-dim); padding: var(--sp-1) 0; }
+.subject-switch .nav-subject.active { color: var(--accent-text); font-weight: 600; border-bottom: 2px solid var(--accent); }.page-head .row-between { align-items: flex-end; }
 .page-head h1 { margin-bottom: var(--sp-2); }
 .page-head .sub { color: var(--text-dim); font-size: var(--fs-md); }
 .page-head .crumb { font-size: var(--fs-sm); color: var(--text-faint); margin-bottom: var(--sp-2); }
@@ -217,6 +221,23 @@ nav .nav-advanced {
   margin: var(--sp-3) 0;
 }
 .note.warn { background: var(--warn-soft); border-left-color: var(--warn); color: #6b4700; }
+
+/* ---------------------------------------------- ⑤b R65：语义类（深色不漏块） */
+/* 由来：R61 把"页面级样式"换成了令牌，但一批**行内样式**把浅色写死了 ⇒ 深色模式下变"白岛"。
+   R65 把这些颜色收进下面这些语义类，行内只留布局。新增颜色一律走令牌，别再写十六进制。 */
+.panel-soft { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); }
+.panel-warn { background: var(--warn-soft); border: 1px solid var(--warn); border-radius: var(--r-md); }
+.ledger-alerts { border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--warn-soft); }
+.ledger-alerts.compact { padding: var(--sp-3); }
+.row-divider { border-bottom: 1px solid var(--border); }
+.diff-add { background: var(--ok-soft); }
+.diff-del { background: var(--danger-soft); }
+.prompt-item { background: transparent; }
+.prompt-item.active { background: var(--accent-soft); }
+.choice-chip { background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-md); }
+.choice-chip:hover:not(:disabled) { border-color: var(--accent); }
+.choice-chip.chosen { background: var(--accent-soft); border-color: var(--accent); }
+.card.accent { border-color: var(--accent); }
 
 /* -------------------------------------------------------------- ⑤ 折叠区 */
 .collapse {

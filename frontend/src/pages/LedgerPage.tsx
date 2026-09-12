@@ -121,7 +121,8 @@ export default function LedgerPage() {
             {data.entries.map((e) => (
               <div
                 key={e.id ?? `${e.at}-${e.object}`}
-                style={{ padding: "6px 0", borderBottom: "1px solid #eef2f6" }}
+                className="row-divider"
+                style={{ padding: "6px 0" }}
               >
                 <div className="dim" style={{ fontSize: 12 }}>
                   {e.at ? e.at.replace("T", " ").replace("+00:00", " UTC") : ""}

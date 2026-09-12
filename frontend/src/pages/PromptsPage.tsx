@@ -49,11 +49,10 @@ function DiffView({ title, diff }: { title: string; diff: DiffLine[] }) {
         {title}：与默认的差异（改了 {diff.filter((d) => d.kind !== "hunk").length} 行）
       </div>
       <pre
+        className="panel-soft"
         style={{
           fontFamily: "Consolas, Menlo, monospace",
           fontSize: 12,
-          background: "#fbfbfb",
-          border: "1px solid #e3e9ef",
           borderRadius: 8,
           padding: 8,
           maxHeight: 200,
@@ -64,9 +63,9 @@ function DiffView({ title, diff }: { title: string; diff: DiffLine[] }) {
         {diff.map((d, i) => (
           <div
             key={i}
+            className={"diff-" + (d.kind === "add" ? "add" : d.kind === "del" ? "del" : "none")}
             style={{
-              color: d.kind === "add" ? "#1b5e20" : d.kind === "del" ? "#b3261e" : "#78909c",
-              background: d.kind === "add" ? "#eef7ee" : d.kind === "del" ? "#fdecea" : "transparent",
+              color: d.kind === "add" ? "var(--ok)" : d.kind === "del" ? "var(--danger)" : "var(--text-dim)",
             }}
           >
             {d.kind === "hunk" ? d.line : `${d.kind === "add" ? "+" : "-"}${d.text}`}
@@ -182,7 +181,7 @@ export default function PromptsPage() {
     <div className="settings-page">
       <PageHead title="提示词（可以自己改）" sub="左边挑一处、右边直接改，保存后下一次就生效。" />
       <div className="dim" style={{ fontSize: 13 }}>
-        这里列的是程序每次问 AI 时用的原话。左边挑一处，右边直接改，保存后**下一次就生效**；
+        这里列的是程序每次问 AI 时用的原话。左边挑一处，右边直接改，保存后<strong>下一次就生效</strong>；
         改坏了随时能恢复默认。带「必填」标记的花括号是程序往里填内容的位置（比如这次的题目、学生的回答），
         删掉就存不了——这是防止改坏之后功能悄悄失灵。
       </div>
@@ -196,11 +195,11 @@ export default function PromptsPage() {
             <div
               key={p.call_name}
               onClick={() => pick(p.call_name)}
+              className={"prompt-item" + (p.call_name === active ? " active" : "")}
               style={{
                 padding: "6px 8px",
                 borderRadius: 8,
                 cursor: "pointer",
-                background: p.call_name === active ? "#e8f0fe" : "transparent",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
@@ -287,9 +286,6 @@ export default function PromptsPage() {
                   marginTop: 8,
                   fontFamily: "Consolas, Menlo, monospace",
                   fontSize: 12,
-                  borderRadius: 8,
-                  border: "1px solid #c5cdd6",
-                  padding: 8,
                 }}
               />
               <div className="input-row" style={{ gap: 8, marginTop: 6 }}>

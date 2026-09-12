@@ -178,11 +178,12 @@ export default function MaterialBudgetPanel({
 
   return (
     <div
-      style={{ marginTop: 10, padding: 10, borderRadius: 10, background: "#f7fafd", border: "1px solid #dbe6f0" }}
+      className="panel-soft"
+      style={{ marginTop: 10, padding: 10 }}
     >
       <h3 style={{ margin: "0 0 4px" }}>读多少书（本学科单独设）</h3>
       <div className="dim" style={{ fontSize: 12, marginBottom: 6 }}>
-        这里只影响起草大纲和出题时**读多少教材内容**：读得少就省时间、省钱，读得多就更有依据。
+        这里只影响起草大纲和出题时<strong>读多少教材内容</strong>：读得少就省时间、省钱，读得多就更有依据。
         两项都可以设成「不限」。
       </div>
       {err && <div className="banner error">{err}</div>}
@@ -192,7 +193,7 @@ export default function MaterialBudgetPanel({
         void save({ batch_chars: v })
       )}
       <div className="dim" style={{ fontSize: 12, margin: "2px 0 8px" }}>
-        一次最多读这么多。**调小只是分成几次读，一章都不会少**。
+        一次最多读这么多。<strong>调小只是分成几次读，一章都不会少</strong>。
         当前：{bv.promises_zh?.batch_chars ?? "一次读不完就分次读，章节不受影响"}
       </div>
 
@@ -200,7 +201,7 @@ export default function MaterialBudgetPanel({
         void save({ inject_max_chars: v })
       )}
       <div className="dim" style={{ fontSize: 12, margin: "2px 0 8px" }}>
-        全书的总量上限，默认「不限」。**读到上限就停，并明确告诉你哪几章没读**。
+        全书的总量上限，默认「不限」。<strong>读到上限就停，并明确告诉你哪几章没读</strong>。
         当前：{bv.promises_zh?.inject_max_chars ?? "到上限就停，没读的章节会列出来"}
       </div>
 
@@ -209,7 +210,7 @@ export default function MaterialBudgetPanel({
         <div className="banner warn" style={{ marginTop: 4 }}>
           这本书的「最多读多少」已经读完（已读 {charsText(bv.inject_cap.used_chars ?? 0)}），
           还有 <strong>{bv.inject_cap.skipped_count}</strong> 章/节<strong>没有读</strong>。
-          到达上限时是**整章停下**的，不会把一段话读一半。
+          到达上限时是<strong>整章停下</strong>的，不会把一段话读一半。
           <details style={{ marginTop: 4 }}>
             <summary>看看是哪些章节没读</summary>
             <ul className="plain" style={{ margin: "4px 0 0 12px" }}>

@@ -100,11 +100,8 @@ function ChoiceUI({ exercise, disabled, feedback, onSubmit }: Props) {
             key={i}
             type="button"
             disabled={disabled}
-            style={{
-              textAlign: "left",
-              background: chosen === i ? "#bbdefb" : "#fff",
-              border: "1px solid #c5cdd6",
-            }}
+            className={"choice-chip" + (chosen === i ? " chosen" : "")}
+            style={{ textAlign: "left" }}
             onClick={() => {
               setChosen(i);
               onSubmit(String(i + 1));
@@ -231,13 +228,15 @@ function GraphDemo({ exercise, disabled, feedback, onSubmit }: Props) {
         {Array.from({ length: 7 }, (_, i) => i - 3).map((g) => (
           <line key={`h${g}`} x1={0} y1={toPy(g)} x2={W} y2={toPy(g)} className="grid" />
         ))}
-        <line x1={cx} y1={0} x2={cx} y2={H} stroke="#999" />
-        <line x1={0} y1={cy} x2={W} y2={cy} stroke="#999" />
-        <line x1={linePts[0][0]} y1={linePts[0][1]} x2={linePts[1][0]} y2={linePts[1][1]} stroke="#1565c0" strokeWidth={3} />
-        <circle cx={toPx(0)} cy={toPy(b)} r={4} fill="#d32f2f">
+        {/* R65：坐标轴/直线/交点/文字的配色走令牌（深色下原来的 #333 文字与 #999 轴几乎看不见） */}
+        <line x1={cx} y1={0} x2={cx} y2={H} style={{ stroke: "var(--text-faint)" }} />
+        <line x1={0} y1={cy} x2={W} y2={cy} style={{ stroke: "var(--text-faint)" }} />
+        <line x1={linePts[0][0]} y1={linePts[0][1]} x2={linePts[1][0]} y2={linePts[1][1]}
+              style={{ stroke: "var(--accent)" }} strokeWidth={3} />
+        <circle cx={toPx(0)} cy={toPy(b)} r={4} style={{ fill: "var(--danger)" }}>
           <title>与 y 轴交点 (0,{b})</title>
         </circle>
-        <text x={8} y={18} fontSize={12} fill="#333">y = {k}x {b >= 0 ? `+ ${b}` : `- ${Math.abs(b)}`}</text>
+        <text x={8} y={18} fontSize={12} style={{ fill: "var(--text)" }}>y = {k}x {b >= 0 ? `+ ${b}` : `- ${Math.abs(b)}`}</text>
       </svg>
       <div className="slider-rack">
         <label>斜率 k（正/负决定上升/下降）</label>

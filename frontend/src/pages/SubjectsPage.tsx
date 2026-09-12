@@ -174,14 +174,14 @@ export default function SubjectsPage() {
         <h2>新建学科</h2>
         <div className="input-row" style={{ margin: "6px 0" }}>
           <input placeholder="学科名称（必填）" value={label}
-                 onChange={(e) => setLabel(e.target.value)} style={{ padding: 7, borderRadius: 8, border: "1px solid #c5cdd6" }} />
+                 onChange={(e) => setLabel(e.target.value)} />
           <input placeholder="学科代号（小写字母/数字/短横线；留空自动生成）" value={subjectId}
-                 onChange={(e) => setSubjectId(e.target.value)} style={{ padding: 7, borderRadius: 8, border: "1px solid #c5cdd6", width: 280 }} />
+                 onChange={(e) => setSubjectId(e.target.value)} style={{ width: 280 }} />
         </div>
         <div className="input-row" style={{ margin: "6px 0" }}>
           <input placeholder="学习目标/简介（选填，供 AI 起草参考）" value={desc}
                  onChange={(e) => setDesc(e.target.value)}
-                 style={{ flex: 1, padding: 7, borderRadius: 8, border: "1px solid #c5cdd6" }} />
+                 style={{ flex: 1 }} />
           <button className="primary" onClick={create} disabled={busy || !label.trim()}>创建学科</button>
         </div>
       </div>

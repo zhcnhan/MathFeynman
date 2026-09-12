@@ -362,7 +362,7 @@ export default function SettingsPage() {
           开启「高级入口」（右侧顶部就会出现 记录 / 提示词 / AI 对话记录；排查问题用，平时可以不开）
         </label>
         <p className="dim" style={{ fontSize: 12 }}>
-          这个开关只决定顶部是否出现那几个入口；程序**一直在记录**每次问 AI 的完整内容，
+          这个开关只决定顶部是否出现那几个入口；程序<strong>一直在记录</strong>每次问 AI 的完整内容，
           方便出问题时回看。记录存在本地文件里（{app?.ai_trace?.dir ?? "—"}），页面上看的时候不是边生成边刷；
           出错和没用上的内容会排在前面、标红。
           {app?.ai_trace && (

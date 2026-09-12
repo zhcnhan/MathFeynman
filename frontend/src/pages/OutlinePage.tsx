@@ -249,6 +249,9 @@ export default function OutlinePage() {
   const [draftBrief, setDraftBrief] = useState("");
   const [draftCount, setDraftCount] = useState(6);
   const [err, setErr] = useState("");
+  // 学科本身读不出来（已停用 / 已移除 / 不存在）→ 与「保存、导入失败」分开记：
+  // 前者给提示态卡片（下一步该去哪），后者仍走上面的红色横幅。
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tagsDraft, setTagsDraft] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState("");
@@ -286,7 +289,7 @@ export default function OutlinePage() {
     try {
       await api.put(`/subjects/${id}/materials/${mid}/role`, { role });
       await loadMaterials();
-      setMsg(role === "main" ? "已标为**主教材**（定顺序与范围）" : "已标为**补充材料**（只补细节与例题）");
+      setMsg(role === "main" ? "已标为主教材（定顺序与范围）" : "已标为补充材料（只补细节与例题）");
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -332,7 +335,7 @@ export default function OutlinePage() {
         `/subjects/${id}/materials/upload-pdf`, fd
       );
       if (r.text_health && r.text_health.checked && !r.text_health.healthy) {
-        setErr(`PDF 已入库「${r.title}」，但**没有可用文本层**：${r.text_health.note}`);
+        setErr(`PDF 已入库「${r.title}」，但没有可用文本层：${r.text_health.note}`);
       } else {
         // R55 A：导入那一刻就把"这份材料好不好用"说清楚（人话，不堆数字）
         setMsg(`PDF 已入库「${r.title}」（${r.pages} 页）。体检结论：${r.text_health?.summary_zh || "可以直接用。"}`);
@@ -629,6 +632,7 @@ export default function OutlinePage() {
     try {
       const s = await api.get<Record<string, any>>(`/subjects/${id}`);
       setSubject(s);
+      setLoadErr(null);
       let o: Record<string, any> | null = null;
       let p: any = null;
       try {
@@ -649,6 +653,8 @@ export default function OutlinePage() {
       setTagsDraft(t);
     } catch (e) {
       setErr(String(e));
+      // 学科本身没读出来（后端给的是中文原话）→ 记下来，页面改成提示态
+      setLoadErr(e instanceof Error ? e.message : String(e));
     } finally {
       // 折叠区的"默认开/关"在挂载那一刻定下来：必须等这里读完再挂载，
       // 否则会在"还没读到大纲"时误判成"没有大纲"从而默认展开。
@@ -817,6 +823,30 @@ export default function OutlinePage() {
     ? Array.from(new Set((outline.units as Unit[]).map((u) => u.group).filter(Boolean) as string[]))
     : [];
 
+  // 学科本身读不出来（已停用 / 已移除 / 不存在）：只给一张提示态卡片。
+  // 材料、大纲、单元那些区块一律不挂载——它们各自都会去打接口，只会在界面上刷一片报错。
+  if (loadErr) {
+    return (
+      <div>
+        <PageHead
+          crumb={<Link to="/subjects">← 学科列表</Link>}
+          title="这个学科现在打不开"
+          actions={<Link className="button-link" to="/">← 回主页</Link>}
+        />
+        <div className="card">
+          <div className="empty-state">
+            <div className="big">{loadErr}</div>
+            <div>如果这个学科被停用了：内容不再显示，到「学科列表」重新启用后，内容和进度都还在。</div>
+            <div className="muted">如果是网络或服务暂时出错，稍后再打开一次就好。</div>
+            <div className="actions" style={{ justifyContent: "center" }}>
+              <Link className="button-link primary" to="/subjects">去学科列表</Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHead
@@ -859,7 +889,7 @@ export default function OutlinePage() {
         </div>
 
         <div className="dim" style={{ margin: "4px 0" }}>
-          教材（{materials.length} 份）：**一切以教材为准**——大纲按书的目录排，讲解和题目只用教材里的原话，
+          教材（{materials.length} 份）：<strong>一切以教材为准</strong>——大纲按书的目录排，讲解和题目只用教材里的原话，
           服务端会逐字核对：教材里查不到的题不会用，查不到依据的内容整个单元都不会生成。
         </div>
 
@@ -868,7 +898,7 @@ export default function OutlinePage() {
           <div className="input-row" style={{ gap: 8 }}>
             <input placeholder="检索词（如：行星科学 入门教材）" value={searchQ}
                    onChange={(e) => setSearchQ(e.target.value)}
-                   style={{ flex: 1, padding: 7, borderRadius: 8, border: "1px solid #c5cdd6" }} />
+                   style={{ flex: 1 }} />
             <button className="ghost" disabled={busy || searchBusy || !searchQ.trim()}
                     onClick={() => void runSearch()}>
               {searchBusy ? "检索中…" : "联网检索 → 候选清单"}
@@ -916,7 +946,7 @@ export default function OutlinePage() {
         {/* 本地导入：粘贴文本 */}
         <div className="input-row" style={{ gap: 8, margin: "6px 0" }}>
           <input placeholder="材料标题（如：教材第一章）" value={matTitle} onChange={(e) => setMatTitle(e.target.value)}
-                 style={{ flex: 1, padding: 7, borderRadius: 8, border: "1px solid #c5cdd6" }} />
+                 style={{ flex: 1 }} />
           <button className="primary" disabled={busy || !matTitle.trim() || !matText.trim()}
                   onClick={() => void uploadMaterial()}>
             导入文本
@@ -924,7 +954,7 @@ export default function OutlinePage() {
         </div>
         <textarea placeholder="粘贴自有/授权教材文本…（选填更多材料）" value={matText}
                   onChange={(e) => setMatText(e.target.value)}
-                  style={{ width: "100%", minHeight: 56, border: "1px solid #c5cdd6", borderRadius: 8, padding: 8, font: "inherit" }} />
+                  style={{ width: "100%", minHeight: 56 }} />
 
         {/* C2：PDF 上传（分页/分节 → 引用库 kind:pdf；保留文本粘贴入口） */}
         <div className="input-row" style={{ gap: 8, margin: "8px 0" }}>
@@ -941,8 +971,7 @@ export default function OutlinePage() {
 
         {/* R56 第 3 步：图示教材模式（页面图片 → 全程交给 AI 判断）——
             导入前先把"代价"写在看得见的地方（没有独立核对 / 失败更隐蔽 / 更贵） */}
-        <div style={{ marginTop: 10, padding: 10, border: "1px solid #e6d9a8", borderRadius: 8,
-                      background: "#fffdf5" }}>
+        <div className="panel-warn" style={{ marginTop: 10, padding: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <strong>{modeEntry?.entry_zh.label ?? "图片为主的教材（全程交给 AI 判断）"}</strong>
             {modeLabel && <span className="badge deferred">当前学科：{modeLabel}</span>}
@@ -990,19 +1019,19 @@ export default function OutlinePage() {
           <div className="input-row" style={{ gap: 8, marginTop: 4, alignItems: "center" }}>
             <input placeholder="PDF 页范围（可选，如 1-20；留空＝整本）" value={modePages}
                    onChange={(e) => setModePages(e.target.value)}
-                   style={{ width: 260, padding: 6, borderRadius: 8, border: "1px solid #c5cdd6" }} />
+                   style={{ width: 260 }} />
             <button className="ghost" disabled={busy || draftingMode || !modeEntry?.vision_ready}
                     onClick={() => void draftModeOutline()}>
               {draftingMode ? "正在按页面记录排大纲…" : "一键起草大纲（本模式）"}
             </button>
           </div>
           <div className="dim" style={{ fontSize: 12 }}>
-            可以**直接选 PDF**：装了渲染组件就**按页转成图片**再交给模型（一页一张、页号留痕；
+            可以<strong>直接选 PDF</strong>：装了渲染组件就<strong>按页转成图片</strong>再交给模型（一页一张、页号留痕；
             出图宽 {modeEntry?.pdf_render_options?.width ?? 1024} px、格式
             {" "}{modeEntry?.pdf_render_options?.format ?? "jpeg"}、DPI 上限
             {" "}{modeEntry?.pdf_render_options?.dpi_cap ?? 200}；参数可在配置里改）；
-            **页面图片不会存进内容目录**（避免仓库膨胀），只留"读到了什么"。
-            一次最多 60 页；读不出来的页会**如实标注**、不会被当成内容用。
+            {" "}<strong>页面图片不会存进内容目录</strong>（避免仓库膨胀），只留"读到了什么"。
+            一次最多 60 页；读不出来的页会<strong>如实标注</strong>、不会被当成内容用。
             {modeEntry?.vision_model ? `读图用的模型：${modeEntry.vision_model}。` : ""}
           </div>
         </div>
@@ -1011,8 +1040,9 @@ export default function OutlinePage() {
         {materials.length > 0 && (
           <div style={{ marginTop: 8 }}>
             {materials.map((m) => (
-              <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                                       padding: "4px 0", borderBottom: "1px solid #eef2f6", gap: 8 }}>
+              <div key={m.id} className="row-divider"
+                   style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                            padding: "4px 0", gap: 8 }}>
                 <div style={{ minWidth: 0 }}>
                   <strong>{m.title}</strong>{" "}
                   <span className="badge">{KIND_LABEL[m.kind] ?? m.kind}</span>{" "}
@@ -1039,7 +1069,7 @@ export default function OutlinePage() {
                     </div>
                   )}
                   {m.text_health?.checked && !m.text_health.healthy && (
-                    <div className="dim" style={{ fontSize: 12, color: "#b3261e" }}>{m.text_health.note}</div>
+                    <div className="dim error-text" style={{ fontSize: 12 }}>{m.text_health.note}</div>
                   )}
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", whiteSpace: "nowrap" }}>
@@ -1055,7 +1085,7 @@ export default function OutlinePage() {
                     <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
                       <input value={rereadPages} onChange={(e) => setRereadPages(e.target.value)}
                              placeholder="重读第几页（如 3 或 3-5）"
-                             style={{ width: 150, padding: 4, borderRadius: 6, border: "1px solid #c5cdd6" }}
+                             style={{ width: 150 }}
                              title="页号从 1 开始数；可以写 3 或 3-5（按页范围重读）" />
                       <button className="ghost" disabled={busy}
                               onClick={() => void rereadMaterialPages(m.id, m.title)}
@@ -1072,13 +1102,13 @@ export default function OutlinePage() {
                       <input value={mapLabel[m.id] ?? ""}
                              onChange={(e) => setMapLabel({ ...mapLabel, [m.id]: e.target.value })}
                              placeholder="旧标签（如 封面）"
-                             style={{ width: 130, padding: 4, borderRadius: 6, border: "1px solid #c5cdd6" }}
+                             style={{ width: 130 }}
                              title="页面上没有页号的那种标签，照原样填进来" />
                       <span className="dim">当作第</span>
                       <input value={mapNo[m.id] ?? ""}
                              onChange={(e) => setMapNo({ ...mapNo, [m.id]: e.target.value })}
                              placeholder="4"
-                             style={{ width: 52, padding: 4, borderRadius: 6, border: "1px solid #c5cdd6" }}
+                             style={{ width: 52 }}
                              title="页码从 1 开始数" />
                       <span className="dim">页</span>
                       <button className="ghost" disabled={busy}
@@ -1159,7 +1189,7 @@ export default function OutlinePage() {
                 placeholder="给 AI 的学科简介 / 学习目标（选填）"
                 value={draftBrief}
                 onChange={(e) => setDraftBrief(e.target.value)}
-                style={{ flex: 1, padding: 7, borderRadius: 8, border: "1px solid #c5cdd6" }}
+                style={{ flex: 1 }}
               />
               <select value={draftCount} onChange={(e) => setDraftCount(Number(e.target.value))}>
                 {[4, 6, 8, 10, 15].map((n) => (
@@ -1177,9 +1207,9 @@ export default function OutlinePage() {
               {materials.length > 0 && (
                 <>
                   <br />
-                  ⚠️ <strong>「单元数」只在没有教材时有用</strong>：有教材时，
-                  **单元数是按书的章节来的**（每章/每节至少一个单元），
-                  所以实际会多于或少于你选的数量——这是**照着书排**，不是出错。
+                  ⚠️ <strong>「单元数」只在没有教材时有用</strong>：有教材时，{" "}
+                  <strong>单元数是按书的章节来的</strong>（每章/每节至少一个单元），
+                  所以实际会多于或少于你选的数量——这是<strong>照着书排</strong>，不是出错。
                 </>
               )}
               {materials.length > 0
@@ -1189,7 +1219,7 @@ export default function OutlinePage() {
           </>
         )}
         {candidate && (
-          <div className="card" style={{ borderColor: "#90caf9" }}>
+          <div className="card accent">
             <h2>起草候选（{candidate.source === "ai" ? "AI 生成" : "内置办法生成"}，还没生效）</h2>
             {candidate.problems?.length > 0 && (
               <div className="banner warn">需要留意：{candidate.problems.slice(0, 5).join("；")}</div>
@@ -1217,9 +1247,9 @@ export default function OutlinePage() {
                 {!!candidate.material_usage.inject_cap?.skipped_count && (
                   <>
                     <br />
-                    <span style={{ color: "#b3261e" }}>
+                    <span style={{ color: "var(--danger)" }}>
                       总量已经读完，还有{" "}
-                      <strong>{candidate.material_usage.inject_cap.skipped_count}</strong> 章/节**没读**
+                      <strong>{candidate.material_usage.inject_cap.skipped_count}</strong> 章/节<strong>没读</strong>{" "}
                       （已读 {charsText(candidate.material_usage.inject_cap.used_chars ?? 0)}；
                       到上限时整章停下，不会读一半）：
                       {(candidate.material_usage.inject_cap.skipped_labels ?? []).join("、")}
@@ -1234,7 +1264,7 @@ export default function OutlinePage() {
               <div className="dim" style={{ fontSize: 12 }}>{(candidate as any).notes.join("；")}</div>
             )}
             {candidate.units.map((u, i) => (
-              <div key={u.id} style={{ padding: "4px 0", borderBottom: "1px solid #eef2f6" }}>
+              <div key={u.id} className="row-divider" style={{ padding: "4px 0" }}>
                 <strong>{i + 1}. {u.title}</strong>{" "}
                 <span className="badge">{u.group}</span>
                 {u.prereqs.length > 0 && <span className="dim"> 前置：{u.prereqs.join("、")}</span>}
@@ -1321,7 +1351,7 @@ export default function OutlinePage() {
                   </thead>
                   <tbody>
                     {coverage.by_material.map((b) => (
-                      <tr key={b.material_id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                      <tr key={b.material_id} className="row-divider">
                         <td style={{ padding: "3px" }}>{b.title}</td>
                         <td style={{ padding: "3px" }}>
                           {b.role_zh}
@@ -1369,7 +1399,7 @@ export default function OutlinePage() {
               {!!coverage.inject_cap?.configured && (coverage.inject_cap.skipped_count > 0) && (
                 <div className="banner warn" style={{ marginTop: 6 }}>
                   这本书的「最多读多少」已经读完（{charsText(coverage.inject_cap.cap ?? 0)}），
-                  还有 <strong>{coverage.inject_cap.skipped_count}</strong> 章/节**没有读**：
+                  还有 <strong>{coverage.inject_cap.skipped_count}</strong> 章/节<strong>没有读</strong>：
                   <ul className="plain" style={{ margin: "4px 0 0 12px" }}>
                     {(coverage.inject_cap.skipped_by_material ?? []).map((g) => (
                       <li key={g.material_id}>
@@ -1379,7 +1409,7 @@ export default function OutlinePage() {
                     ))}
                   </ul>
                   <div className="dim" style={{ fontSize: 12 }}>
-                    没读过的章节**不会被编造内容**，所以它们算「还没内容」；把「最多读多少」调大或设成不限、
+                    没读过的章节<strong>不会被编造内容</strong>，所以它们算「还没内容」；把「最多读多少」调大或设成不限、
                     再重新起草就能读上（想更省又不想漏章节 → 把「每次读多少」调小）。
                   </div>
                 </div>
@@ -1403,7 +1433,7 @@ export default function OutlinePage() {
                     </div>
                   )}
                   <div className="dim" style={{ fontSize: 12 }}>
-                    教材里有、但还没出内容的部分**不会被编造**。补充或调整单元后重新生成大纲即可；
+                    教材里有、但还没出内容的部分<strong>不会被编造</strong>。补充或调整单元后重新生成大纲即可；
                     这些也都记在了
                     <Link to={`/ledger?subject_id=${id}&category=coverage`}>记录页</Link>。
                   </div>
@@ -1463,7 +1493,7 @@ export default function OutlinePage() {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <tbody>
                     {coverage.units.map((u) => (
-                      <tr key={u.unit_id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                      <tr key={u.unit_id} className="row-divider">
                         <td style={{ padding: "4px", width: 120 }} className="dim">{u.unit_id}</td>
                         <td style={{ padding: "4px" }}>{u.title}</td>
                         <td style={{ padding: "4px", width: 90 }}>
@@ -1507,7 +1537,7 @@ export default function OutlinePage() {
                     .map((u) => {
                       const pv = progressById[u.id];
                       return (
-                        <tr key={u.id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                        <tr key={u.id} className="row-divider">
                           <td style={{ padding: "6px 4px", width: 130 }} className="dim">{u.id}</td>
                           <td style={{ padding: "6px 4px" }}>
                             <strong>{u.title}</strong>
@@ -1585,7 +1615,7 @@ export default function OutlinePage() {
                               value={tagsDraft[u.id] ?? ""}
                               onChange={(e) => setTagsDraft({ ...tagsDraft, [u.id]: e.target.value })}
                               placeholder="概念标签（逗号分隔）"
-                              style={{ width: 220, padding: 4, borderRadius: 6, border: "1px solid #c5cdd6" }}
+                              style={{ width: 220 }}
                             />
                             <button style={{ marginLeft: 4, padding: "4px 10px" }} onClick={() => saveTags(u.id)} disabled={busy}>
                               存
