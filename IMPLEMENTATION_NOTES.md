@@ -2742,6 +2742,19 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     ⑤ **模式学科的页面记录会越来越大**：`*.pages.json` 把每页的结构化记录都留着（这是"依据可追"的前提），
     126 页大约几十 KB——若希望"只留页号 + 摘要"，需要一个压缩口径（会影响判题依据，需一起定）。
 
+28. **【R58 待架构侧确认】（2026-09-12）**：
+    ① **"未关闭对象"的验收口径**：架构侧看到的退出日志（`objects are still open` / `access violation`）
+    在本机**复现不出来**——`pypdfium2` 的 `_warn_close` 走 `os.write(stderr)`，受
+    `pypdfium2_cfg.DEBUG_AUTOCLOSE` 级别与关闭时序影响。本批改用**库自带的 `ObjectTracker`**
+    直接量未关对象（并加了"阳性对照"与子进程级复核）。若要求"退出日志逐字复现"，
+    需要把 `DEBUG_AUTOCLOSE` 调低再测——请裁定；
+    ② **缓存清理的触发面**：现在**启动/定时/手动**都会清 PDF 缓存（保留 7 天）。副作用是
+    "导入大书 → 7 天后自动清掉 → 之后不能按页重读"（界面会中文提示重新导入）；
+    若希望"缓存永不自动清"或"只按大小清"，请定；
+    ③ **`read-pages` 只支持页范围**：还没有"一键重读所有读不出来的页"（后端加个
+    `pages="unreadable"` 口径即可，下一批可做）；
+    ④ `cleanup_once` 返回体**新增** `pdf_cache` 键（只增不改；仓库内唯一调用方＝设置页手动清理，未受影响）。
+
 
 ---
 
@@ -3828,6 +3841,25 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
   设置页「读图用的模型」输入框
   - **复用点**：既有大纲页材料区与设置页（**不新建页面**）；数据源＝既有 `GET /mode` 与 `GET /settings/model`
   - **断言/用例**：后端字段断言 + 文案守卫 0 处 + `npx tsc --noEmit` exit 0
+
+### 67.4n 融合对照表（**R58 行**：新增件 → 复用点 → 断言）
+
+> 写法同 §67.4d–m：按 docs/13 §2 写成**并列列表项**，不新建表格。
+
+- **新增件**：`pdfrender.render_pages()` 的**资源释放**（`try/finally` + `doc/page/bitmap.close()`）
+  ＋ `_encode_with_limit()`（编码 + 超限降质量 + 关图前取宽高）
+  - **复用点**：既有 `pdfrender` 单一入口（**只改实现、不改对外签名/行为**）；参数仍全部来自 `config.py`
+  - **断言/用例**：`test_r58_a_resource_release.py`（4 条：未关对象零增量＋阳性对照、出错路径、
+    与 R57 **逐位一致**、子进程级退出无痕迹）
+- **新增件**：`cleanup_pdf_cache(trigger=…)` 的 `trigger` 字段 + `ai_trace.cleanup_once` 里**顺带**清缓存
+  - **复用点**：**既有定时器**（R46 B 的 `PeriodicCleanup`，零改动）＋ 既有唯一账本（口径抄 R48 B 的
+    `detail.trigger`）＋ 既有 `MB_PDF_CACHE_KEEP_DAYS` 保留期
+  - **断言/用例**：`test_r58_b_cache_cleanup.py`（3 条：删+记账、幂等、定时器干净退出）
+- **新增件**：材料行「重读这几页」入口（输入页范围 → 调既有 `read-pages`）
+  - **复用点**：既有后端接口 `/materials/{id}/read-pages` 与既有 `_merge_pages` 合并口径；
+    界面复用既有材料列表行（**不新建页面/组件**）
+  - **断言/用例**：`test_r58_c_reread_entry.py`（3 条：按页合并+如实显示、其它页逐字段不变、
+    前端源码级入口断言）
 
 ### 67.4b 融合对照表（**R38 / R39 行**：新增件 → 复用点 → 断言）
 
@@ -5306,6 +5338,91 @@ B5 线程断言更新 + 本 NOTES/docs 同步）。
 `1156da2`（任务 A：pdfrender + 导入/重读接口 + 8 条用例 + 依赖与 gitignore）→
 `13afa43`（任务 B：一键大纲 + 读图模型 + 前端两处 + 6 条用例）→
 本步文档（docs/06 · docs/07 · docs/14 §8.10 + 本 NOTES §81 + 融合对照表 §67.4m + 挂账 §58-27）。
+
+
+## 82. R58：收口补丁（渲染资源释放 + 缓存清理挂定时 + 按需重读入口 · 2026-09-12）
+
+来源：`docs/09` **R58**（R57 验收裁决）§4/§5；工单 `.runtime/EULER_TICKET_R58.md`；验收批 **R59**。
+开工基线（HEAD `3a5c82b`＝R57 验收文档 + `df0338e` 收尾）：`pytest` 586 collected（584+2），0 failed。
+
+### 82.1 任务 A · `PdfDocument` 资源释放（P0 · 真缺陷）
+
+- **缺陷**：`pdfrender.render_pages()` 只 `PdfDocument(io.BytesIO(data))`，**没有 close/with/finally**
+  ⇒ 原生句柄等 GC；长跑后端反复导入 PDF 会**累积原生内存**；**出错路径必然泄漏**
+  （"某页图太大"抛错那条分支，doc 永远不会被关）。
+- **修法**：`try/finally` 包住整段，`finally: doc.close()`；循环里 `page` 各自
+  `finally: page.close()`；`bitmap` **在编码完成后**才关（`to_pil()` 可能是零拷贝视图——
+  先关位图会让编码读到已释放内存，**那正是架构侧看到的 "access violation" 的来源**）；
+  PIL 图也 `close()`。新增 `_encode_with_limit()` 收拢"编码 + 超限降质量 + 取宽高"（宽高须在关图前取）。
+- **不变性**：固定样本（2 页 A4、Helvetica）在 1024 px/jpeg q85 下与 R57 **逐位一致** ——
+  page1 24,087 B `sha256=0964b7d7…1311`、page2 24,229 B `sha256=2ffb38e6…0e9e`，
+  尺寸/DPI 均 `1024×1450 / 123.9 dpi`（用例锁常量）。
+- **前后对照的度量口径**（重要）：**不用"退出时的日志提示"**——那是 pypdfium2 的日志输出
+  （受 `DEBUG_AUTOCLOSE` 级别与关闭时序影响，**本机就复现不出来**）。改用**库自己维护的
+  `pypdfium2.internal.ObjectTracker`**（弱引用表）直接数"还有多少对象没关"，确定性最高：
+  - R57 写法 3 轮 → `['PdfDocument'×3, 'PdfPage'×3]`（泄漏）；
+  - 修好后连续 10 轮 → **零增量**（成功路径与出错路径都是 0）；
+  - 再用**子进程**复核：真跑 10 轮，退出日志里 `still open` / `access violation` / `PdfDocument`
+    **一个字都没有**（用例 ④）。
+- **用例** `test_r58_a_resource_release.py`（4 条）＋共用工具 `tests/r58_support.py`
+  （含"阳性对照"：先用 R57 写法证明这把尺子**能**测出泄漏，再断言修好后为零——免得测试假绿）。
+
+### 82.2 任务 B · 缓存清理挂到既有定时清理（P1）
+
+- **接线**：`ai_trace.cleanup_once(reason)` 在审计清理后**顺带**调
+  `pdfrender.cleanup_pdf_cache(trigger=reason)` ⇒ 启动/定时/手动三处**同一套定时器**，
+  `PeriodicCleanup`（R46 B 守护线程）**零改动**就同时清了 PDF 缓存。
+- **账目**：既有唯一账本（`material` 类、中文），`detail={kind:"pdf_cache_cleanup",
+  trigger:"启动|定时|手动", removed, keep_days, freed_bytes}` —— trigger 口径抄 R48 B。
+- **保留期**：`MF_PDF_CACHE_KEEP_DAYS`（默认 7 天，与 `/mode` 暴露的值一致）。
+- **异常只 warning**：PDF 缓存清理单独 try/except，失败只 `logger.warning` 并回 `pdf_cache{error}`，
+  不影响审计清理与主流程；**幂等**（无过期文件 → `removed_count=0` 且不写账目）。
+- **用例** `test_r58_b_cache_cleanup.py`（3 条）：① 过期文件被删 + 账本中文条目（trigger=定时）；
+  ② 连清两次第二次 no-op 且账目条数不变；③ 定时器 `runs>=1`、`stop()` True 且 <1.5 s、
+  按**线程对象身份**确认退出（⚠️ 应用自身还有一条同名常驻线程，不能按名字判断）。
+
+### 82.3 任务 C · 按需重读的界面入口（P2）
+
+- 材料行（`mode=all_ai`）新增输入框「重读第几页（如 3 或 3-5）」+ 按钮「重读这几页」→
+  调既有 `POST /materials/{mid}/read-pages`；提示如实显示"已重新读：第 N 页"、
+  "其它页的记录没有动"、"这一步同样要问模型，也会花钱"；失败中文 + 进账本（既有 `pages_reread`）。
+- **用例** `test_r58_c_reread_entry.py`（3 条）：① 重读第 2 页 → 按页合并、只第 2 页被换、
+  账本有记录；② 重读第 3 页 → 第 1/2 页记录**逐字段相同**、页序不变；
+  ③ 前端**源码级**断言（仓库无前端测试运行器 → 沿用 R52 先例）：确实调用 `/read-pages`、
+  提示含"已重新读"+`r.reread.join`、"其它页的记录没有动"、成本提示、该段无内部字样。
+
+### 82.4 回归与自证（实测）
+
+- `pytest backend/tests` ＝ **594 passed + 2 skipped / 596 collected，0 failed**（`.runtime/r58_full2.xml`；
+  比开工 586 **+10 条用例**）；`content validate` ＝ ok=True 27/56；roadmap audit **27/31/81/59/60**；
+  接地审计 **17/17、6/6、9/83、37/83**（与开工逐位一致，未降）；
+  `npx tsc --noEmit` exit 0；`npx vite build` exit 0；前端文案守卫 **0 处**。
+- 用户内容只读：`content/stages|subjects/s-f2decfcf/` 四文件字节与 mtime 未变；`content/` 下**零张图片**。
+- 证据脚本：`.runtime/r58_tracker_probe.py`（未关对象前后对照）、`.runtime/r58_leak_probe.py`
+  （R57 写法 vs 修好后；`--hash` 锁值）。
+
+### 82.5 提交链（标 R58，不与 R57 混提）
+
+`937f18e`（任务 A：资源释放 + 逐位一致回归 + 4 条用例 + 共用工具）→
+`837e634`（任务 B：挂既有定时清理 + 3 条用例）→
+`8389e63`（任务 C：界面重读入口 + 3 条用例）→ 本步文档（docs/07 · docs/14 §8.11 + 本 NOTES §82 +
+融合对照表 §67.4n + 挂账 §58-28）。
+> ⚠️ 提交 A 的 `pdfrender.py` 里同时带了任务 B 用的 `cleanup_pdf_cache(trigger=…)` 参数
+> （同一文件、同一函数，按文件切会让中间提交不可导入），B 的**接线**在第二提交。
+
+### 82.6 疑点 / 待确认（已登记 §58-28）
+
+1. **"未关对象"的验收口径**：本机**复现不出**架构侧看到的退出日志（`pypdfium2` 的
+   `_warn_close` 走 `os.write(stderr)`，受 `DEBUG_AUTOCLOSE` 与关闭时序影响）；
+   本批改用**库自带的 `ObjectTracker`** 直接量，并加了"阳性对照"与**子进程级**复核。
+   若希望"退出日志"也逐字复现，需要把 `pypdfium2_cfg.DEBUG_AUTOCLOSE` 调低——请裁定是否要这么做；
+2. **缓存清理的触发面**：现在挂上后，**启动/定时/手动**都会清 PDF 缓存（保留 7 天）。
+   若"启动即清"会让刚导入的 PDF 缓存被清（不会：缓存是**新**文件，保留期内不会被删），
+   但要注意"手动作业导入大书 → 7 天后自动清掉 → 之后不能按页重读"（界面会中文提示重新导入）；
+3. **`read-pages` 的界面入口只支持"页范围"**（如 `3`/`3-5`），还没有"重读所有读不出来的页"一键按钮
+   （后端可加一个 `pages="unreadable"` 的口径）——需要的话下一批做；
+4. `cleanup_once` 的返回体新增了 `pdf_cache` 键（**只增不改**）；若已有调用方按严格 schema 解析，
+   需要同步（本仓库内只有设置页的手动清理端点，未受影响）。
 
 
 
