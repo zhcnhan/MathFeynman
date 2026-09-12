@@ -125,3 +125,14 @@ def test_r71_a2_checker_flags_a_changed_byte_and_a_missing_file():
     bad3 = _diff({}, good)
     assert len(bad3) == len(EXPECTED_FILES), f"登记表没了却没报全：{bad3}"
     assert all("没有" in x and "登记" in x for x in bad3), bad3
+
+
+# ============================================================ R73 任务 ②：只读打印当前指纹
+if __name__ == "__main__":
+    # 直接跑本文件（不经 pytest）＝把三个样本文件**现在**的 SHA256 打出来，
+    # 格式与 README 登记表**一模一样**（`<64位小写十六进制><两个空格><相对路径>`），便于整段复制替换。
+    # ⚠️ **只打印**：不写文件、不动 README、不动样本 —— 架构侧已裁定不做"一键写回"。
+    for _rel in EXPECTED_FILES:
+        _digest = hashlib.sha256((SAMPLE / _rel).read_bytes()).hexdigest()
+        print(f"{_digest}  {_rel}")
+
