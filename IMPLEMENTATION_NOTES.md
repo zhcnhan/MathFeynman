@@ -2683,6 +2683,15 @@ L93 `已停用` 标签；L119–120「重新启用」按钮；L154 空态文案�
     ③ **文案守卫是"源码级"**（前端无测试运行器）：能挡住字符串/JSX 文本，但挡不住"由后端直出的新中文"；
     后端那句由 `test_r52_b3_*` 抽查。若将来接入 vitest 可升级为渲染级断言。
 
+23. **【R54 待架构侧确认】（2026-09-12）**：
+    ① **"未看过讲解"的老会话会被退回讲解一次**（`explained_seen` 老会话默认 False）——刻意的
+    （宁可多给一次讲解，也不许学生没看就讲）；若要求"已 mastered 的会话不再退回"或"存量会话一律视为
+    已展示"，需要另定判据 / 一次数据迁移（本批未做）；
+    ② **事实依据全丢＝不可用**的阈值取"声明过事实句却一条不剩"；从未声明过事实句（无教材启发式路径）
+    不算不可用——请确认该口径；
+    ③ **`content_missing` 时 `/session/start` 不建会话**（返回 `session.id=""`）：前端据此不进空会话；
+    若将来要求"没内容也能开会话"，需要内容库里先有占位节点（内容库语义变更，未擅改）。
+
 
 ---
 
@@ -3659,6 +3668,26 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
   - **复用点**：纯标准库，无新依赖；前端无测试运行器故按工单 §5-1 做**源码级**守卫
   - **断言/用例**：`test_r52_b1_*`（0 处）、`test_r52_b2_*`
 
+### 67.4i 融合对照表（**R54 行**：新增件 → 复用点 → 断言）
+
+> 写法同 §67.4d–h：按 docs/13 §2 写成**并列列表项**，不新建表格。
+
+- **新增件**：`flow.explained_seen`（"讲解已展示过"的记法）+ 前置内容守卫 `SessionService._node_or_gate` / `_content_gate` / `_missing_node_card` / `_rewind_to_explain`
+  - **复用点**：既有状态机与 `flow_json`（**不加 DB 列**，老会话由 R30 自愈入口补默认值）；退出/恢复路径沿用既有语义
+  - **断言/用例**：`test_r54_a1/a2/a3/a4/a5_*`
+- **新增件**：`step="content_missing"` 卡片（start 不建会话；step 除 quit 外一律先过守卫）
+  - **复用点**：既有 `/session/start|step` 契约（**只新增 step 取值与 payload 键**，不改既有字段）
+  - **断言/用例**：`test_r54_a1/a4/a5_*`、`test_r54_c1_*` + 前端 `ContentMissingView`（源码级：`api.ts` 的 `StepResponse.step` 加取值）
+- **新增件**：`outline_gate.unit_content_status`（可用性唯一口径）+ 覆盖账 `units[]` 的 `has_content/usable/content_reason_zh/exercise_count/taught_fact_count`
+  - **复用点**：既有 `outline_gate`（单元解析）+ `materials.coverage_summary` 的 `unit_ledger`（**只加字段**）
+  - **断言/用例**：`test_r54_b1/b2_*`、`test_r54_c1/c2/c3_*`
+- **新增件**：账目出路 `ledger.action_for` + 旧失败作废 `ledger.resolve_unit_discards` / `_is_resolvable` / `_resolution_ids`
+  - **复用点**：R39 唯一账本（**只增不改**：历史行原样、读取时派生 `action`/`resolved`）；`generate._resolve_discards_if_usable` 挂在既有出稿成功路径
+  - **断言/用例**：`test_r54_b1/b3/b4_*`
+- **新增件**：前端「重新生成这个单元」按钮（`LedgerAlerts` 的 `onAction`）+「已解决」徽标 + 大纲页「有内容/还没内容」徽标与就地生成
+  - **复用点**：既有 `LedgerAlerts` 组件与大纲页单元行（**不新建页面/组件**）；生成走既有 `POST /subjects/{sid}/units/{uid}/content`
+  - **断言/用例**：后端断言 `action`/`usable`/`content_missing`（前端无测试运行器）+ `npx tsc --noEmit` exit 0
+
 ### 67.4b 融合对照表（**R38 / R39 行**：新增件 → 复用点 → 断言）
 
 | 新增件 | 复用点（禁新建平行机制） | 断言/用例 |
@@ -4513,6 +4542,107 @@ B5 线程断言更新 + 本 NOTES/docs 同步）。
 `2b442c2`（A：后端只读统计字段 + 提示词页 A+C+A3 + 3 用例 + docs/06）→
 `19e2b29`（B：前端全量文案 + 后端界面标签 + 文案守卫用例 + 旧断言更新）→ 本批收尾
 （本 NOTES + 融合对照表 §67.4h + 挂账 §58-22）。
+
+
+---
+
+## 76. R54：内容缺失与丢弃的兜底（用户真人走查当场撞上 · P0）（2026-09-12）
+
+来源：用户走查原话「他直接把讲解、小思考、其他题全丢了，丢完之后就不管了；
+**我打开一章他直接让我讲，我都没看过他的讲解我讲什么**」；架构侧已核实**讲解其实存在**
+（`node_s-f2decfcf.u02_auto.md` 的 `explanation.body` 有 1,818 字，`/api/graph/node` 也能取到）——
+**不是数据问题，是设计漏洞**：① 没有前置内容守卫；② 丢弃后没有出路；③ 大纲页看不出哪些单元没内容。
+工单 `.runtime/EULER_TICKET_R54.md`；验收批 **R55**。**红线**：不放松 R37 教材锚定（该丢就丢）、
+不改判题/评分、不改既有账本字段语义、**用户 `s-f2decfcf` 内容文件只读**（本批一字未动）。
+
+### 76.1 任务 A · 没看到讲解，不许进"讲解环节"
+
+- **"已展示过"的记法**：`flow.explained_seen`（`new_flow()` 新增键 → R30 自愈入口自动给老会话补 False），
+  在 **explain 阶段真的下发了非空讲解正文**时置位（`_response` 内）。
+- **守卫（`SessionService._node_or_gate` → `outline_gate.unit_content_status`）**：
+  - 讲解正文为空 / 还没生成内容 / 事实依据全丢 /（防御）没有可用练习 → 状态机只回
+    `step="content_missing"` + `payload.content_missing{missing,reason_zh,subject_id,unit_id,can_generate,content_status}`，
+    **不下发** `lecture_md`/`exercise`/`task_prompt`/`rubric`；
+  - `step()` 里对**除 `quit` 外的任何 action** 都先过守卫（不调模型、不判题、不评费曼）；
+  - 进费曼前必须 `explained_seen`：`_ensure_invariants` 把"练习已过但没看过讲解"的会话**退回讲解**
+    （写 `flow._rewound_zh`），`_act_feynman`/`_act_feynman_answer` 再兜一道（**退回而不是报错**），
+    退回说明随响应 `payload.rewound_zh` 下发一次；
+  - 恢复旧会话时内容已失效（文件被删）→ 同一张卡片（`_missing_node_card`），**不再 404/409 卡人**。
+- **`/session/start` 内容不足时不建会话**（内容库还没有这个节点，会话外键也挂不上）→ 直接回卡片，
+  前端据此**不进空会话**（这同时修掉了"点没内容的单元 → 404 节点不存在"的墙）。
+- **必交用例（5 条，实际名）**：`test_r54_a1_missing_explanation_blocks_learning_and_offers_generate`、
+  `test_r54_a2_explanation_not_shown_cannot_jump_to_feynman`（**用户场景**；还断言直接把
+  `feynman_submit` 打进来也拦得住且不发 `task_prompt`）、
+  `test_r54_a3_explanation_shown_then_practice_leads_to_feynman`（**回归**：真答对 3 题 → 正常进费曼）、
+  `test_r54_a4_resume_after_content_removed_rewinds_with_zh_note`、
+  `test_r54_a5_no_exercises_blocks_practice`（防御分支：`NodeDoc` 有"每个节点至少 1 道练习"的校验，
+  正常文件不可能 0 题，故用 monkeypatch 直接施加 0 题状态验证守卫本身）。
+- **用户场景前后对照（实测原文，`.runtime/r54_before_after.py`）**：
+  - **修复前**（R53 版 `_ensure_invariants`：练习过了就推费曼）：`打开这一章 → step = feynman`；
+    `有没有讲解正文下发？没有`；`有没有要求学生开讲？有（task_prompt 已下发）`；
+  - **修复后**：`打开这一章 → step = explain`；`有没有讲解正文下发？有`；
+    `中文说明：之前没有看过这一节的讲解，已退回讲解：看完再讲一遍就能继续。`；
+    `有没有要求学生开讲？没有`。
+
+### 76.2 任务 B · 丢弃必须有出路（分级 + 一键重生成 + 旧失败作废）
+
+- **分级阈值与理由**（可用性＝"能不能走完学习闭环"，丢弃多少只影响依据强度）：
+  - **严重 → 该单元内容不可用**：① 讲解正文为空（没得看）；② **声明过事实句却一条不剩**
+    （`taught_facts==0 且 dropped_facts>0`：讲解/小思考全失去教材依据）；③ 没有可用练习
+    （防御：加载校验本就要求 ≥1 题）。→ **不许进这个单元的学习流程** + 一键重新生成 +
+    覆盖账如实标注（`usable=false` + `content_reason_zh`）；
+  - **轻微 → 仍可用**：只丢了部分题/事实句 → 单元照常学，界面**如实提示**"N 道题没采用"；
+  - **理由**：把"丢弃比例"当阈值会误伤（脏教材本来就该多丢，宁缺勿造）；判"能不能学"才是用户要的答案。
+- **账目出路（读取时派生，不改既有字段语义）**：`ledger.action_for(...)` → 每条 `remedy=可补救`
+  且带 `subject_id`/`unit_id` 的记录得到 `action{kind:"regenerate_unit",label_zh:"重新生成这个单元",
+  subject_id,unit_id}`；就地账目与总账页都带 → 前端 `LedgerAlerts` 渲染成按钮（**不再只写"可通过重试补救"**）。
+- **旧失败作废（只增不改）**：单元重新生成且内容可用后，`generate._resolve_discards_if_usable` →
+  `ledger.resolve_unit_discards` **追加**一条 `CAT_OTHER`「已重新生成」记录（`detail.kind="unit_regenerated"`），
+  `list_entries` 据此把该单元**此前**的可补救记录标 `resolved=true`（历史行原样保留，可追溯）；
+  **幂等**：没有"尚未解决"的丢弃记录时不写任何东西。
+- **必交用例（4 条，实际名）**：`test_r54_b1_all_facts_dropped_marks_unit_unusable_with_regenerate`
+  （严重 + 中文说明 + 账目 `action` 可点）、`test_r54_b2_one_dropped_exercise_keeps_unit_usable_with_hint`
+  （轻微：仍可进 explain + `dropped_exercises==1` 提示）、
+  `test_r54_b3_regenerate_resolves_old_discard_entries`（旧记录 `resolved` + 追加记录幂等）、
+  `test_r54_b4_ledger_contract_only_added`（既有字段/类别口径只增不减）。
+
+### 76.3 任务 C · 「35 个单元只有 2 个有内容」要看得见
+
+- **口径同源**：`outline_gate.unit_content_status(node_id)` 是**唯一实现**——会话守卫直接用它，
+  覆盖账 `units[]` 也用它（`materials._unit_content_status` 委托），所以"大纲页显示有内容"
+  与"能不能进学习会话"永远一致。
+- **覆盖账新增（只增字段）**：`units[].has_content / usable / content_reason_zh / exercise_count /
+  taught_fact_count`；大纲页单元行显示「有内容 / 还没内容」徽标 + 「N 道题没采用」提示，
+  点「开始学习」而没内容 → **不进会话**，就地中文提示 +「现在生成」；生成后状态**立即更新**。
+- **必交用例（3 条，实际名）**：`test_r54_c1_unit_without_content_is_visible_and_blocks_empty_session`
+  （`has_content=false` + `content_missing` 卡片 + **不建会话**）、
+  `test_r54_c2_unit_with_content_enters_normally`（回归：正常进 explain）、
+  `test_r54_c3_status_updates_immediately_after_generate`（生成后同周期内即 `usable=true`）。
+
+### 76.4 回归与验收自证（**实测，非推算**）
+
+- **开工基线**（`.runtime/r54_baseline.xml`，HEAD `bf6f38b`）：`pytest backend/tests` ＝
+  **507 passed + 2 skipped / 509 collected**，0 failed / 0 error，exit 0。
+- **收尾实测**（`.runtime/r54_final.xml`）：`pytest backend/tests` ＝
+  **519 passed + 2 skipped / 521 collected**，0 failed / 0 error，exit 0 ——**+12 用例全绿**（A 5 + B 4 + C 3）。
+- `content validate` ＝ **ok=True nodes=27 exercises=56**（用户新增 u02 后的基线，本批未动内容）；
+  roadmap audit ＝ **27/31/81/59/60**（`ok: True`）；`npx tsc --noEmit` **exit 0**；`npx vite build` **exit 0**；
+  文案守卫（前端）**0 处**。
+- **用户内容只读**：`content/stages|subjects/s-f2decfcf/` **一字未动**（用例只在测试临时副本上造数据）。
+
+### 76.5 疑点 / 需架构侧确认（已登记 §58-23）
+
+1. **"未看过讲解"的老会话会被退回讲解一次**：这是刻意的（宁可多给一次讲解，也不能让学生没看就讲），
+   但会让已经掌握该节点的老会话多走一步。若希望"已 mastered 的会话不再退回"，需要另一个判据（请裁定）。
+2. **事实依据全丢＝不可用的阈值**：本批取"声明过事实句却一条不剩"；若某单元**从未声明过事实句**
+   （启发式无教材路径）则不算不可用——这个口径请确认。
+3. **`explained_seen` 记在 `flow_json`**（没加 DB 列）：老会话默认 False → 首次打开会看到一次退回说明；
+   若要求"上线时把存量会话一律视为已展示"，需要一次数据迁移（本批未做）。
+
+### 76.6 提交链（标 R54，不与 R52/R53 混提）
+
+`461ef6c`（A 守卫）→ `ef8ae95`（B 丢弃出路 + 覆盖账内容状态）→ `b714357`（C 大纲页可见性）→
+本批收尾（docs/06 · docs/07 · docs/14 + 本 NOTES + 融合对照表 §67.4i + 挂账 §58-23）。
 
 
 

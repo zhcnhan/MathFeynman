@@ -28,7 +28,7 @@
 | POST | `/subjects/{subject_id}/outline/regenerate` | 大纲重生成：math=roadmap 派生 revision+1；custom=重新起草候选（不落盘，采纳 PUT 才 +1；**同样注入引用材料**） |
 | POST | `/subjects/{subject_id}/outline/draft` | AI/启发式起草大纲候选（body: brief/count/group_hint；LLM_API_KEY 时走 CALL_OUTLINE_DRAFT，否则离线启发式；不落盘，供审阅后 PUT 采纳）（A4）；**R36 D1–D4**：注入该学科引用材料，要求逐单元 `materials:[{title,section}]` 溯源并服务端校验（不成立 → 驳回重生成一次 → 仍不成立则剔除并记问题）；**R37 S1/S2/S8**：默认**不设注入预算**（`MF_MATERIAL_INJECT_MAX_CHARS=0`；>0 时它是**单次调用预算**，只改"每批装多少"、**不丢章节**——R38 §3 共存口径），按 `outline.bookmap` 的**章→节地图**注入**完整正文**，书太大按 `MF_MATERIAL_BATCH_CHARS` 在章/页边界**分批**（绝不"前 N 字"）；单元由书序派生并按书序重排/重编号（`notes` 记录规范化决定）；每个章/节条目必须映射到 ≥1 个单元（未映射者先确定性回捞、再按教材目录补齐并记 `problems`）；**扫描/图片版（文本层不合格）→ 中文 422**；响应含 `source_materials`、`material_usage{count,used_chars,per_call_chars,batch_count,dropped(=恒空),truncated(=恒 false),batches,blocked}`、`coverage{total,covered,uncovered}`、`notes` |
 | POST | `/subjects/{subject_id}/units/{unit_id}/content` | 懒生成单元内容（source:auto 落盘 + 库/DB 同步，幂等；仅 custom 学科；math 走 roadmap 流水线）（A4）；**R37 S3/S4/S5**：注入该单元对应教材章/节的**完整正文**；事实句与题目引文必须**逐字出自教材**，否则丢弃该题 / 整单元失败（`status="uncovered"`，中文 note，**不落盘**）；响应含 `coverage{status:完整\|部分\|未覆盖, grounded_facts, dropped_facts, dropped_exercises, sources, note}` |
-| GET | `/subjects/{subject_id}/coverage` | **R37 S6 覆盖账本**：`total/covered/uncovered`（章/节条目 ↔ 单元映射）+ `materials[{healthy,structure_kind,structure_note}]` + `entries[]` + `units[{sources,status,note,grounded_facts,dropped_exercises}]`（大纲页同源展示）；**R38 B1**：增 `by_material[]`（**按材料分组**的已覆盖节/总节 + 未覆盖清单）、`uncovered_by_material[]`、`uncovered_materials[]`（整份未纳入）、`order_basis`（顺序依据：角色/导入顺序）、`page_total/page_covered`（**章级统计、页级可下钻**）、`entries[].pages[]`；**R42 A3**：增 `not_injected[]`（**三种原因**：健康度不合格 / 未进批次 / **总注入上限**）、`inject_cap{configured,cap,used_chars,remaining,skipped_count,skipped_labels,skipped_by_material}`、逐条 `entries[].not_injected_reason/reason_zh`、`by_material[].cap_skipped*`——**因总上限未注入的章节不计入覆盖**（"没喂给模型"谈不上覆盖），每一处都能解释"它去哪了"；**R42 B1**：增 `skipped_short{count,labels,items,min_chars}`（过短条目，**不计入 uncovered 缺口**）+ `entries[].short`；**R42 B4**：`units[].basis_section/basis_quote/basis_note`（**章内该节级**依据，取不到为空——不编造） |
+| GET | `/subjects/{subject_id}/coverage` | **R37 S6 覆盖账本**：`total/covered/uncovered`（章/节条目 ↔ 单元映射）+ `materials[{healthy,structure_kind,structure_note}]` + `entries[]` + `units[{sources,status,note,grounded_facts,dropped_exercises}]`（大纲页同源展示）；**R38 B1**：增 `by_material[]`（**按材料分组**的已覆盖节/总节 + 未覆盖清单）、`uncovered_by_material[]`、`uncovered_materials[]`（整份未纳入）、`order_basis`（顺序依据：角色/导入顺序）、`page_total/page_covered`（**章级统计、页级可下钻**）、`entries[].pages[]`；**R42 A3**：增 `not_injected[]`（**三种原因**：健康度不合格 / 未进批次 / **总注入上限**）、`inject_cap{configured,cap,used_chars,remaining,skipped_count,skipped_labels,skipped_by_material}`、逐条 `entries[].not_injected_reason/reason_zh`、`by_material[].cap_skipped*`——**因总上限未注入的章节不计入覆盖**（"没喂给模型"谈不上覆盖），每一处都能解释"它去哪了"；**R42 B1**：增 `skipped_short{count,labels,items,min_chars}`（过短条目，**不计入 uncovered 缺口**）+ `entries[].short`；**R42 B4**：`units[].basis_section/basis_quote/basis_note`（**章内该节级**依据，取不到为空——不编造）；**R54 C**：`units[]` 再增 `has_content/usable/content_reason_zh/exercise_count/taught_fact_count`（单元有没有内容、能不能学——与 `/session/*` 的内容守卫**同一实现**） |
 | GET | `/subjects/{subject_id}/budget` | **R38/R42 材料注入预算视图**（学科管理卡材料区）：`batch_chars{value,source,source_zh,set}`（**单次调用预算＝滑块 A**）、`inject_max_chars{…}`（**总注入上限＝滑块 B，真硬上限**；0=不限）、`per_call_chars`、`tiers{batch,inject}`（档位）、**`promises_zh{batch_chars,inject_max_chars}`（两个滑块各自的承诺，界面直接渲染）**、`last_usage{used_chars,batch_count,per_material[],not_injected[],order_basis,summary_zh,note_zh, cap_skipped_count,cap_skipped_labels,cap_skipped_by_material,cap_note_zh}`、**`inject_cap{configured,cap,used_chars,remaining,skipped_count,skipped_chars,skipped_labels,skipped_by_material,first_batch_over_cap}`**、`context_valve{applied,context_tokens,limit_chars}`、`materials[]`；**R42 A3-⑤**：触发总上限时必显"因总上限未注入的章节数"（不许两处都没有） |
 | PUT | `/subjects/{subject_id}/budget` | **R38/R42 两个滑块改值**（body `{batch_chars?, inject_max_chars?}`；单位＝字符，**0=不限**；落 `subjects.meta_json`，**不新建表**）；**立即生效**且回读一致；非法值 → **中文 422**；优先级：单次请求参数 > 学科滑块 > `.env` > 内置默认。**R42 语义分开**：滑块 A 调小＝只分更多批（**绝不丢章节**）；**滑块 B＝真硬上限**（超了真的不再注入，但每一处未注入都有中文账目 + `not_injected` 显式列出） |
 | PUT | `/subjects/{subject_id}/materials/{material_id}/role` | **R38 B2 材料角色**（body `{role: main\|supplement}`）：主教材定顺序与范围、补充材料只补细节与例题；未标注 → 按**导入顺序**并在覆盖账注明 `order_basis=导入顺序`；非法角色 → 中文 422 |
@@ -50,8 +50,8 @@
 ### 学习会话
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/session/start` | body `{node_id}` → 创建/恢复会话，返回状态机当前步与首批内容（讲解稿演绎结果可选异步）。**R18 总序门禁**：无既有会话而新建时校验蓝图总序（docs/09 R18）；越级 → `409 invalid_state`，detail 含"请先完成：<前置条目标题>"。既有会话恢复 / 练习·费曼续走 / 复习不受门禁影响 |
-| POST | `/session/step` | body `{session_id, action, payload}`；action ∈ `ask_question / next / submit_exercise / request_hint / regen_explain / reissue_after_regen / feynman_submit / feynman_answer / challenge_start / challenge_begin / challenge_submit / challenge_cancel / challenge_abandon / finish / quit`（`next` = 阶段前进：讲解→例题→练习，见 docs/09 R1）。**R27 双提交分离**：`feynman_submit` = 完整稿（首讲/整合重讲）→ 整体评分；`feynman_answer` = 补答（只答当前追问，payload `answer`）→ 轻量缺口补答评估。**R35 S3 挑战题池**：`challenge_*` 五个动作（见 §2.2），**永不出现在默认流程**、不设额度/不计轮次/不影响任何进度。返回：下一步 UI 状态 + 新内容 + 状态机事件流 |
+| POST | `/session/start` | body `{node_id}` → 创建/恢复会话，返回状态机当前步与首批内容（讲解稿演绎结果可选异步）。**R18 总序门禁**：无既有会话而新建时校验蓝图总序（docs/09 R18）；越级 → `409 invalid_state`，detail 含"请先完成：<前置条目标题>"。既有会话恢复 / 练习·费曼续走 / 复习不受门禁影响。**R54 A/C**：内容不足（还没生成 / 讲解为空 / 事实依据全丢 / 没题）→ **不建会话**、返回 `step="content_missing"`（`payload.content_missing{kind,missing,reason_zh,node_id,node_title,subject_id,unit_id,can_generate,content_status}`）；前端据此就地提示 + 一键生成，**不进空会话**（以前这种情况是 404「节点不存在」） |
+| POST | `/session/step` | body `{session_id, action, payload}`；action ∈ `ask_question / next / submit_exercise / request_hint / regen_explain / reissue_after_regen / feynman_submit / feynman_answer / challenge_start / challenge_begin / challenge_submit / challenge_cancel / challenge_abandon / finish / quit`（`next` = 阶段前进：讲解→例题→练习，见 docs/09 R1）。**R27 双提交分离**：`feynman_submit` = 完整稿（首讲/整合重讲）→ 整体评分；`feynman_answer` = 补答（只答当前追问，payload `answer`）→ 轻量缺口补答评估。**R35 S3 挑战题池**：`challenge_*` 五个动作（见 §2.2），**永不出现在默认流程**、不设额度/不计轮次/不影响任何进度。**R54 A**：内容不足时任何 action（除 `quit`）都只回 `step="content_missing"`（不调模型/不判题/不评分）；未看过讲解就提交费曼 → **退回讲解**并给中文说明 `payload.rewound_zh`。返回：下一步 UI 状态 + 新内容 + 状态机事件流 |
 | GET | `/session/{id}` | 恢复会话全状态（**不含**挑战题：挑战题只随 `challenge_*` 动作下发） |
 
 ### 练习与判题（幂等，供前端直接调用或经由 step）
@@ -89,7 +89,7 @@
 ### 一切显性 / 提示词 / 审计（**R39**）
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/ledger` | **总账（「一切显性」铁则的"一处看全部"）**：query `subject_id?/category?/limit?/offset?`；类别 ∈ `material\|generation\|model_call\|coverage\|other`（中文标签随响应给出）；时间倒序 + `counts`（类别计数）；类别非法 → `note` 中文提示（不 500） |
+| GET | `/ledger` | **总账（「一切显性」铁则的"一处看全部"）**：query `subject_id?/category?/limit?/offset?`；类别 ∈ `material\|generation\|model_call\|coverage\|other`（中文标签随响应给出）；时间倒序 + `counts`（类别计数）；类别非法 → `note` 中文提示（不 500）。**R54 B（只增字段）**：每条再带 `action`（可补救的记录 → `{kind:"regenerate_unit",label_zh,subject_id,unit_id}`，界面渲染成"重新生成这个单元"按钮；不可补救为 `null`）与 `resolved`（该单元后来已重新生成 → 这条旧丢弃记录已作废） |
 | GET | `/ledger/cats` | 类别计数（筛选项徽标） |
 | GET | `/ledger/snapshot/{subject_id}` | 某学科账目快照（就地提示的"看全部"入口） |
 | POST | `/ledger` | 手动补记一条（前端动作也可入账；类别非法 → 中文 422） |
@@ -159,7 +159,14 @@
 - 事件：`feynman_followup`（定向追问，带 `target_gap`）、`feynman_reteach`（R35 S4：无可引用内容 →
   退回讲解补讲，带 `reason`）、`feynman_gap_filled` / `feynman_gap_open`、`feynman_evidence_flagged`、
   `feynman_relearn`（额度尽/3 次未过回炉）、`feynman_edge_recheck`（`{first, second, taken}`；
-  复评失败时 `second=null`）。
+  复评失败时 `second=null`）、**`content_missing`（R54：内容不足以学，见下）**、
+  **`need_explain`（R54：没看过讲解就想开讲 → 已退回讲解）**。
+- **`step="content_missing"`（R54 A/C）**：`payload.content_missing{kind,missing,reason_zh,node_id,
+  node_title,subject_id,unit_id,can_generate,content_status}` —— 响应里**没有** `lecture_md`/
+  `exercise`/`task_prompt`/`rubric`（不给学习步骤、不给作答入口）；`can_generate=true` 时前端
+  调既有出稿端点 `POST /subjects/{subject_id}/units/{unit_id}/content` 生成后重取会话即可。
+- **`payload.rewound_zh`（R54 A）**：被前置守卫退回时的一句中文说明（只带一次），
+  例如"你还没有看过这一节的讲解——先看完讲解，再讲一遍就能继续。"
 
 ### 2.0.1 追问纪律 `reteach`（R35 S4，docs/09 R35 §3 S4）
 
