@@ -72,8 +72,15 @@ type MaterialItem = {
   role?: string;
   role_explicit?: boolean;
   role_zh?: string;
-  // R37 S7：文本层健康度（扫描/图片版 → 中文告知，不静默出稿）
-  text_health?: { pages: number; chars: number; healthy: boolean; checked: boolean; note: string };
+  // R55 A：教材体检（认不出比例 / 拆字比例 / 公式符号 / 图片数 → 好·一般·差 + 人话）
+  text_health?: {
+    pages: number; chars: number; healthy: boolean; checked: boolean; note: string;
+    grade?: string; summary_zh?: string; fixed?: boolean; raw_file?: string;
+    extract?: {
+      unrecognized_ratio: number; broken_space_ratio: number; formula_symbols: number;
+      images: number; image_pages: number;
+    };
+  };
 };
 
 // R37 S6：覆盖账本（教材章节 ↔ 单元映射 ↔ 单元覆盖状态）
@@ -104,6 +111,8 @@ type CoverageUnit = {
   content_reason_zh?: string;
   exercise_count?: number;
   taught_fact_count?: number;
+  /** R55 B：这一节内容基本都在图里（系统读不到图）→ 没出内容（原因不同、下一步不同） */
+  figure_unavailable?: boolean;
   /** R42 B4：章内该节级依据（R40 §2-3 提升项） */
   basis_section?: string;
   basis_quote?: string;
@@ -127,6 +136,13 @@ type CoverageByMaterial = {
   /** R42 A3：本材料因「总注入上限」未注入的章/节 */
   cap_skipped?: string[];
   cap_skipped_count?: number;
+  /** R55 A：这份材料读起来好不好（好/一般/差 + 一句人话） */
+  health_grade?: string;
+  health_summary_zh?: string;
+  image_count?: number;
+  /** R55 B：哪几章/节在引用图（系统读不到图；不会被当作依据） */
+  figure_unavailable?: string[];
+  figure_unavailable_count?: number;
 };
 
 type NotInjected = {
@@ -252,6 +268,26 @@ export default function OutlinePage() {
     }
   };
 
+  // R55 C4：对已有材料重新做一次"抽取修正"（幂等；不动原始文件与已生成内容）
+  const reparseMaterial = async (mid: string) => {
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const r = await api.post<{ title: string; changed: boolean; text_health?: { summary_zh?: string } }>(
+        `/subjects/${id}/materials/${mid}/reparse`, {}
+      );
+      setMsg(r.changed
+        ? `「${r.title}」已重新整理：${r.text_health?.summary_zh || ""}`
+        : `「${r.title}」再整理一次也没有变化（已经是最干净的了）。`);
+      await loadMaterials();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const uploadPdf = async () => {
     const inp = pdfFileRef.current;
     const f = inp?.files?.[0];
@@ -266,13 +302,14 @@ export default function OutlinePage() {
       const fd = new FormData();
       if (matTitle.trim()) fd.append("title", matTitle.trim());
       fd.append("file", f);
-      const r = await api.upload<{ id: string; title: string; pages: number; filename: string; text_health?: { healthy: boolean; checked: boolean; note: string } }>(
+      const r = await api.upload<{ id: string; title: string; pages: number; filename: string; text_health?: { healthy: boolean; checked: boolean; note: string; grade?: string; summary_zh?: string } }>(
         `/subjects/${id}/materials/upload-pdf`, fd
       );
       if (r.text_health && r.text_health.checked && !r.text_health.healthy) {
         setErr(`PDF 已入库「${r.title}」，但**没有可用文本层**：${r.text_health.note}`);
       } else {
-        setMsg(`PDF 已解析入库「${r.title}」（${r.pages} 页；将作为教材真源参与大纲与出题）`);
+        // R55 A：导入那一刻就把"这份材料好不好用"说清楚（人话，不堆数字）
+        setMsg(`PDF 已入库「${r.title}」（${r.pages} 页）。体检结论：${r.text_health?.summary_zh || "可以直接用。"}`);
       }
       if (inp) inp.value = "";
       await loadMaterials();
@@ -703,11 +740,28 @@ export default function OutlinePage() {
                   )}
                   {m.filename && <div className="dim" style={{ fontSize: 12 }}>文件：{m.filename}</div>}
                   {m.url && <div className="dim" style={{ fontSize: 12, wordBreak: "break-all" }}>{m.url}</div>}
+                  {/* R55 A：教材体检结论（人话；好/一般/差 + "所以会怎样"） */}
+                  {m.text_health?.checked && m.text_health.healthy && m.text_health.summary_zh && (
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      <span className={`badge ${m.text_health.grade === "好" ? "pass" : "deferred"}`}>
+                        体检：{m.text_health.grade || "—"}
+                      </span>{" "}
+                      {m.text_health.summary_zh}
+                      {m.text_health.fixed && <>{" "}（已做抽取修正，原始文本留档：{m.text_health.raw_file || "有"}）</>}
+                    </div>
+                  )}
                   {m.text_health?.checked && !m.text_health.healthy && (
                     <div className="dim" style={{ fontSize: 12, color: "#b3261e" }}>{m.text_health.note}</div>
                   )}
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", whiteSpace: "nowrap" }}>
+                  {/* R55 C4：重新做一次抽取修正（幂等；不动原始文件与已生成内容） */}
+                  {m.kind === "pdf" && (
+                    <button className="ghost" disabled={busy} onClick={() => void reparseMaterial(m.id)}
+                            title="重新整理这份 PDF 的文字（修掉认不出的字和被空格拆开的字）；可反复点，结果一致">
+                      重新整理文字
+                    </button>
+                  )}
                   {/* R38 B2：材料角色（主教材定顺序与范围；未标注 → 按导入顺序并在覆盖账注明） */}
                   <select
                     value={m.role_explicit ? (m.role ?? "main") : ""}
@@ -909,6 +963,8 @@ export default function OutlinePage() {
                       <th>已有内容 / 总节数</th>
                       <th>字数</th>
                       <th>页数</th>
+                      <th>体检</th>
+                      <th>图示不可用</th>
                       <th>到上限没读</th>
                     </tr>
                   </thead>
@@ -927,6 +983,24 @@ export default function OutlinePage() {
                         </td>
                         <td style={{ padding: "3px", textAlign: "center" }}>{b.chars.toLocaleString("zh-CN")}</td>
                         <td style={{ padding: "3px", textAlign: "center" }}>{b.pages}</td>
+                        {/* R55 A：这份材料读起来好不好（人话在悬停里） */}
+                        <td style={{ padding: "3px", textAlign: "center" }}>
+                          {b.health_grade
+                            ? <span className={`badge ${b.health_grade === "好" ? "pass" : b.health_grade === "差" ? "error" : "deferred"}`}
+                                    title={b.health_summary_zh}>
+                                {b.health_grade}
+                                {!!b.image_count && ` · ${b.image_count} 图`}
+                              </span>
+                            : "—"}
+                        </td>
+                        {/* R55 B：哪些章/节在引用图（系统读不到图，不会被当作依据） */}
+                        <td style={{ padding: "3px", textAlign: "center" }}>
+                          {b.figure_unavailable_count
+                            ? <span className="badge deferred" title={(b.figure_unavailable ?? []).join("、")}>
+                                {b.figure_unavailable_count} 处
+                              </span>
+                            : "—"}
+                        </td>
                         <td style={{ padding: "3px", textAlign: "center" }}>
                           {b.cap_skipped_count
                             ? <span className="badge deferred" title={(b.cap_skipped ?? []).join("、")}>
@@ -1115,6 +1189,15 @@ export default function OutlinePage() {
                             {(() => {
                               const c = contentOf(u.id);
                               if (!c) return null;
+                              // R55 B：整节内容都在图里 → 明确说"读不到图"，不让人以为只是"还没生成"
+                              if (c.figure_unavailable && c.usable === false) {
+                                return (
+                                  <span className="badge deferred"
+                                        title={c.content_reason_zh || "这一节的内容基本都在图里，程序读不到图片内容"}>
+                                    图示不可用 · 没出内容
+                                  </span>
+                                );
+                              }
                               return c.usable === false ? (
                                 <span className="badge deferred" title={c.content_reason_zh}>还没内容</span>
                               ) : (

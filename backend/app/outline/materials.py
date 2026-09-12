@@ -66,13 +66,16 @@ MIN_PAGES_FOR_HEALTH = 5      # 页数过少（粘贴文本/短材料）不做�
 EMPTY_PAGE_CHARS = 20         # 单页字符数低于此值视为"空白页"
 
 
-def text_health(body: str, *, min_chars_per_page: int | None = None,
+def text_health(body: str, *, quality: dict | None = None, min_chars_per_page: int | None = None,
                 min_page_ratio: float | None = None) -> dict:
-    """材料文本层健康度（每页字符数 / 空白页占比）→ 中文结论。
+    """材料体检（R37 S7 文本层健康度 + **R55 A 抽取体检**）→ 三档 + **人话**"所以会怎样"。
 
     - 页数 < ``MIN_PAGES_FOR_HEALTH``（粘贴短文本）→ 不做扫描版判定，如实标注"未判定"；
     - 页数 ≥ 3 且（每页平均字符数 < 下限 或 有文字页占比 < 下限）→ ``healthy=False``，
-      note 直接给用户可执行的下一步（OCR / 换文本版），**不含糊**。
+      note 直接给用户可执行的下一步（OCR / 换文本版），**不含糊**；
+    - **R55 A**：另外给 ``extract``（认不出比例 / 拆字比例 / 公式符号 / 图片数）与
+      ``grade``（好/一般/差）+ ``summary_zh``——**数字后面必须跟一句"所以会怎样"**，
+      且界面上不出现内部编号/字段名（docs/13 §2）。
     """
     s = get_settings()
     cap = THIN_CHARS_PER_PAGE if min_chars_per_page is None else min_chars_per_page
@@ -90,19 +93,111 @@ def text_health(body: str, *, min_chars_per_page: int | None = None,
         nonempty = 1 if chars >= EMPTY_PAGE_CHARS else 0
     text_ratio = (nonempty / pages) if pages else 0.0
     if pages < MIN_PAGES_FOR_HEALTH:
-        return {"pages": pages, "chars": chars, "chars_per_page": round(per_page, 1),
+        base = {"pages": pages, "chars": chars, "chars_per_page": round(per_page, 1),
                 "text_page_ratio": round(text_ratio, 2), "healthy": True, "checked": False,
                 "note": "页数过少，未做扫描版判定（粘贴文本按可用处理）"}
-    healthy = per_page >= cap and text_ratio >= ratio
-    note = "" if healthy else (
-        f"本书疑似扫描/图片版：{pages} 页仅提取到 {chars} 个字符"
-        f"（每页约 {per_page:.0f} 字，下限 {cap}；有文字页 {nonempty}/{pages}）。"
-        "请先 OCR 或改用文本版 PDF/粘贴文本后重新上传——"
-        "系统不会在「没读到书」的情况下生成大纲（R37 S7）。"
-    )
-    return {"pages": pages, "chars": chars, "chars_per_page": round(per_page, 1),
-            "text_page_ratio": round(text_ratio, 2), "healthy": healthy, "checked": True,
-            "note": note}
+    else:
+        healthy = per_page >= cap and text_ratio >= ratio
+        note = "" if healthy else (
+            f"本书疑似扫描/图片版：{pages} 页仅提取到 {chars} 个字符"
+            f"（每页约 {per_page:.0f} 字，下限 {cap}；有文字页 {nonempty}/{pages}）。"
+            "请先 OCR 或改用文本版 PDF/粘贴文本后重新上传——"
+            "系统不会在「没读到书」的情况下生成大纲（R37 S7）。"
+        )
+        base = {"pages": pages, "chars": chars, "chars_per_page": round(per_page, 1),
+                "text_page_ratio": round(text_ratio, 2), "healthy": healthy, "checked": True,
+                "note": note}
+    # **R55 A**：抽取体检（粘贴文本没有 PDF 元信息 → 就地在正文上算；图片数未知记 0）
+    from .pdfparse import extract_quality
+
+    extract = dict(quality) if quality else extract_quality(text, pages=pages, images=0, image_pages=0)
+    base["extract"] = extract
+    base["grade"] = extract["grade"]
+    base["fixed"] = bool((quality or {}).get("fixed"))
+    base["summary_zh"] = _health_summary_zh(base, extract)
+    return base
+
+
+def _health_summary_zh(health: dict, extract: dict) -> str:
+    """体检摘要（**人话**）：先说结论，再说"所以会怎样"。"""
+    if not health.get("healthy"):
+        return ("这份材料几乎没读到文字（像是扫描件/图片版）。"
+                "请先做文字识别（OCR），或改用文字版 PDF / 直接粘贴文本后重新上传。")
+    parts = [str(extract.get("grade_reason_zh") or "")]
+    imgs = int(extract.get("images") or 0)
+    if imgs:
+        parts.append(f"另外这份材料里有 {imgs} 张图（分布在 {int(extract.get('image_pages') or 0)} 页），"
+                     "图里的内容我读不到——正文提到图的地方会明确标出来，不会瞎猜。")
+    if health.get("fixed"):
+        parts.append("导入时已顺手修正抽取问题（认不出的字形、被空格拆开的字），原始文本也留了一份备查。")
+    return "".join(p for p in parts if p)
+
+
+# ---------- R55 B：指向图表/图片的指代 → "图示不可用"要显式认输 ----------
+# 判据（**两条并列**，任一命中即算指代）：
+#   ① **指示词**：如图 / 见图 / 参见图 / 上图 / 下图 / 图中 / 附图 / 如表 / 见下表 / 下表 / 附表…
+#   ② **编号**：图 3.2 / 表 2-1 / Fig. 4 / Table 5（有编号就是明确指向某张图/表）
+# 误判防护（见 NOTES §77）：
+#   - 只认"图/表 + 指示词或编号"，**不认孤立的"图"字**（`地图`/`图书`/《图解…》都不会命中）；
+#   - 参考文献行（`[12] …`）、含网址/DOI/ISBN 的行**整行跳过**（那里的"图"是书名/刊名的一部分）。
+_FIG_DEICTIC = re.compile(
+    r"(?:如|见|参见|根据|结合)\s*(?:上|下|本|附)?\s*(?:图|表)|"
+    r"(?:上|下|本|附)\s*(?:图|表)\s*(?:中|所示|显示|给出|列出)|"
+    r"图中|如下图|如下表|见下表|见附图"
+)
+_FIG_NUMBERED = re.compile(
+    r"(?:图|表)\s*\d{1,2}(?:\s*[.\-]\s*\d{1,2})*(?!\d)|"
+    r"(?:Fig(?:ure)?|Tab(?:le)?)\.?\s*\d{1,2}(?!\d)"
+)
+_REF_LINE = re.compile(r"^\s*[\[\(]\s*\d{1,3}\s*[\]\)]|https?://|doi:|DOI:|ISBN")
+
+
+def figure_refs(text: str) -> list[str]:
+    """一段文字里"指向图表/图片"的指代片段（去重、保序、最多 8 条）。
+
+    同一个位置的重叠命中（`如图 1.1` → 指示词"如图" + 编号"图 1.1"）**只留最长的那个**
+    （给用户看的是"图 1.1"，不是"如图、图 1.1"）。
+    """
+    found: list[str] = []
+    for line in str(text or "").splitlines():
+        if _REF_LINE.search(line):      # 参考文献/网址行：不算（书名里的"图"不误判）
+            continue
+        spans = [(m.start(), m.end(), m.group(0)) for m in _FIG_DEICTIC.finditer(line)]
+        spans += [(m.start(), m.end(), m.group(0)) for m in _FIG_NUMBERED.finditer(line)]
+        spans.sort()
+        picked: list[tuple[int, int, str]] = []
+        for st, en, txt in spans:
+            if picked and st < picked[-1][1]:            # 与本簇已选片段重叠
+                if (en - st) > (picked[-1][1] - picked[-1][0]):
+                    picked[-1] = (st, en, txt)           # 留更长的（编号比指示词更清楚）
+                continue
+            picked.append((st, en, txt))
+        found.extend(t.strip() for _, _, t in picked)
+    out: list[str] = []
+    for f in found:
+        if f and f not in out:
+            out.append(f)
+    return out[:8]
+
+
+def annotated_entry_text(entry_text: str) -> tuple[str, list[str], int]:
+    """把条目正文按段落过一遍：**引用了图/表的段落**加显式标注 → ``(新文本, 指代列表, 标注段数)``。
+
+    只加标注、**不删正文**（不静默改内容）：模型看到标注就知道"这里的信息我读不到，不许猜"。
+    """
+    paras = re.split(r"(\n\s*\n)", str(entry_text or ""))
+    refs: list[str] = []
+    marked = 0
+    out: list[str] = []
+    for seg in paras:
+        if seg.strip() and not seg.isspace():
+            hits = figure_refs(seg)
+            if hits:
+                refs.extend(h for h in hits if h not in refs)
+                marked += 1
+                seg = FIGURE_ANNOTATION.format(refs="、".join(hits[:3])) + "\n" + seg
+        out.append(seg)
+    return "".join(out), refs, marked
 
 
 def get_policy(db, subject_id: str) -> str:
@@ -126,12 +221,15 @@ def set_policy(db, subject_id: str, policy: str) -> str:
 
 
 def add_material(db, subject_id: str, *, title: str, text: str, source: str = "本地导入",
-                 url: str = "", kind: str | None = None, filename: str = "") -> dict:
+                 url: str = "", kind: str | None = None, filename: str = "",
+                 quality: dict | None = None, raw_text: str = "") -> dict:
     """本地/联网引用入库（文本必填；分节文本按段落/标题切分存正文）。
 
     kind ∈ local|web|pdf（缺省按 url 推导：有 url=web、无=local；pdf 由 C2 解析器显式传入）；
     filename 记录源文件名（PDF/文档导入的展示与追溯）。
     R37 S7：入库时计算文本层健康度并写入 frontmatter（扫描版 → 中文告知，见 ``text_health``）。
+    **R55**：``quality`` ＝ 抽取体检（PDF 路径传入，含图片数等 PDF 才有的信息）；
+    ``raw_text`` ＝ **原始抽取文本**（与修正后不同则另存 `*.raw.txt` 备查，见 NOTES §77 C3）。
     """
     title = title.strip()
     text = text.strip()
@@ -140,9 +238,21 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
     effective_kind = kind or ("web" if url else "local")
     if effective_kind not in ("local", "web", "pdf"):
         raise OutlineError(f"材料 kind 非法: {effective_kind!r}")
-    health = text_health(text)
+    fixed = bool(raw_text.strip()) and raw_text.strip() != text
+    if quality is None and fixed:
+        # **R55 A**：只给了"修正后的文本 + 原始抽取"（粘贴/外部工具路径）时，体检照**原始抽取**算
+        # ——如实告诉用户"这份 PDF 抽出来有多脏"，而不是因为我们已经修好了就报"很干净"。
+        from .pdfparse import extract_quality
+
+        quality = extract_quality(raw_text, pages=max(1, len(_PAGE_MARK.findall(raw_text))),
+                                  images=0, image_pages=0)
+    health = text_health(text, quality=quality)
+    health["fixed"] = fixed
+    health["summary_zh"] = _health_summary_zh(health, health["extract"])
     entry_id = "mat-" + hashlib.sha1(f"{subject_id}:{title}:{url}:{text[:80]}".encode("utf-8")).hexdigest()[:10]
     p = materials_dir(subject_id) / f"{_slug(title)}-{entry_id[4:]}.md"
+    raw_name = (p.with_suffix("").name + ".raw.txt") if fixed else ""
+    health["raw_file"] = raw_name      # 界面/接口据此显示"原始文本留档"（老材料为空串）
     if not p.exists():
         meta_lines = [
             "---",
@@ -160,6 +270,19 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
             f"text_pages: {health['pages']}",
             f"chars_per_page: {health['chars_per_page']}",
         ]
+        # **R55 A/C**：抽取体检 + "已做抽取修正"留痕（不静默改内容）
+        meta_lines += [
+            f"extract_grade: {health['grade']}",
+            f"unrecognized_ratio: {health['extract']['unrecognized_ratio']}",
+            f"broken_space_ratio: {health['extract']['broken_space_ratio']}",
+            f"formula_symbols: {health['extract']['formula_symbols']}",
+            f"image_count: {health['extract']['images']}",
+            f"image_pages: {health['extract']['image_pages']}",
+            f"extract_fixed: {'yes' if fixed else 'no'}",
+        ]
+        if fixed:  # C3：原始抽取文本另存一份（供事后核查"是抽取错了，还是模型编了"）
+            (p.parent / raw_name).write_text(raw_text, encoding="utf-8")
+            meta_lines.append(f"raw_file: {raw_name}")
         meta_lines += ["", "---", ""]
         p.write_text("\n".join(meta_lines) + "\n" + text + "\n", encoding="utf-8")
     return {"id": entry_id, "title": title, "source": source, "url": url,
@@ -189,13 +312,59 @@ def _parse_entry(p: Path) -> dict | None:
                 "file": p.name,
                 "filename": fm.get("filename", ""),
                 "body": body,
+                "path": str(p),
                 # R37 S7：入库时算的健康度（老材料没有该字段 → 现算一次，不让历史材料失去判定）
                 "text_healthy": (healthy_raw != "no") if healthy_raw else None,
                 # R38 B2：材料角色（main=主教材 / supplement=补充材料）；老材料无该字段
                 # → 视为"未标注"（按导入顺序，覆盖账里注明）
                 "role": role_raw if role_raw in ("main", "supplement") else "",
+                # **R55 A/C**：入库时算好的抽取体检 + "已做抽取修正"留痕（老材料无 → 读时现算）
+                "extract_meta": {
+                    "grade": fm.get("extract_grade", ""),
+                    "fixed": str(fm.get("extract_fixed", "")).strip().lower() == "yes",
+                    "raw_file": fm.get("raw_file", ""),
+                    "images": _as_int(fm.get("image_count")),
+                    "image_pages": _as_int(fm.get("image_pages")),
+                    "unrecognized_ratio": _as_float(fm.get("unrecognized_ratio")),
+                    "broken_space_ratio": _as_float(fm.get("broken_space_ratio")),
+                    "formula_symbols": _as_int(fm.get("formula_symbols")),
+                },
             }
     return None
+
+
+def _merge_extract_meta(health: dict, meta: dict) -> None:
+    """把入库时留痕的抽取体检信息合并进现值（**图片数/修正留痕只有入库时知道**）。
+
+    幂等：只补"现值算不出来"的那几项，不改文本指标本身。
+    """
+    if not meta:
+        return
+    ex = dict(health.get("extract") or {})
+    for key, src in (("images", "images"), ("image_pages", "image_pages")):
+        if meta.get(src):
+            ex[key] = int(meta[src])
+    if meta.get("grade"):
+        health["grade"] = str(meta["grade"])
+    if meta.get("fixed"):
+        health["fixed"] = True
+    health["raw_file"] = str(meta.get("raw_file") or "")
+    health["extract"] = ex
+    health["summary_zh"] = _health_summary_zh(health, ex)
+
+
+def _as_int(v) -> int:
+    try:
+        return int(float(str(v)))
+    except Exception:
+        return 0
+
+
+def _as_float(v) -> float:
+    try:
+        return float(str(v))
+    except Exception:
+        return 0.0
 
 
 def list_materials(db, subject_id: str) -> list[dict]:
@@ -207,6 +376,7 @@ def list_materials(db, subject_id: str) -> list[dict]:
             health = text_health(e.get("body", ""))
             if e.get("text_healthy") is False:
                 health["healthy"] = False
+            _merge_extract_meta(health, e.get("extract_meta") or {})
             out.append({"id": e["id"], "title": e["title"], "source": e["source"],
                         "url": e["url"], "kind": e["kind"], "file": e["file"],
                         "filename": e.get("filename", ""),
@@ -216,6 +386,69 @@ def list_materials(db, subject_id: str) -> list[dict]:
                         "role_zh": ROLE_LABELS_ZH.get(e.get("role") or ROLE_UNSET),
                         "text_health": health})
     return out
+
+
+def reparse_material(db, subject_id: str, material_id: str) -> dict:
+    """**R55 C4**：重新做一次"抽取修正"（给已有材料用；**幂等**）。
+
+    - 源文本优先取 `*.raw.txt`（**原始抽取**，R55 C3 留档）；没有就用手上的正文（老材料）；
+    - 修正后写回材料正文（**不改原始上传文件**——PDF 字节本来就没留；**不动已生成的内容文件**）；
+    - 幂等：修正过的文本再修正一次**不会有任何变化**（`changed=False`，也不重复留档）；
+    - 返回 ``{id,title,changed,text_health}``：界面据此如实说"改了什么/没改什么"。
+    """
+    from .pdfparse import _clean, _merge_broken_spaces, _fold_private_use, extract_quality
+
+    d = materials_dir(subject_id)
+    for p in d.glob("*.md"):
+        e = _parse_entry(p)
+        if not e or e["id"] != material_id:
+            continue
+        raw = p.read_text(encoding="utf-8")
+        fm, body = _split_frontmatter(raw)
+        raw_name = str(fm.get("raw_file") or "")
+        raw_src = body
+        if raw_name and (d / raw_name).exists():
+            raw_src = (d / raw_name).read_text(encoding="utf-8")
+        fixed, _ = _fold_private_use(raw_src)
+        fixed, _ = _merge_broken_spaces(fixed)
+        fixed = fixed.strip()
+        changed = fixed != body.strip()
+        if changed and not raw_name:
+            # 老材料（导入时没留档）→ 先把**原始抽取**存一份，再改正文（不静默改内容）
+            raw_name = p.with_suffix("").name + ".raw.txt"
+            (d / raw_name).write_text(body, encoding="utf-8")
+        if changed:
+            fm["raw_file"] = raw_name
+            fm["extract_fixed"] = "yes"
+        quality = extract_quality(fixed, pages=_as_int(fm.get("text_pages")) or 1,
+                                  images=_as_int(fm.get("image_count")),
+                                  image_pages=_as_int(fm.get("image_pages")))
+        fm["extract_grade"] = quality["grade"]
+        fm["unrecognized_ratio"] = quality["unrecognized_ratio"]
+        fm["broken_space_ratio"] = quality["broken_space_ratio"]
+        fm["formula_symbols"] = quality["formula_symbols"]
+        lines = ["---"] + [f"{k}: {v}" for k, v in fm.items()] + ["", "---", ""]
+        p.write_text("\n".join(lines) + fixed + "\n", encoding="utf-8")
+        health = text_health(fixed, quality=quality)
+        health["fixed"] = str(fm.get("extract_fixed") or "") == "yes"
+        health["summary_zh"] = _health_summary_zh(health, health["extract"])
+        return {"id": material_id, "title": e["title"], "changed": changed,
+                "text_health": health}
+    raise OutlineError(f"材料不存在: {material_id}")
+
+
+def _split_frontmatter(raw: str) -> tuple[dict, str]:
+    """拆 frontmatter（保持行序；值一律按字符串存）与正文。"""
+    fm: dict[str, str] = {}
+    if raw.startswith("---\n"):
+        end = raw.find("\n---", 4)
+        if end > 0:
+            for line in raw[4:end].splitlines():
+                if ":" in line:
+                    k, _, v = line.partition(":")
+                    fm[k.strip()] = v.strip()
+            return fm, raw[end + 4 :].strip()
+    return fm, raw.strip()
 
 
 def delete_material(db, subject_id: str, material_id: str) -> bool:
@@ -346,6 +579,7 @@ def _material_index(db, subject_id: str) -> list[dict]:
         health = text_health(body)
         if e.get("text_healthy") is False:
             health["healthy"] = False
+        _merge_extract_meta(health, e.get("extract_meta") or {})
         role = str(e.get("role") or "")
         out.append({
             "id": e["id"], "title": e["title"], "source": e["source"], "url": e["url"],
@@ -358,7 +592,12 @@ def _material_index(db, subject_id: str) -> list[dict]:
 
 
 def _full_blocks(index: list[dict]) -> list[dict]:
-    """R37 S1 默认口径：每份材料按章/节**完整正文**成块（不截断、不摘要）。"""
+    """R37 S1 默认口径：每份材料按章/节**完整正文**成块（不截断、不摘要）。
+
+    **R55 B**：块内"引用了图/表的段落"加显式标注（`【图示不可用：…不要据此编造】`），
+    并记下该块的 ``figure_refs`` / ``figure_marked`` / ``clean_text``（去标注、去图段的正文，
+    供"事实句/题目依据不得来自图段"的校验用）。
+    """
     blocks: list[dict] = []
     for m in index:
         if not m["text_health"]["healthy"]:
@@ -367,10 +606,55 @@ def _full_blocks(index: list[dict]) -> list[dict]:
             secs = "；".join(entry.sections[:12])
             head = (f"#### [{entry.label}]（材料《{m['title']}》"
                     f"{'，节：' + secs if secs else ''}）")
+            annotated, refs, marked = annotated_entry_text(entry.text)
             blocks.append({"material": m["title"], "material_id": m["id"],
-                           "label": entry.label, "text": f"{head}\n{entry.text}",
-                           "chars": entry.chars})
+                           "label": entry.label, "text": f"{head}\n{annotated}",
+                           "chars": entry.chars,
+                           "figure_refs": refs, "figure_marked": marked,
+                           "figure_only": bool(refs) and marked >= max(1, _paragraph_count(entry.text)),
+                           "clean_text": non_figure_text(entry.text),
+                           "figure_text": figure_text_of(entry.text)})
     return blocks
+
+
+def _paragraph_count(text: str) -> int:
+    return len([p for p in re.split(r"\n\s*\n", str(text or "")) if p.strip()])
+
+
+# **R55 B 的粒度口径**（实测见 NOTES §77）：
+#   - **可见标注**用**段落**级：只要这一段里有"如图/见下表"，就在这段前面加中文警告；
+#   - **"不许当依据"用句子**级：只有"引用了图/表的那一句"（＋紧随其后的 1 句，"该图显示…"
+#     这类描述句往往不带"图"字）里的文字，才判定为"只落在图里"。
+#   为什么不是段落级：真实教材里一"段"常常是**整页**（页内没有空行），段落级会把整页正文
+#   都判成"读不到图"——实测会误丢 17 条事实句里的 10 条、6 条题目引文里的 4 条（好内容被丢）。
+_SENT_SPLIT = re.compile(r"(?<=[。；！？!?;])|\n+")
+FIGURE_SENTENCE_WINDOW = 2      # 引用句 + 紧随其后的 (N-1) 句
+FIGURE_ANNOTATION = "【图示不可用：这里引用了图片/表格（{refs}），本系统读不到图片内容——不要据此编造】"
+
+
+def figure_sentences(text: str) -> list[str]:
+    """**引用了图/表的句子** ＋ 紧随其后的 ``FIGURE_SENTENCE_WINDOW - 1`` 句（去重、保序）。"""
+    ss = [s.strip() for s in _SENT_SPLIT.split(str(text or "")) if s.strip()]
+    out: list[str] = []
+    for i, s in enumerate(ss):
+        if not figure_refs(s):
+            continue
+        for nxt in ss[i:i + FIGURE_SENTENCE_WINDOW]:
+            if nxt not in out:
+                out.append(nxt)
+    return out
+
+
+def figure_text_of(text: str) -> str:
+    """图句拼接（＝**判"只落在图里"用的文本**）。"""
+    return "\n".join(figure_sentences(text))
+
+
+def non_figure_text(text: str) -> str:
+    """去掉图句后的正文（＝还能被当作事实句/题目依据的正文）。"""
+    drop = set(figure_sentences(text))
+    keep = [s for s in _SENT_SPLIT.split(str(text or "")) if s.strip() and s.strip() not in drop]
+    return "\n".join(keep)
 
 
 def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
@@ -423,6 +707,25 @@ def draft_materials(db, subject_id: str, *, max_chars: int | None = None,
             detail={"kind": "material_blocked", "title": b["title"]},
         )
     blocks = _full_blocks(index)
+    # **R55 B：图示不可用要显式认输**——有块引用了图/表（系统读不到图片）→ 记账（中文原因 + 影响面）
+    for m in index:
+        mine = [b for b in blocks if b.get("material_id") == m["id"] and b.get("figure_refs")]
+        if not mine:
+            continue
+        refs: list[str] = []
+        for b in mine:
+            for r in b["figure_refs"]:
+                if r not in refs:
+                    refs.append(r)
+        ledger.note(
+            ledger.CAT_MATERIAL, f"材料《{m['title']}》· 图示不可用",
+            f"这份材料里有 {len(mine)} 段在引用图/表（{'、'.join(refs[:5])}），"
+            "系统只能读文字、读不到图片——这些段落会明确标注，且**不会**被当作事实句/题目的依据",
+            impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
+            detail={"kind": "figure_unavailable", "title": m["title"],
+                    "marked_entries": [b["label"] for b in mine],
+                    "figure_refs": refs[:12]},
+        )
     # R38 A4 安全阀：单次调用预算再受"模型上下文硬上限"约束（超了自动分批，不硬发）
     valve = context_valve(db, batch_chars=per_call, blocks=blocks)
     if valve["applied"]:
@@ -795,6 +1098,8 @@ def _per_material_usage(index: list[dict], batches: list[dict],
         ent = (m["structure"] or {}).get("entries") or []
         chars_total = len(m.get("body") or "")
         skipped_labels = skipped_of.get(m["title"]) or []
+        # **R55 B**：这份材料里"引用了图/表"的章/节（界面据此告诉用户"哪些段落读不到图"）
+        fig_entries = [str(e.label) for e in ent if figure_refs(str(e.text or ""))]
         out.append({
             "material_id": m["id"], "title": m["title"],
             "role": m.get("role") or ROLE_UNSET,
@@ -809,6 +1114,12 @@ def _per_material_usage(index: list[dict], batches: list[dict],
             # R42：因**总注入上限**跳过的章/节（按材料分组，供界面就地展示）
             "cap_skipped": skipped_labels,
             "cap_skipped_count": len(skipped_labels),
+            # **R55 A/B**：抽取体检（三档 + 图片数）+ 图示不可用清单
+            "health_grade": str(m["text_health"].get("grade") or ""),
+            "health_summary_zh": str(m["text_health"].get("summary_zh") or ""),
+            "image_count": int((m["text_health"].get("extract") or {}).get("images") or 0),
+            "figure_unavailable": fig_entries,
+            "figure_unavailable_count": len(fig_entries),
         })
     return out
 
@@ -1304,9 +1615,42 @@ def unit_material_pack(db, subject_id: str, unit, *, batch_chars: int | None = N
     # **R42 B4（提升项）**：把依据从"章节级"细化到"**章内该节**"——
     # R40 裁决 §2-3 原文："单元的 basis.quote 目前多为章节级引用 → 应改为章内该节的引用"。
     basis = _section_level_basis(healthy, picked, unit)
+    # **R55 B**：把"引用了图/表的段落"标出来（注入给模型时加显式标注），并给出
+    # ① ``clean_text``（去图段后仍可当依据的正文）② ``figure_text``（只含图段）
+    # ——事实句/题目依据若只落在图段里 → 出稿端必须丢弃（不许猜）。
+    marked_parts: list[str] = []
+    clean_parts: list[str] = []
+    figure_only_parts: list[str] = []
+    figure_refs_all: list[str] = []
+    figure_marked = 0
+    for p in picked:
+        annotated, refs, marked = annotated_entry_text(str(p["text"]))
+        head = f"【教材段落：{p['label']}（材料《{p['material']}》）】"
+        if refs:
+            p["figure_refs"] = refs
+            p["figure_marked"] = marked
+            figure_marked += marked
+            for r in refs:
+                if r not in figure_refs_all:
+                    figure_refs_all.append(r)
+            marked_parts.append(f"{head}\n{annotated}")
+            clean_parts.append(non_figure_text(str(p["text"])))
+            # 只收"引用了图/表的那一句（＋紧随其后 1 句）"，**不是整章**、也不是整页
+            figure_only_parts.append(figure_text_of(str(p["text"])))
+        else:
+            marked_parts.append(f"{head}\n{p['text']}")
+            clean_parts.append(str(p["text"]))
+    total_paras = sum(_paragraph_count(str(p["text"])) for p in picked)
+    figure_only = bool(figure_refs_all) and figure_marked >= max(1, total_paras)
+    text = "\n\n".join(marked_parts)
     return {"text": text, "entries": [p["label"] for p in picked], "sources": sources,
             "binding_text": binding, "covered": bool(picked), "no_materials": False,
             "note": "" if picked else "教材中未检索到与本节相关的章/节",
+            # **R55 B**：图段信息（校验/展示用）——`figure_text` **只含图段**（段落级，不是整章）
+            "figure_refs": figure_refs_all, "figure_marked": figure_marked,
+            "figure_only": figure_only,
+            "clean_text": "\n\n".join(clean_parts),
+            "figure_text": "\n\n".join(t for t in figure_only_parts if t.strip()) or "",
             # 章内该节的依据（有则给：basis_section/basis_quote；无 → 空，出稿端不编造）
             "basis_section": basis.get("section", ""), "basis_quote": basis.get("quote", ""),
             "basis_note": basis.get("note", "")}
@@ -1605,6 +1949,8 @@ def coverage_ledger(db, subject_id: str) -> dict:
     for m in index:
         mine = [e for e in entries if e["material_id"] == m["id"]]
         miss = [e for e in mine if not e["covered"]]
+        fig_labels = [str(e.label) for e in (m["structure"] or {}).get("entries") or []
+                      if figure_refs(str(e.text or ""))]
         by_material.append({
             "material_id": m["id"], "title": m["title"],
             "role": m.get("role") or ROLE_UNSET, "role_explicit": bool(m.get("role_explicit")),
@@ -1618,6 +1964,13 @@ def coverage_ledger(db, subject_id: str) -> dict:
             # R42 A3：本材料因「总注入上限」未注入的章节（覆盖账里看得出"它去哪了"）
             "cap_skipped": [x["label"] for x in cap_skips if x["material_id"] == m["id"]],
             "cap_skipped_count": len([x for x in cap_skips if x["material_id"] == m["id"]]),
+            # **R55 A/B**：体检三档（好/一般/差 + 人话）＋ 图片数 ＋「图示不可用」的章/节
+            # ——覆盖账是**第二处可见渠道**（第一处是材料列表），两处同源同口径。
+            "health_grade": str(m["text_health"].get("grade") or ""),
+            "health_summary_zh": str(m["text_health"].get("summary_zh") or ""),
+            "image_count": int((m["text_health"].get("extract") or {}).get("images") or 0),
+            "figure_unavailable": fig_labels,
+            "figure_unavailable_count": len(fig_labels),
         })
         if miss:
             uncovered_by_material.append({
@@ -1652,6 +2005,9 @@ def coverage_ledger(db, subject_id: str) -> dict:
             "content_reason_zh": str(content.get("reason_zh") or ""),
             "exercise_count": int(content.get("exercises") or 0),
             "taught_fact_count": int(content.get("taught_facts") or 0),
+            # **R55 B**：这一节的内容基本都在图里（系统读不到图）→ 没出内容；
+            # 与"还没生成"区分开（原因不同、下一步不同），界面上单独标出来。
+            "figure_unavailable": bool(cov.get("figure_unavailable")),
             # R42 B4：**章内该节级**依据（R40 裁决 §2-3 的提升项）——大纲页/覆盖账可显示
             "basis_section": str(cov.get("basis_section") or ""),
             "basis_quote": str(cov.get("basis_quote") or ""),

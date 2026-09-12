@@ -511,6 +511,9 @@ class MaterialUploadBody(BaseModel):
     text: str = Field(min_length=1)
     source: str = "本地导入"
     url: str = ""
+    # **R55 C3**：可选——若你手上的 `text` 已经过外部工具修正，把**解析器原始输出**一并给我，
+    # 就另存一份备查（材料上注明"已做抽取修正"）。不填＝没有留档，一切照旧。
+    raw_text: str = ""
 
 
 @router.post("/subjects/{subject_id}/materials/upload", status_code=201)
@@ -522,7 +525,7 @@ def material_upload(subject_id: str, body: MaterialUploadBody,
 
     try:
         entry = mat.add_material(db, subject_id, title=body.title, text=body.text,
-                                 source=body.source, url=body.url)
+                                 source=body.source, url=body.url, raw_text=body.raw_text)
     except OutlineError as e:
         raise _outline_err(e) from e
     return entry
@@ -586,10 +589,30 @@ def material_upload_pdf(
             db, subject_id, title=title, text=parsed["body"],
             source=f"PDF 导入（{filename or '用户上传'}）", url="",
             kind="pdf", filename=filename or fname_stem,
+            # **R55 A/C**：把抽取体检（含图片数）与**原始抽取文本**一起入库
+            # → 体检结论如实呈现；原始文本留档备查（注入用修正后的文本）
+            quality=parsed.get("quality"), raw_text=str(parsed.get("raw_body") or ""),
         )
     except OutlineError as e:
         raise _outline_err(e) from e
     return PdfUploadOut(**entry, pages=parsed["pages"], chars=parsed["chars"])
+
+
+@router.post("/subjects/{subject_id}/materials/{material_id}/reparse")
+def material_reparse(subject_id: str, material_id: str, db: Session = Depends(get_db)) -> dict:
+    """**R55 C4**：重新做一次"抽取修正"（给已有材料用；**幂等**，可反复点）。
+
+    - 只改材料正文（写回修正后的文本），**不动原始上传文件**、**不动已生成的内容文件**；
+    - 原始抽取文本留档（`*.raw.txt`），界面注明"已做抽取修正"（不静默改内容）；
+    - 第二次点：`changed=false`（没有任何变化）。
+    """
+    _require_enabled(db, subject_id)
+    from ..outline import materials as mat
+
+    try:
+        return mat.reparse_material(db, subject_id, material_id)
+    except OutlineError as e:
+        raise _outline_err(e) from e
 
 class SearchBody(BaseModel):
     query: str = Field(min_length=1)
