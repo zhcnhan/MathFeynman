@@ -696,9 +696,10 @@ export default function OutlinePage() {
       setJob(r);
       setMsg(`已开始接着读《${title}》还没读的 ${nums.length} 页（进度会一直更新；读到的会另存一份新材料）。`);
     } catch (e) {
-      // 没有 PDF 缓存（例如页面图片导入的材料）→ 回到按页重读（页少时够用）
+      // R69 任务 ③：图片导入的材料现在也走同一条后台任务（进度/取消/页号都保留），
+      // 所以这里**不再**悄悄回落到"只同步重读前 12 页"——那是静默降级：
+      // 用户既看不到进度，也不知道只读了一部分。失败就把后端的中文原因原样说出来。
       setErr(String(e));
-      await rereadMaterialPages(mid, title, nums.slice(0, 12).join(","));
     } finally {
       setBusy(false);
     }

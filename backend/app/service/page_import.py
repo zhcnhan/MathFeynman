@@ -36,11 +36,15 @@ def _now() -> str:
 def start(subject_id: str, *, title: str, files: list[tuple[str, bytes]], provider,
           want: str = "", pdf_pages: str = "", max_pages=None, strategy: str = "",
           concurrency: int = 1, batch_pages: int = 1, source: str = "页面图片导入",
-          checkpoint_every_pages: int = 5, checkpoint_every_seconds: float = 30.0) -> dict:
+          checkpoint_every_pages: int = 5, checkpoint_every_seconds: float = 30.0,
+          page_labels: list[str] | None = None) -> dict:
     """起一次后台导入 → **立刻**回 ``{job_id, status, …}``（校验与模型调用都在后台/之前）。
 
     ``provider`` 由调用方（API 层）**在请求线程里**建好——这样测试替换的"假模型"一定生效，
     不会出现"后台线程拿到真模型去打真接口"这种危险情况。
+
+    **R69 任务 ③**：``page_labels``（可选）＝每一张图对应的**真实页号标签**，
+    专给"页面图片材料接着读"用（见 `outline.mode_pages.resume_source`）。
     """
     running = active_for(subject_id)
     if running:
@@ -66,7 +70,8 @@ def start(subject_id: str, *, title: str, files: list[tuple[str, bytes]], provid
     job["_stop"] = stop
     args = {"title": title, "files": files, "want": want, "pdf_pages": pdf_pages,
             "max_pages": max_pages, "strategy": strategy, "concurrency": concurrency,
-            "batch_pages": batch_pages, "source": source}
+            "batch_pages": batch_pages, "source": source,
+            "page_labels": list(page_labels) if page_labels else None}
     threading.Thread(target=_worker, args=(job_id, subject_id, args, provider, stop),
                      daemon=True).start()
     return view(job_id)
@@ -106,6 +111,7 @@ def _worker(job_id: str, subject_id: str, args: dict, provider, stop: threading.
                 max_pages=args.get("max_pages"), strategy=str(args.get("strategy") or ""),
                 concurrency=int(args.get("concurrency") or 1),
                 batch_pages=int(args.get("batch_pages") or 1),
+                page_labels=args.get("page_labels"),
                 checkpoint={"every_pages": int(job.get("checkpoint_every_pages") or 5),
                             "every_seconds": float(job.get("checkpoint_every_seconds") or 30.0),
                             "state": "importing"})

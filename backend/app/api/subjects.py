@@ -85,7 +85,7 @@ def _require_enabled(db: Session, subject_id: str):
         raise _err(404, "not_found", f"学科不存在: {subject_id}")
     if not row.enabled:
         raise _err(409, "conflict",
-                   f"学科「{row.label or subject_id}」已停用；请在学科页「管理已移除」中重新启用后再操作")
+                   f"学科「{row.label or subject_id}」已停用；请在学科页「已移除」中重新启用后再操作")
 
 
 @router.get("/subjects")
@@ -119,7 +119,7 @@ def get_one(subject_id: str, db: Session = Depends(get_db)) -> dict:
     row = outline_store.get_subject(db, subject_id)
     if row is None or not row.enabled:
         raise _err(404, "not_found",
-                   f"学科不存在或已停用: {subject_id}（重新启用请见列表「管理已移除」）")
+                   f"学科不存在或已停用: {subject_id}（重新启用请见列表「已移除」）")
     return _subject_summary(db, row)
 
 
@@ -735,11 +735,15 @@ def material_read_pages_job(
 
     为什么要有它：快读/取消之后材料上会留着"还剩哪些页没读"，那些页可能很多（几十页），
     走既有那条同步重读接口又会变成"一个请求挂十几分钟、没有任何进度"——那正是本批要修的病。
-    这里复用**同一套**后台任务与同一份 PDF 缓存（页面图片导入的材料没有 PDF 缓存，会中文说明）。
+    这里复用**同一套**后台任务、同一份缓存。
+
+    **R69 任务 ③**：页面图片导入的材料**也能**接着读了——原料从缓存里的原始页面图取，
+    页号跟着原图走（不重新编号），照样有进度、可取消、已读的留下。缓存不在 → 中文说明出路。
     """
     _require_enabled(db, subject_id)
     from ..outline import materials as mat
-    from ..outline import mode_pages, pdfrender
+    from ..outline import mode_pages
+    from ..outline.schemas import OutlineError
     from ..service import model_config, page_import
 
     hit = next((e for e in mat.list_materials(db, subject_id) if e["id"] == material_id), None)
@@ -748,11 +752,6 @@ def material_read_pages_job(
     ok, why = model_config.supports_vision(db)
     if not ok:
         raise _err(422, "validation_error", "这条路需要能读图片的模型：" + why)
-    data = pdfrender.load_pdf_cache(subject_id, material_id)
-    if not data:
-        raise _err(422, "validation_error",
-                   "这份材料的原始 PDF 不在缓存里了（这份材料是页面图片导入的，或缓存已过期）——"
-                   "可以在材料那一行用「重读这几页」按页补读")
     try:
         limit = mode_pages.parse_page_limit(max_pages)
         strat = mode_pages.parse_strategy(strategy, has_range=True)
@@ -760,18 +759,33 @@ def material_read_pages_job(
         batch = mode_pages.parse_batch_pages(batch_pages)
     except mode_pages.PagePlanError as e:
         raise _err(422, "validation_error", str(e)) from e
+    # **R69 任务 ③**：PDF 材料走 PDF 缓存、图片材料走原始页面图缓存 —— 由 `resume_source` 一处判定
+    # （缓存不在时它给中文说明 + 出路，不再回落到"同步按页重读"那种没进度的老路）
+    try:
+        src = mode_pages.resume_source(subject_id, material_id, pages=(pages or "").strip())
+    except OutlineError as e:
+        raise _outline_err(e) from e
+    except ValueError as e:              # 页范围写法不对（PdfRenderError 继承 ValueError）→ 中文 422
+        raise _err(422, "validation_error", str(e)) from e
+    if src["kind"] == "images":
+        # 要读哪几页已经定死了（就是这份材料还没读的那几页）→ 不许再被"快读"抽样掉
+        strat = mode_pages.STRATEGY_RANGE
     provider = mode_pages.build_provider(db)
     try:
         job = page_import.start(
             subject_id, title=str(hit.get("title") or "页面图片教材"),
-            files=[(str(hit.get("filename") or "book.pdf"), data)], provider=provider,
-            pdf_pages=(pages or "").strip(), max_pages=limit, strategy=strat,
+            files=src["files"], provider=provider,
+            pdf_pages=((pages or "").strip() if src["kind"] == "pdf" else ""),
+            page_labels=src["labels"], max_pages=limit, strategy=strat,
             concurrency=conc, batch_pages=batch,
             source="接着读：把这份材料里没读到的页读完")
     except RuntimeError as e:
         raise _err(409, "conflict", str(e)) from e
     job["read_options"] = mode_pages.read_options()
-    job["note_zh"] = "已开始接着读：这一批读完的页会另存成一份新材料（原来那份一字不动）"
+    job["source_kind"] = src["kind"]
+    job["note_zh"] = ("已开始接着读：这一批读完的页会另存成一份新材料（原来那份一字不动）"
+                      + ("" if src["kind"] == "pdf" else
+                         "；用的是缓存的原始页面图，页号照原样保留"))
     return job
 
 

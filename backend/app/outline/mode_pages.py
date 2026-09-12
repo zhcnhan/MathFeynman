@@ -248,7 +248,8 @@ def import_pages(db, subject_id: str, *, title: str, files: list[tuple[str, byte
                  provider=None, source: str = "页面图片导入", want: str = "",
                  pdf_pages: str = "", max_pages=None, strategy: str = "",
                  concurrency: int = 1, batch_pages: int = DEFAULT_BATCH_PAGES,
-                 on_event=None, should_stop=None, checkpoint: dict | None = None) -> dict:
+                 on_event=None, should_stop=None, checkpoint: dict | None = None,
+                 page_labels: list[str] | None = None) -> dict:
     """图片（或 PDF）→ 读取记录 → 入库（返回 ``{id, title, page_count, pages, unreadable, note_zh, …}``）。
 
     ``files`` ＝ ``[(filename, bytes), ...]``（按页序）。任何一张读不出来都**不影响**入库，
@@ -267,6 +268,9 @@ def import_pages(db, subject_id: str, *, title: str, files: list[tuple[str, byte
     - ``should_stop``：取消判断（返回 True 就**不再往下读**，已读的页照样留下）；
     - ``checkpoint``：分段落盘口径（``{"every_pages": n, "every_seconds": s, "state": "importing"}``）
       ——给了就"每读若干页/若干秒"写一次材料；不给＝最后一次性写（既有行为）。
+
+    **R69 任务 ③**：``page_labels``（可选）＝每一张图对应的**真实页号标签**（"接着读"用；
+    不给＝与 R69 之前逐字一致，见 `_plan_page_reads`）。
     """
     from ..service import model_config
 
@@ -299,7 +303,7 @@ def import_pages(db, subject_id: str, *, title: str, files: list[tuple[str, byte
     started = time.time()
     plan = _plan_page_reads(files, pdf_pages=pdf_pages, limit=limit, strategy=strat,
                             limit_explicit=max_pages is not None and str(max_pages).strip() != "",
-                            on_event=emit, should_stop=should_stop)
+                            on_event=emit, should_stop=should_stop, page_labels=page_labels)
     planned: list[dict] = plan["planned"]
     if not planned:
         from .schemas import OutlineError
@@ -422,10 +426,14 @@ def _read_failure_reason(e: Exception) -> str:
 
 def _plan_page_reads(files: list[tuple[str, bytes]], *, pdf_pages: str, limit: int,
                      strategy: str, limit_explicit: bool = False, on_event=None,
-                     should_stop=None) -> dict:
+                     should_stop=None, page_labels: list[str] | None = None) -> dict:
     """把"用户选的文件/PDF + 读法"变成**逐页待读清单**（页号留痕、快读选页、范围校验）。
 
     ⚠️ 这里**只做选页与渲染**，不调用模型（快读选页用的是书签/目录，本地就能算）。
+
+    **R69 任务 ③**：``page_labels``（可选，只对页面图片有意义）＝**每一张图对应的真实页号标签**。
+    给它是为了"接着读"：从缓存里取回的第 5…20 页，读出来仍要记成「第 5 页」「第 20 页」，
+    **不许按 1、2、3 重新编号**（那会把原书的页号痕迹抹掉）。不给＝与 R69 之前逐字一致。
     """
     emit = _emitter(on_event)
     render_info: dict = {}
@@ -478,15 +486,24 @@ def _plan_page_reads(files: list[tuple[str, bytes]], *, pdf_pages: str, limit: i
             files = list(files[:6])
             sampled = True
             plan_note = "快读：这些是页面图片、没有目录可挑，先读你选的前 6 张（抽样读）"
+        given = [str(x) for x in (page_labels or [])]
+        if given and len(given) != len(files):
+            from .schemas import OutlineError
+
+            raise OutlineError(f"页号对不上：有 {len(files)} 张图，却给了 {len(given)} 个页号——"
+                               "没有开始读，也没有落任何材料")
         render_info = {"source": "uploaded_images", "cache": [], "sampled": bool(sampled)}
-        labels = [f"第 {i} 页" for i in range(1, len(files) + 1)]
+        labels = given or [f"第 {i} 页" for i in range(1, len(files) + 1)]
         book_labels = list(labels)
         planned = []
         for i, (name, data) in enumerate(files):
             mime = _mime_of(name)
+            # **R69 任务 ③**：给了真实页号就用它（接着读时页号跟着原图走，不重新编号）
+            num = _label_to_page_no(labels[i])
             planned.append({"name": name, "data": bytes(data), "label": labels[i],
-                            "page_no": i + 1, "mime": mime,
-                            "note": f"用户上传的第 {i + 1} 页图片（{name}）"})
+                            "page_no": int(num) if num.isdigit() else i + 1, "mime": mime,
+                            "note": (f"这份材料缓存的{labels[i]}原图（{name}）" if given else
+                                     f"用户上传的第 {i + 1} 页图片（{name}）")})
     return {"planned": planned, "render_info": render_info, "is_pdf": is_pdf,
             "pdf_bytes": pdf_bytes, "files": files, "note_zh": plan_note,
             "sampled": sampled, "source_kind": source_kind,
@@ -1002,6 +1019,88 @@ def reread_pages(db, subject_id: str, material_id: str, *, pages: str = "",
 
 
 # ---------------------------------------------------------------------------
+# **R69 任务 ③**：图片导入的"接着读"也要有缓存与进度
+#
+# 问题（工单 §3）：R67 给"接着读"做了后台任务（进度可见 / 可取消 / 已读留下），
+# 但那条路要 `load_pdf_cache` 才走得通——**页面图片导入的材料没有 PDF**，
+# 于是它只能回落"同步按页重读"：页一多，用户又看不到任何进度（老问题复发）。
+#
+# 修法：**不另造一套**。把"接着读要读哪几页、从哪儿取原图"这件事抽成一个只读函数，
+# 交给 R67 那套后台任务/进度/取消机制去跑（`service.page_import` → `import_pages`）。
+# 缓存照旧走 gitignored 的缓存目录（`.runtime/pdf_cache/images/`），`content/` 里一个大图都没有。
+# ---------------------------------------------------------------------------
+def _unread_page_numbers(doc: dict, total: int) -> list[int]:
+    """这份材料**还没读到的页号**（1 起，升序）：优先信 `progress.pending`，老材料按记录重算。"""
+    labels = [str(x) for x in ((doc.get("progress") or {}).get("pending") or [])]
+    if not labels:
+        # 老材料（R67 之前落的盘，没有 progress 块）→ 用"记录里出现过哪些页"反推还没读的
+        read = {_label_to_page_no(str(r.get("page_label") or ""))
+                for r in (doc.get("pages") or [])}
+        labels = [f"第 {i} 页" for i in range(1, total + 1) if str(i) not in read]
+    return sorted({int(x) for x in (_label_to_page_no(lb) for lb in labels) if x.isdigit()})
+
+
+def resume_source(subject_id: str, material_id: str, *, pages: str = "") -> dict:
+    """**R69 任务 ③**：把"这份材料里要接着读的页"还原成**待读原料**（只读缓存，**不调模型**）。
+
+    返回::
+
+        {"kind": "pdf"|"images", "files": [(文件名, 字节), …], "labels": [页标签] | None,
+         "title": str, "total": int, "note_zh": str}
+
+    - **PDF 材料**：回缓存里的 **PDF 本体**、``labels=None`` —— 页由页范围决定，
+      与 R67 的"接着读"**逐字一致**（走 `pdf_pages`）；
+    - **页面图片材料**：回缓存里的**原始页面图**，并给出 ``labels=["第 N 页", …]``
+      —— **页号跟着原图走，不重新编号**；
+    - 没给 ``pages`` 时：图片材料默认只取**这份材料还没读到的页**（`progress.pending`）；
+    - 缓存不在 / 页定位不到 → ``OutlineError``（中文、说清出路，**绝不静默降级**）。
+    """
+    from .schemas import OutlineError
+
+    doc = _pages_doc(subject_id, material_id) or {}
+    if not doc:
+        raise OutlineError(f"材料不存在或还没有页面记录: {material_id}")
+    render = dict(doc.get("render") or {})
+    title = str(doc.get("title") or material_id)
+    spec = str(pages or "").strip()
+
+    if str(render.get("source") or "") == "pdf_render":
+        data = pdfrender.load_pdf_cache(subject_id, str(render.get("key") or material_id))
+        if not data:
+            raise OutlineError("这份材料的 PDF 缓存已经清理掉了，没法接着读——"
+                               "请重新导入这份 PDF（缓存只保留一段时间）")
+        return {"kind": "pdf", "files": [(str(render.get("filename") or "book.pdf"), data)],
+                "labels": None, "title": title, "total": _pdf_page_count(data),
+                "note_zh": "正在从缓存里的 PDF 重新渲染要读的页…"}
+
+    names = [str(x) for x in (render.get("cache") or [])]
+    if not names:
+        raise OutlineError("这份材料的原始页面图不在缓存里了（缓存只保留一段时间）——"
+                           "请把这些图片再选一次、重新导入")
+    if spec:
+        picked = pdfrender.parse_pages(spec, len(names))       # 复用同一套页范围解析（中文报错）
+    else:
+        picked = _unread_page_numbers(doc, len(names))
+        if not picked:
+            raise OutlineError("这份材料没有还需要读的页了（每一页都读到了），不用接着读")
+    files: list[tuple[str, bytes]] = []
+    labels: list[str] = []
+    for n in picked:
+        fn = names[n - 1] if n - 1 < len(names) else ""
+        f = _image_cache_dir() / fn if fn else None
+        if not fn or not f.exists():
+            raise OutlineError(f"第 {n} 页的原始图片缓存不在了，没法接着读——"
+                               "请把这几张图重新导入一次（缓存只保留一段时间）")
+        files.append((fn, f.read_bytes()))
+        labels.append(f"第 {n} 页")
+    # `book_labels` 口径沿用 `_plan_page_reads`（这份新材料覆盖的就是这几页）；
+    # 原来那份材料的"还剩哪些页没读"照旧在它自己的 `progress` 里，一字不动。
+    return {"kind": "images", "files": files, "labels": labels, "title": title,
+            "total": len(names),
+            "note_zh": f"正在从缓存里取回要读的 {len(picked)} 页原始图片…"}
+
+
+# ---------------------------------------------------------------------------
 # **R61 任务 A**：认不出页号的旧标签（如「封面」）→ 用户**人工指定**"这一页当作第 N 页"
 # ---------------------------------------------------------------------------
 class PageMappingError(ValueError):
@@ -1238,5 +1337,5 @@ __all__ = ["MAX_PAGES", "DEFAULT_MAX_PAGES", "HARD_MAX_PAGES", "ALLOWED_MIME", "
            "PagePlanError", "STRATEGIES", "STRATEGY_LABELS_ZH", "build_provider", "import_pages",
            "load_pages", "pages_digest", "parse_batch_pages", "parse_concurrency",
            "parse_page_limit", "parse_strategy", "plan_fast_pages", "read_options",
-           "read_page_map", "reread_pages", "set_page_mapping", "skipped_page_labels",
-           "undo_page_mapping", "unit_page_state"]
+           "read_page_map", "reread_pages", "resume_source", "set_page_mapping",
+           "skipped_page_labels", "undo_page_mapping", "unit_page_state"]
