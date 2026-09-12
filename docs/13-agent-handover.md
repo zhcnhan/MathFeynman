@@ -234,8 +234,17 @@
   需网络与 LLM_API_KEY。跑法：`$env:MF_ALLOW_LIVE_AI=1; .\.venv\Scripts\python backend/tests/audit_answerability.py`。
 - **R37 教材锚定审计（工具，不是测试）**：`backend/tests/audit_material_binding.py` —— 只读盘上内容，
   **不调模型**；判定 `taught_facts` / `basis.quote` / 讲解句（整句与"句内含教材逐字片段"两种口径）
-  与教材正文的接地率。跑法：`.\.venv\Scripts\python backend/tests/audit_material_binding.py s-f2decfcf`
-  （或 `--dir <stages 目录> --material <材料文件>` 复跑归档对照样本）。**改动教材注入/出稿链路后应手动跑一轮**。
+  与教材正文的接地率。**改动教材注入/出稿链路后应手动跑一轮**。
+  - **R69 任务 ② 起，样本已入库、默认就跑它**（原来只能靠 `.runtime/r61_live/`，一 clone 就没有）：
+    ```powershell
+    .venv\Scripts\python.exe backend/tests/audit_material_binding.py
+    ```
+    样本＝`backend/tests/fixtures/grounding_sample/`（用户那份 `_researchgate` 教材 + 由它生成的
+    2 个内容节点；三件东西逐字节来自 R61 快照），说明见该目录 `README.md`。
+    期望读数：`taught_facts` **17/17**、`basis.quote` **6/6**、讲解整句 **9/83**、含逐字片段 **37/83**。
+    **这四条是判据，不许放宽也不许收紧**；本任务只改了"读哪份文件"，判据/阈值/口径一个字没动。
+  - 审"当前生效内容库"某学科：`audit_material_binding.py <subject_id>`；
+    审任意归档样本：`--dir <stages 目录> --material <材料文件>`。
 - `.env`（仓库根，git 忽略）：LLM_API_KEY 等；`MF_AUTO_EXTEND=1` 控制全自动续关；
   `LLM_MAX_TOKENS_PER_DAY=0` 不限额；**R37 材料注入**：`MF_MATERIAL_INJECT_MAX_CHARS`（0=不限，默认）、
   `MF_MATERIAL_BATCH_CHARS`（默认 60000，按章/页边界分批）、`MF_MATERIAL_MIN_CHARS_PER_PAGE`（默认 40，
