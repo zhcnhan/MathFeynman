@@ -4847,4 +4847,144 @@ B5 线程断言更新 + 本 NOTES/docs 同步）。
 > （A+C 提交里含 B 的**判定与展示**小部分，B 的**校验接线与用例**在第二提交）。
 
 
+## 78. R56 第 0 步：模型与 Key 的设置页（用户点名 · 2026-09-12）
+
+来源：用户原话「**颜回本身都没有那个调整模型和 key 的入口啊，也加上**」；工单 `.runtime/EULER_TICKET_R56.md`
+§0.2；验收批 **R57**。开工基线：HEAD `e28d5e1`，`pytest` 542 passed + 2 skipped / 544。
+
+### 78.1 口径与实现（复用既有机制，不新建第二套）
+
+- **存储**：`service/model_config.py` 复用既有 `app_settings` 键值表（键前缀 `model.`）——
+  不新建表、不留第二套配置文件；键包括 provider / api_key / base_url / heavy / light /
+  max_tokens_per_day / key_memory_only。
+- **优先级：页面设置 > `.env` > 内置默认**（与 R38 预算滑块同款口径），每项带
+  `source ∈ {page, env, default}` + 中文标签（你在这里设的 / .env 配置 / 程序默认）。
+- **唯一读取入口**：`model_config.effective_settings(db)` 返回"套好生效值的 `Settings`"
+  （`dataclasses.replace`），于是**既有的 `settings.llm_api_key` 判断一次性全部生效**：
+  `api/deps.get_gateway`（网关按配置签名缓存，改完下次请求即生效）、`outline/draft.py`、
+  `outline/generate.py`、`outline/materials.py`（联网候选整理）、`service/selfextend.py`、
+  `ai/provider.py::daily_token_cap`（日限额）。
+- **接口**：`GET/PUT /api/settings/model`、`POST /api/settings/model/test`；
+  `GET /api/config/models` 也改成读生效配置（并多回掩码）。
+- **Key 红线**：`view()` 只回 `configured` + `api_key_masked`（前 3 位 + 后 4 位）；
+  `effective_settings` 每次解析都把 Key 登记进 `ai_trace.register_secret`，`redact` 逐字遮蔽
+  （**自定义服务商的 Key 未必长成 `sk-…`，只靠正则兜不住**）；配置变更进唯一账本（`other` 类，
+  中文"改了哪几项"，**不含 Key 明文**，`detail.api_key_tail` 只有掩码）；
+  可选"只放内存"（不落库，进程内存持有，重启要重填）。
+- **统一指引**：`NEED_KEY_ZH` / `NEED_KEY_SHORT_ZH` 一处定义、四处引用（大纲起草拒绝出稿、
+  无教材离线起草账目、反馈重生成失败、设置页视图），一律"去「设置 · 模型」里填"，
+  **不再出现"请在 .env 配置 LLM_API_KEY"**；日限额拦截文案同样改为设置页口径。
+- **测试连接**：`_test_client(provider)` 单独抽一层（测试可替换、不触网），
+  中文原因按状态码分诊：401/403 = Key 被拒、404 = 地址或模型名不对、429 = 限流/额度、
+  5xx = 对方故障、连接异常 = 连不上/超时。
+
+### 78.2 必交用例（`test_r56_model_settings.py`，8 条）
+
+1. `test_r56_0_1_missing_key_points_to_settings_page_not_env`（未配 Key → 中文指引"去设置里填"，
+   响应与账目里都**没有** `.env` / `LLM_API_KEY` 字样）；
+2. `test_r56_0_2_saved_key_never_echoed_only_mask`（保存后回读只有掩码 + `configured`；
+   `PUT` / `GET /settings/model` / `GET /settings` 三处响应体里都搜不到完整 Key；清除后 `configured=false`）；
+3. `test_r56_0_3_key_never_in_trace_ledger_prompts`（走一次真实链路：页面设 Key → 起草大纲（假 provider，
+   不联网）→ 审计全文目录 / 账本 / 发给模型的提示词三处都搜不到 Key；`redact` 对带自定义前缀的 Key 也生效）；
+4. `test_r56_0_4a` / `test_r56_0_4b`（「测试连接」成功与失败各一条，中文原因；没配 Key 时也给中文指引）；
+5. `test_r56_0_5_page_settings_beat_env`（页面设置覆盖 `.env`：来源标注为"你在这里设的"，
+   且**假 provider 记录到的 Key 就是页面那一份**；清掉页面 Key → 立刻回到 `.env` 那份）；
+6. `test_r56_0_6_config_change_is_ledgered_without_key_plaintext`（每次变更一条账目、含改了什么、
+   **不含 Key 明文**、掩码只有后 4 位；非法数字 → 中文 422）；
+7. `test_r56_0_7_memory_only_key_is_not_written_to_db`（勾"只放内存" → 库里查不到该键，但生效）。
+
+### 78.3 两处**行为变更导致**的旧断言更新（行为先改、断言后改）
+
+- `test_feedback.py::test_auto_regen_without_key_marks_failed_no_stub`：原来断言 message 含
+  `LLM_API_KEY`；工单 §0.2-4 要求**不许再引导用户改 `.env`** → 文案改为"还没有配模型 Key —— 去
+  「设置 · 模型」里填一下"，断言改为"含『模型 Key』与『设置』且不含 `.env` / `LLM_API_KEY`"。
+- `test_r38_budget_materials.py::test_r38_r40_offline_with_material_refuses_draft_and_logs`：
+  原来断言 `"未配置模型" in msg`；现在同一处文案改为"还没有配模型 Key，无法依据教材生成大纲：…
+  请到「设置 · 模型」里填一下 Key"，断言同步更新（仍要求含"教材"）。
+
+### 78.4 回归与自证（实测）
+
+- 后端：`pytest backend/tests` ＝ **550 passed + 2 skipped / 552 collected**，0 failed
+  （`.runtime/r56_full0.xml`；比开工基线 +8 条用例）。
+- 前端：`npx tsc --noEmit` exit 0；`npx vite build` exit 0；文案守卫 **0 处**命中。
+- 用户内容只读：`content/stages|subjects/s-f2decfcf/` 一字未动（本步只改模型配置相关代码）。
+- Key 只落**本机** `.env`（该文件在 `.gitignore` 里，**从未入库**；本批也没有把任何 Key 写进代码 /
+  `.env.example` / 文档 / 测试夹具）。用户给的新 Key 由本机 `.env` 承接（对外只回掩码 `sk-…5d91`）。
+
+### 78.5 提交链（标 R56）
+
+`11ff0b5`（后端：model_config + 接口 + 网关/各调用点 + 8 条用例 + 两处旧断言）→
+`8df722f`（前端：设置页「模型与 Key」区块）→ 本步文档（docs/06 · docs/07 · docs/14 §8.7 + 本 NOTES §78）。
+
+
+## 79. R56 第 1 步：最小通路实测（文件 → 模型 → 结构化结果 · 2026-09-12）
+
+工单 §0.3 要求"这一步做完就停下来汇报：走通了什么、哪里卡住、成本多少"。下面是**实测**（不是推算）。
+
+### 79.1 探针与结论（`.runtime/r56_minimal_path*.py`，真调用 DeepSeek）
+
+- **文字**：`deepseek-chat`（旧名，实际由 `deepseek-flash` 承接）→ HTTP 200，1.3 秒、59 token，
+  按 `response_format={"type":"json_object"}` 拿回结构化 JSON。
+- **图片**：合法 PNG（data URL）→ HTTP 200；自造"左红右蓝"图能**说对颜色**；
+  900×1200 页面样张的柱状图能**说对"4 根柱子、第 4 根最高、第 3 根略低于第 2 根"**
+  （与画的 120/240/180/300 一致）。
+- **第一次失败的原因**（记录在案）：先用手写的 8×8 调色板 PNG → 400
+  `unsupported image...formats: webp, png, jpeg, and gif`——是**图片本身不合法**，不是"不支持图片"。
+- **PDF 文件直接发**：`POST /files`（`purpose=user_data`）上传自造 PDF → 400
+  `unsupported file...formats: webp, png, jpeg, and gif`：**DeepSeek 的文件/图片位置只收图片**。
+- **`type:"file"` 内容块**：不带 `file_id`/`file_data` 时 400（`file must have a file_id or file_data`），
+  说明它认得这种块，但**只能承载图片文件**（官方文档：Files API 用于图片，`file_id` 最大 64 MiB）。
+- **模型可用性**：`/models` 只列 `deepseek-flash`、`deepseek-v4-pro`；旧名 `deepseek-chat` /
+  `deepseek-reasoner` **静默由 flash 承接**（实测返回的 `model` 字段都是 `deepseek-flash`）。
+  官方文档明确：**只有 `deepseek-flash` 支持图像理解**（`deepseek-v4-pro` 不支持）——
+  见 [模型 & 价格](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 与
+  [图像理解](https://api-docs.deepseek.com/zh-cn/guides/vision)。
+
+### 79.2 落地的最小通路（代码）
+
+- 新调用点 **`read_page`**（`ai/calls.py` 的 `ReadPageIn/ReadPageOut` + `ai/prompt_templates.py` 的
+  `S_READ_PAGE/U_READ_PAGE`）**三处同改**（schema + prompt + 往返用例，沿用既有 schema 纪律）；
+- `ai/vision.py`：`image_block()`（图片 → `image_url` data URL；白名单 png/jpeg/webp/gif，
+  别的格式**中文报错**）+ `read_page()`（装多模态消息 → **既有 `provider.chat_json`** → schema 校验）；
+  图片**只放 user 消息**（官方限制：system/assistant 带图 400）；
+- 走既有链路 ⇒ 这次调用**原样进 `ai_trace`**（全文文件 + `ai_logs` 索引，含 token/耗时/提示词版本/结局）。
+
+### 79.3 真实调用证据（`id=64`）
+
+- 样张：`.runtime/r56_page_sample.png`（900×1200，白底 + 9 行"文字"条 + 4 柱柱状图，11 KB）；
+- 审计：`call_name=read_page`、`model=deepseek-chat`、`tier=light`、
+  **`prompt_tokens=1124`、`completion_tokens=267`、`latency_ms=2256`**、`outcome=adopted`、
+  `prompt_versions=default:read_page|default:read_page`、
+  `trace_path=.runtime/ai_trace/20260912T055356Z-read_page.txt`（**18,443 字**，内含图片 data URL，
+  脚本实测**不含 Key 明文**）；
+- 结构化结果：`figures=[{label:"页面下方柱状图（图上无编号）", kind:"图", description:"…4 根蓝色实心柱子，
+  从左到右：第 1 根最矮、第 2 根明显更高、第 3 根略低于第 2 根、第 4 根最高…"}]`、
+  `confidence=0.2`、**`readable=false`** + `unreadable_reason="页面上的正文与图注均为灰色/黑色条块占位，
+  没有任何可辨认的文字…"` —— **诚实出口在真实调用里生效**（它没有编造正文）。
+
+### 79.4 成本量级（按官方价格页换算，[链接](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)）
+
+- 官方规则：图片按尺寸折 token，**每张上限 1024 token**（先缩放到约 1300×1300 上限；小于约 544×544 会放大）；
+- 实测一页（900×1200）≈ **1124 输入 + 267 输出**；
+- `deepseek-flash` 单价（每百万 token）：输入缓存未命中 **1 元（空闲）/ 2 元（高峰）**，
+  输出 **4 元 / 8 元** → 一页 ≈ **0.0022 元（空闲）/ 0.0044 元（高峰）**；
+- **一本 126 页的图示教材，逐页读一遍** ≈ **0.28 元（空闲）/ 0.55 元（高峰）**；
+  若每页平均被读 2–3 次（读 → 出题/生成 → 判题/评分）→ **约 0.6–1.7 元/本·遍**。
+- ⚠️ `deepseek-v4-pro`（深档）**不支持图像理解**——图示模式必须用 `deepseek-flash`（快档）。
+
+### 79.5 卡在哪（如实登记）
+
+- **PDF 不能直接发给 DeepSeek**（只收图片）——工单要求"不渲染 PDF、不要用户截图"，
+  在 DeepSeek 上无法同时满足；要么加 **PDF→图片** 的渲染（工单禁新增依赖），
+  要么换**能收 PDF 文档**的服务商（同一套设置页填地址与模型名即可切换，代码侧只需换 base_url/模型名）。
+- `deepseek-chat` / `deepseek-reasoner` 是**旧名**，实际由 flash 承接 ⇒ 设置页的默认模型名建议改成
+  `deepseek-flash` / `deepseek-v4-pro`（本机 `.env` 已按实测更新；内置默认待架构侧确认后一并改）。
+- 一句话：**"读图"这条路在 DeepSeek 上是通的，"直接读 PDF"不通**。
+
+### 79.6 提交链（标 R56）
+
+`5ccf432`（第 1 步：read_page 调用点 + vision + 4 条往返用例 + `test_r52_a1_*` 计数更新）
+→ 本步文档（docs/14 §8.8 + 本 NOTES §79）。
+
+
 

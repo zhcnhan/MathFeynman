@@ -79,7 +79,7 @@
 |---|---|---|
 | GET | `/profile` | 画像（错误类型、风格偏好） |
 | PATCH | `/profile` | 用户手动调整偏好（解释深度等） |
-| GET | `/config/models` | 当前模型分级配置（供设置页显示，不改密钥） |
+| GET | `/config/models` | 当前模型分级配置（供设置页显示，不改密钥）。**R56**：改读**生效配置**（页面设置 > `.env` > 默认），并多回 `provider_label/api_key_masked/settings_path_zh`（**只回掩码**） |
 
 ### 内容管理（开发工具，MVP 阶段 CLI 为主）
 | 方法 | 路径 | 说明 |
@@ -99,8 +99,11 @@
 | PUT | `/prompts/{call_name}` | 保存（body `{system?, user?}`；**两者都可改**，未给的字段保持原样）；**改动立即生效**；缺必填占位符/硬约束、或模板花括号不合法 → **中文 422 拒绝保存**；成功 → 记入账本 |
 | POST | `/prompts/{call_name}/reset` | 恢复默认（body `{field: ""\|system\|user}`）——**R42 C2**：可按字段恢复（只回退 user 不影响 system） |
 | POST | `/prompts/reset-all` | 全部恢复默认（前端恢复前确认） |
-| GET | `/settings` | 应用设置：`developer_mode`（**调试模式开关**）+ `ai_trace{dir,keep_days}` |
+| GET | `/settings` | 应用设置：`developer_mode`（**调试模式开关**）+ **R56 `model`**（模型与 Key 的当前状态，只回掩码）+ `ai_trace{dir,keep_days}` |
 | PUT | `/settings` | 改开关（body `{developer_mode}`）；**审计本身默认记录**，开关只决定界面入口是否出现 |
+| GET | `/settings/model` | **R56 第 0 步 · 模型与 Key 的当前状态**：`provider/provider_label/providers`、`configured`、**`api_key_masked`（只回前 3 位 + 后 4 位，永不回完整 Key）**、`api_key_source_zh`（你在这里设的 / .env 配置 / 程序默认）、`base_url/heavy/light/max_tokens_per_day`（各带 `*_source_zh`）、`memory_only`、`key_notice_zh`（"Key 存在本机、别把数据文件发给别人"）、`need_key_zh`（没配 Key 时给界面用的中文指引） |
+| PUT | `/settings/model` | **保存模型设置**（只改传进来的项；`api_key=""` = 清除）；优先级＝**页面设置 > `.env` > 内置默认**；变更**进唯一账本**（中文，**不含 Key 明文**，只记后 4 位掩码）；`memory_only=true` 时 Key **只存进程内存、不落库** |
+| POST | `/settings/model/test` | **「测试连接」**：发一次最小请求，中文报告成功/失败原因（Key 被拒 / 地址或模型名不对 / 限流 / 连不上 / 超时），**不含 Key** |
 | GET | `/ai-traces` | **AI 对话审计列表**（query `subject_id?/call_name?/outcome?/only_failed?/limit?/offset?`）：时间倒序、**失败与丢弃置顶**；每条含 时间/调用点/档位/模型/token/耗时/重试/结局/`trace_path`+`trace_chars`+三段预览+`prompt_versions`。**R44 A**：`trace_path` 的文件名形如 `<UTC 时间戳>-<调用点>[-NN].txt`（同一秒内对同一调用点的多次记录用 `-02`/`-03`… 序号，**每次调用各自独立成文件、绝不覆盖**；目标名被占用时换名并**记入总账**（`other` 类，中文原因）。契约本身未变） |
 | GET | `/ai-traces/{id}` | 单条完整对话：`full{system,user,response,parse_result,meta}`（**上=发给 AI 的完整内容，下=AI 返回的完整内容**，读全文文件；文件缺失 → `note` 如实说明 + 预览兜底）；**非流式** |
 | POST | `/ai-traces/cleanup` | 按保留期清理审计全文文件（body `{keep_days?}`）；**先记账（清理了哪几条）再删除**（不静默消失）。**R48 B**：与启动/定时**同一实现**，响应与账目 `detail` 都带 `trigger`（`启动` / `定时` / `手动`），便于分辨"这次是谁清的"；其余字段与文案不变 |
