@@ -226,11 +226,14 @@ class OpenAICompatibleProvider:
 
     # ---- R39 §1：日限额拦截（显性化，绝不静默） ----
     def daily_token_cap(self) -> int:
-        """R39 §1：**日限额**（``LLM_MAX_TOKENS_PER_DAY``；0/空 = 不限）。"""
-        try:
-            from ..config import get_settings
+        """R39 §1：**日限额**（设置页可改；0/空 = 不限）。
 
-            return max(0, int(get_settings().llm_max_tokens_per_day or 0))
+        **R56**：读**生效配置**（页面设置 > `.env` > 默认），设置页改完立即生效。
+        """
+        try:
+            from ..service import model_config
+
+            return max(0, int(model_config.effective_settings().llm_max_tokens_per_day or 0))
         except Exception:
             return 0
 

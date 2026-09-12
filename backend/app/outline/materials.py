@@ -2092,13 +2092,14 @@ def search_candidates(db, subject_id: str, query: str) -> dict:
     - 未配置 provider → 提示"未配置检索后端…可用本地导入"（items 空）；
     - 配置 SearXNG → 真实检索 →（配 LLM_API_KEY）LLM 整理候选清单 → items。
     """
-    from ..config import get_settings
     from . import search as search_svc
+    from ..service import model_config
 
     row = outline_store.get_subject(db, subject_id)
     if row is None:
         raise OutlineError(f"学科不存在: {subject_id}")
-    settings = get_settings()
+    # **R56**：模型配置统一走「页面设置 > .env > 默认」的生效值
+    settings = model_config.effective_settings(db)
     status = search_svc.provider_status(settings)
     if not status.get("configured"):
         return {"items": [], "note": _no_backend_note(status), "backend": status}

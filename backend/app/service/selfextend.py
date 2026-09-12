@@ -20,6 +20,7 @@ from ..content import pipeline as pl
 from ..content.loader import load_library
 from ..content.roadmap import Roadmap, all_levels_exist, load_roadmap
 from ..domain.graph import LEVELS
+from . import model_config
 from . import progress as progress_svc
 from .library import get_graph, refresh_library, sync_content
 
@@ -116,7 +117,8 @@ def extend(
     wait: bool = True,
 ) -> dict[str, Any]:
     """生成下一主题组。wait=False → 后台线程执行并立即返回 started。"""
-    settings = get_settings()
+    # **R56**：模型配置统一走「页面设置 > .env > 默认」的生效值
+    settings = model_config.effective_settings(db)
     use_ai = bool(settings.llm_api_key)
     if use_ai:
         from ..ai.drafting import DraftingError, make_ai_drafter  # R13：在线 AI 出稿接入

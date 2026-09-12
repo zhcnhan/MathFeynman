@@ -298,9 +298,14 @@ def _regenerate_node_now(db: Session, user_id: str, node_id: str, *, drafter=Non
 
             drafter = make_ai_drafter()
         if drafter is None:
-            _mark(db, rows, "failed", "未配置 LLM_API_KEY：无法 AI 重生成（保留原内容待人工；配置 key 后重试可自动替换）。")
+            from ..service import model_config
+
+            # **R56**：指引统一指向设置页（不再让用户去改 .env）
+            _mark(db, rows, "failed",
+                  model_config.NEED_KEY_SHORT_ZH + "：无法 AI 重生成（保留原内容待人工；填好 Key 后重试可自动替换）。")
             db.flush()
-            return {"action": "failed", "node_id": node_id, "message": "未配置 LLM_API_KEY，保留原内容待人工。"}
+            return {"action": "failed", "node_id": node_id,
+                    "message": model_config.NEED_KEY_SHORT_ZH + "，保留原内容待人工。"}
 
         attempts: list[str] = []
         raw_md: str | None = None

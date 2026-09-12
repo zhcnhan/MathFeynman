@@ -443,7 +443,9 @@ def test_r38_r40_offline_with_material_refuses_draft_and_logs(app_client, monkey
         r = app_client.post(f"/api/subjects/{sid}/outline/draft", json={"count": 3})
         assert r.status_code == 422, r.text
         msg = r.json()["detail"]["error"]["message"]
-        assert "未配置模型" in msg and "教材" in msg, msg
+        # **R56 第 0 步**：指引统一指向设置页（不许再引导改 .env）——断言随之更新
+        assert "模型 Key" in msg and "设置" in msg and "教材" in msg, msg
+        assert ".env" not in msg and "LLM_API_KEY" not in msg, msg
         led = app_client.get(f"/api/subjects/{sid}/ledger?category=model_call").json()["entries"]
         assert any("拒绝出稿" in e["reason"] for e in led), led
         # 无教材时仍退化为"仅按 brief 起草"（机制可跑通，如实标注无教材依据）

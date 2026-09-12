@@ -142,7 +142,10 @@ def test_auto_regen_failed_keeps_original():
 
 
 def test_auto_regen_without_key_marks_failed_no_stub():
-    """未配 LLM_API_KEY（conftest 默认空）：不回落 stub 占位，保留原内容记 failed。"""
+    """未配模型 Key（conftest 默认空）：不回落 stub 占位，保留原内容记 failed。
+
+    **R56 第 0 步**：文案改成指向**设置页**（不许再引导用户改 `.env`）——断言随之更新。
+    """
     _fresh()
     node_id = _gen_auto_node()
     try:
@@ -155,7 +158,8 @@ def test_auto_regen_without_key_marks_failed_no_stub():
             result = fb.regenerate(db, "local", fid, wait=True)  # drafter=None → make_ai_drafter()=None
             db.commit()
         assert result["action"] == "failed", result
-        assert "LLM_API_KEY" in result["message"]
+        assert "模型 Key" in result["message"] and "设置" in result["message"], result["message"]
+        assert ".env" not in result["message"] and "LLM_API_KEY" not in result["message"]
         assert hashlib.md5(path.read_bytes()).hexdigest() == before
     finally:
         _cleanup(node_id)

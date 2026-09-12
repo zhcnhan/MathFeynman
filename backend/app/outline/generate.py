@@ -67,6 +67,13 @@ _RUBRIC_SCIENCE = RubricDoc(
 _SCIENCE_KEYS = ("科学", "物理", "化学", "生物", "行星", "天文", "地理", "地质", "science", "physics")
 
 
+def _model_settings():
+    """**R56**：模型配置统一走「页面设置 > .env > 默认」的生效值（各调用点唯一入口）。"""
+    from ..service import model_config
+
+    return model_config.effective_settings()
+
+
 def rubric_for(subject_id: str, label: str, unit_tags: list[str]) -> RubricDoc:
     """学科 rubric 选择（MVP：科学类关键词启发式；更细按 subject 配置属 B3 治理项）。"""
     hay = f"{subject_id} {label} {' '.join(unit_tags)}".lower()
@@ -530,7 +537,7 @@ def generate_unit_content(
         return {"status": "uncovered", "node_id": unit.id, "path": "", "subject": subject_id,
                 "unit": unit_id, "note": note, "coverage": {"status": "未覆盖"}}
 
-    use_ai = drafter == "auto" and bool(get_settings().llm_api_key)
+    use_ai = drafter == "auto" and bool(_model_settings().llm_api_key)
     doc: NodeDoc | None = None
     a11y_problems: list[str] = []
     report = None
@@ -819,10 +826,9 @@ def _ai_draft(
     from ..ai.calls import CALL_UNIT_CONTENT
     from ..ai import prompt_runtime
     from ..ai.provider import OpenAICompatibleProvider
-    from ..config import get_settings
     from ..service.ai_sink import make_ai_log_sink
 
-    settings = get_settings()
+    settings = _model_settings()
     provider = OpenAICompatibleProvider(
         api_key=settings.llm_api_key, base_url=settings.llm_base_url,
         model_heavy=settings.llm_model_heavy, model_light=settings.llm_model_light,

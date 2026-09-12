@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 from typing import Literal
 from sqlalchemy.orm import Session
 
-from ..config import get_settings
 from ..domain.profile import DEPTH_MAX, DEPTH_MIN, Profile
 from ..service.library import ensure_user
 from .deps import get_db
@@ -45,15 +44,23 @@ def patch_profile(body: PatchProfileBody, db: Session = Depends(get_db)) -> dict
 
 
 @router.get("/config/models")
-def config_models() -> dict:
-    """当前模型分级配置（docs/02 §4；显示用，不含密钥）。"""
-    s = get_settings()
+def config_models(db: Session = Depends(get_db)) -> dict:
+    """当前模型分级配置（docs/02 §4；显示用，**不含密钥**）。
+
+    **R56**：改成读**生效配置**（页面设置 > .env > 默认）——设置页改了模型这里立刻同步。
+    """
+    from ..service import model_config
+
+    v = model_config.view(db)
     return {
-        "provider": "openai-compatible",
-        "base_url": s.llm_base_url,
+        "provider": v["provider"],
+        "provider_label": v["provider_label"],
+        "base_url": v["base_url"],
         "tiers": {
-            "heavy": {"model": s.llm_model_heavy},
-            "light": {"model": s.llm_model_light},
+            "heavy": {"model": v["heavy"]},
+            "light": {"model": v["light"]},
         },
-        "configured": bool(s.llm_api_key),
+        "configured": bool(v["configured"]),
+        "api_key_masked": v["api_key_masked"],
+        "settings_path_zh": "去「设置 · 模型」里填 Key",
     }

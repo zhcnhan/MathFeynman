@@ -415,7 +415,10 @@ def draft_outline(
         with SessionLocal() as db:
             subj = ostore.get_subject(db, subject_id)
             label = subj.label if subj else subject_id
-    settings = get_settings()
+    # **R56**：模型配置统一走「页面设置 > .env > 默认」的生效值（不再只读 .env）
+    from ..service import model_config
+
+    settings = model_config.effective_settings()
     mat_pack = materials or {}
     index = list(mat_pack.get("index") or [])
     batches = list(mat_pack.get("batches") or [])
@@ -440,9 +443,10 @@ def draft_outline(
         if index:
             # **R40 裁决 §2-1（改为拒绝出稿）**：有教材但无可用模型 → 只能启发式出稿，产出必然
             # **无教材依据**（那正是 R37 要消灭的东西）。故**明确中文说明 + 不落盘**，并由 R39 铁则记账。
-            reason = ("未配置模型（LLM_API_KEY 为空），无法依据教材生成大纲："
+            # **R56**：指引统一指向**设置页**（不再引导用户去改 .env）。
+            reason = ("还没有配模型 Key，无法依据教材生成大纲："
                       f"本学科有 {len(index)} 份引用材料，离线启发式只能产出**没有教材依据**的内容。"
-                      "请在 .env 配置 LLM_API_KEY 后重新起草。")
+                      "请到「设置 · 模型」里填一下 Key，然后重新起草。")
             ledger.note(
                 ledger.CAT_MODEL_CALL, "大纲起草",
                 reason + "（按 R40 裁决 §2-1：有教材且无可用模型 → **拒绝出稿**，不落盘）",
@@ -457,8 +461,8 @@ def draft_outline(
         out["no_material_grounding"] = True
         ledger.note(
             ledger.CAT_MODEL_CALL, "大纲起草",
-            "未配置模型（LLM_API_KEY 为空），本次大纲由离线启发式骨架产出，没有读教材——"
-            "配置模型后重新起草即可得到教材锚定的大纲",
+            "还没有配模型 Key，本次大纲由离线启发式骨架产出，没有读教材——"
+            "到「设置 · 模型」里填一下 Key，再重新起草就能得到读教材的大纲",
             impact=ledger.SCOPE_THIS_RUN, remedy=ledger.REMEDY_CONFIRM, subject_id=subject_id,
             detail={"kind": "offline_draft", "batches": usage["batches"]},
         )

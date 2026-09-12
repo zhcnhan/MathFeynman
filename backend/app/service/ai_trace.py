@@ -35,6 +35,15 @@ OUTCOME_LABELS_ZH = {
 
 # 疑似密钥的兜底遮蔽（审计全文里绝不出现 API Key）
 _SECRET = re.compile(r"(sk-[A-Za-z0-9_\-]{8,}|Bearer\s+[A-Za-z0-9._\-]{8,})")
+# **R56**：用户**在设置页填的** Key（可能不带 sk- 前缀）也要遮蔽——由 model_config 每次解析时登记
+_EXTRA_SECRETS: set[str] = set()
+
+
+def register_secret(value: str) -> None:
+    """登记一个"必须遮蔽的密钥"（幂等；只在内存里，不落盘）。"""
+    v = (value or "").strip()
+    if len(v) >= 8:
+        _EXTRA_SECRETS.add(v)
 
 DEFAULT_DIR = ".runtime/ai_trace"
 DEFAULT_KEEP_DAYS = 30
@@ -61,8 +70,16 @@ def keep_days() -> int:
 
 
 def redact(text: str) -> str:
-    """遮蔽疑似密钥（红线：审计里不得出现 API Key）。"""
-    return _SECRET.sub("[已隐去]", text or "")
+    """遮蔽疑似密钥（红线：审计里不得出现 API Key）。
+
+    **R56**：除正则外，还逐字遮蔽"设置页里填过的 Key"（`register_secret` 登记）——
+    自定义服务商的 Key 未必长成 `sk-…`，只靠正则兜不住。
+    """
+    out = _SECRET.sub("[已隐去]", text or "")
+    for secret in _EXTRA_SECRETS:
+        if secret and secret in out:
+            out = out.replace(secret, "[已隐去]")
+    return out
 
 
 def _preview(text: str, *, chars: int = PREVIEW_CHARS) -> str:
