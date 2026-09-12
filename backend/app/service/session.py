@@ -1937,6 +1937,13 @@ class SessionService:
         }
         if cur.mode == "single_choice" and cur.options:
             view["options"] = list(cur.options)  # B2：选择题选项（答案由服务端判定，不外泄 index）
+        if cur.mode == "ai":
+            # **R56**：图示教材模式的题——把选项与"由模型判"如实告诉界面
+            if cur.options:
+                view["options"] = list(cur.options)
+            view["answer_kind"] = cur.ai_answer_kind or ("choice" if cur.options else "short")
+            view["judged_by"] = "model"
+            view["basis_pages"] = list(cur.ai_basis_pages or [])
         return view
 
     def _session_meta(self, db: Session, sess: models.Session) -> dict[str, Any]:

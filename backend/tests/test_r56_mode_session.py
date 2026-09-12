@@ -53,7 +53,8 @@ class _ModeProvider:
                              "uncertain_reason": ""})
         if call.name == "mode_exercise":
             return _Outcome({"exercises": [
-                {"prompt": "太阳系有几颗行星？", "kind": "short", "options": [],
+                {"prompt": "太阳系有几颗行星？（选一个）", "kind": "choice",
+                 "options": ["四颗", "八颗", "十二颗", "这一页没写"],
                  "answer": "八颗", "explanation": "第 1 页写了八颗行星。",
                  "basis_pages": ["第 1 页"]}],
                 "uncertain": False, "uncertain_reason": ""})
@@ -191,6 +192,10 @@ def test_r56_3_mode_session_judging_never_touches_sympy(app_client, sids, monkey
         app_client.post("/api/session/step", json={"session_id": sess, "action": "next"})
     step = app_client.get(f"/api/session/{sess}").json()
     cur = step["payload"]["exercise"]
+    # **界面要能答题**：选择题的选项必须下发（答案不外泄），并标明"由模型判"
+    assert cur.get("options") == ["四颗", "八颗", "十二颗", "这一页没写"], cur
+    assert cur.get("answer_kind") == "choice" and cur.get("judged_by") == "model", cur
+    assert "answer" not in cur and cur.get("basis_pages") == ["第 1 页"], cur
     out = app_client.post("/api/session/step", json={
         "session_id": sess, "action": "submit_exercise",
         "payload": {"exercise_id": cur["exercise_id"], "params_seed": int(cur["seed"]),
