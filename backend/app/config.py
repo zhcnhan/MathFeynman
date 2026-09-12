@@ -49,11 +49,14 @@ class Settings:
     llm_base_url: str = field(
         default_factory=lambda: os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1")
     )
+    # **R56 裁定（用户 2026-09-12）**：模型就用 **DeepSeek V4.1 Flash**（规范名 `deepseek-flash`），
+    # **不用** `deepseek-v4-pro`（贵一档，且不支持读图）。旧名 `deepseek-chat`/`deepseek-reasoner`
+    # 实测都被静默转成 flash，所以这里直接写规范名（两档同一模型：快档够用、读图也只有它支持）。
     llm_model_heavy: str = field(
-        default_factory=lambda: os.getenv("LLM_MODEL_HEAVY", "deepseek-reasoner")
+        default_factory=lambda: os.getenv("LLM_MODEL_HEAVY", "deepseek-flash")
     )
     llm_model_light: str = field(
-        default_factory=lambda: os.getenv("LLM_MODEL_LIGHT", "deepseek-chat")
+        default_factory=lambda: os.getenv("LLM_MODEL_LIGHT", "deepseek-flash")
     )
     llm_max_tokens_per_day: int = field(
         default_factory=lambda: int(os.getenv("LLM_MAX_TOKENS_PER_DAY", "0") or "0")

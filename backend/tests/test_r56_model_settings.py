@@ -231,7 +231,7 @@ def test_r56_0_6_config_change_is_ledgered_without_key_plaintext(app_client):
 
 def test_r56_0_4a_test_connection_reports_success_in_chinese(app_client, monkeypatch):
     """「测试连接」成功 → 中文报告（含用了哪个模型）。"""
-    app_client.put("/api/settings/model", json={"api_key": PAGE_KEY, "light": "deepseek-chat"})
+    app_client.put("/api/settings/model", json={"api_key": PAGE_KEY, "light": "deepseek-flash"})
 
     class _Resp:
         status_code = 200
@@ -248,13 +248,13 @@ def test_r56_0_4a_test_connection_reports_success_in_chinese(app_client, monkeyp
     monkeypatch.setattr(model_config, "_test_client", lambda provider: _Client(), raising=False)
     out = app_client.post("/api/settings/model/test").json()
     assert out["ok"] is True, out
-    assert "连接正常" in out["reason_zh"] and "deepseek-chat" in out["reason_zh"], out
+    assert "连接正常" in out["reason_zh"] and "deepseek-flash" in out["reason_zh"], out
     app_client.put("/api/settings/model", json={"api_key": ""})
 
 
 def test_r56_0_4b_test_connection_reports_failure_in_chinese(app_client, monkeypatch):
     """「测试连接」失败 → 中文说清是哪类问题（Key 被拒 / 地址不对 / 连不上），不抛异常。"""
-    app_client.put("/api/settings/model", json={"api_key": PAGE_KEY, "light": "deepseek-chat"})
+    app_client.put("/api/settings/model", json={"api_key": PAGE_KEY, "light": "deepseek-flash"})
 
     class _Resp:
         status_code = 401

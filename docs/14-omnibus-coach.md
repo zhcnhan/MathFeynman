@@ -302,8 +302,11 @@ Materials 材料层（候选清单 → 勾选导入 → 本地引用库 → 供�
     900×1200 页面 ≈ **1124 输入 token + 267 输出 token**，2.3 秒；
   - **PDF 文件直接发**：**不通**——对方接口的"文件"位置只收**图片**（webp/png/jpeg/gif），
     上传 PDF 被拒（"unsupported file"）；
-  - **能用图的模型**：只有 `deepseek-flash`（`deepseek-v4-pro` **不支持图像理解**）；
+- **能用图的模型**：只有 `deepseek-flash`（`deepseek-v4-pro` **不支持图像理解**）；
     图片必须放在 **user** 消息里（放 system/assistant 会 400）。
+  - **模型裁定（2026-09-12 用户）**：就用 **DeepSeek V4.1 Flash（`deepseek-flash`）**，
+    **不用 `deepseek-v4-pro`**；两档模型名都设成它（内置默认 / `.env` / 界面「设置 · 模型」三处一致，
+    界面显示"来自：你在这里设的"）。旧名 `deepseek-chat`/`deepseek-reasoner` 实测都被静默转成 flash。
 - **因此**："把教材文件直接交给模型"这条路在 DeepSeek 上**只能以图片形态走**——
   要么给页面图片（需要渲染或导出），要么换一个"能收 PDF 文档"的服务商（同一套设置页填地址与模型名即可）。
 - **诚实出口已经可用**：模型读不出来时会返回"读不出来 + 中文原因"（实测样张没有可辨认文字时，

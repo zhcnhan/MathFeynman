@@ -113,7 +113,7 @@ def main() -> int:
     wanted = [n.strip() for n in args.nodes.split(",") if n.strip()] or list(lib.by_id)
     if args.limit:
         wanted = wanted[: args.limit]
-    model = os.getenv("LLM_MODEL_LIGHT", "deepseek-chat")
+    model = os.getenv("LLM_MODEL_LIGHT", "deepseek-flash")
 
     findings: list[dict] = []
     for node_id in wanted:

@@ -35,10 +35,10 @@ K_VISION_MODEL = "model.vision_model"
 KEYS = (K_PROVIDER, K_API_KEY, K_BASE_URL, K_HEAVY, K_LIGHT, K_DAILY, K_MEMORY_ONLY,
         K_VISION_MODEL)
 
-# ---- 内置默认（服务商默认 DeepSeek；OpenAI 兼容） ----
+# ---- 内置默认（服务商默认 DeepSeek；模型＝**V4.1 Flash**，2026-09-12 用户裁定） ----
 DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
-DEFAULT_HEAVY = "deepseek-reasoner"
-DEFAULT_LIGHT = "deepseek-chat"
+DEFAULT_HEAVY = "deepseek-flash"
+DEFAULT_LIGHT = "deepseek-flash"
 DEFAULT_PROVIDER = "deepseek"
 
 PROVIDER_LABELS_ZH = {"deepseek": "DeepSeek（默认）", "custom": "自定义（OpenAI 兼容）"}
@@ -389,7 +389,9 @@ def test_connection(db=None, *, transport=None) -> dict:
         resp = client.post(
             "/chat/completions",
             json={"model": model, "messages": [{"role": "user", "content": TEST_PROMPT}],
-                  "max_tokens": 16, "stream": False},
+                  # **R56**：给足 256（不是 16）——DeepSeek V4.1 Flash 默认带"思考"，
+                  # 预算太小会把额度全花在思考上、正文回空，于是"测试连接"看起来像失败。
+                  "max_tokens": 256, "stream": False},
         )
         latency = int((time.time() - started) * 1000)
         if resp.status_code >= 400:

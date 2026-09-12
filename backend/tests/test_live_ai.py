@@ -21,8 +21,8 @@ def _provider():
     return gateway_factory(
         api_key=os.getenv("LLM_API_KEY", ""),
         base_url=os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1"),
-        heavy_model=os.getenv("LLM_MODEL_HEAVY", "deepseek-reasoner"),
-        light_model=os.getenv("LLM_MODEL_LIGHT", "deepseek-chat"),
+        heavy_model=os.getenv("LLM_MODEL_HEAVY", "deepseek-flash"),
+        light_model=os.getenv("LLM_MODEL_LIGHT", "deepseek-flash"),
         log_sink=make_ai_log_sink(),
     )
 

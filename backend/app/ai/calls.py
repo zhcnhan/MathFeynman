@@ -275,7 +275,7 @@ class CallSpec:
 
 CALL_EXPLAIN_NODE = CallSpec(
     "explain_node", "light", ExplainIn, ExplainOut, temperature=0.6, max_retries=2
-    # R9: 讲解 = 基于注入讲解稿的演绎，不依赖深度推理 → light 档（deepseek-chat）提速；
+    # R9: 讲解 = 基于注入讲解稿的演绎，不依赖深度推理 → light 档（deepseek-flash）提速；
     # 重新生成讲解走同一调用点，同样为 light。质量回退可回滚并留痕于 docs/09 R9。
 )
 CALL_ANSWER_QUESTION = CallSpec(
