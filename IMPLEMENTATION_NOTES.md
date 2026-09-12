@@ -6439,5 +6439,109 @@ git worktree add --detach D:\DeepseekHarness\_r69_verify_wt HEAD
 
 
 
+## 90. R71 两处小收尾：样本指纹自检 / 3 个文件的行尾归一
+
+（工单：`.runtime/EULER_TICKET_R71.md`；**验收批次 = R72**；开工 HEAD = `c5f54aa`）
+
+### 90.0 开工复核（本任自己复测）
+
+- `pytest backend/tests`：**666 collected / 664 passed + 2 skipped / 0 failed**（exit 0）。
+- `content validate`：**ok=True nodes=25 exercises=50**（口径：**不含**用户自己的学科内容）。
+- roadmap audit 五学段：**27/31/81/59/60**，五段 `ok=True`、错误 0。
+- 接地审计（仓库内固定样本）：**17/17、6/6、9/83、37/83**。
+- `tsc --noEmit` / `vite build` exit 0；`content/` 零改动；工作树进门时干净。
+
+### 90.1 任务 ①：样本指纹自检（毫秒级，不跑完整审计）
+
+**为什么**：R69 把审计样本入了库，但样本被误删/被"顺手改一个字节"时**没有任何东西会报警**
+—— 那是静默失效：审计照样能跑，只是它审的已不是当初那份东西，四条读数会悄悄变样。
+
+**做了什么**（两处，都很小）：
+
+- `backend/tests/fixtures/grounding_sample/README.md`：新增「样本指纹（SHA256）」一节，
+  登记三个文件的指纹（教材 + 两个内容节点），并写明**真要换样本时怎么重算**
+  （给了可直接跑的重算命令），以及**"指纹自检"与"完整审计"是两件事**：
+  前者毫秒级、随 pytest 跑；后者约 10 秒、**照旧按需手动跑，做法不变**。
+- `backend/tests/test_r71_grounding_sample_intact.py`（新）：只做两件事 ——
+  ① 三个样本文件**存在**；② 它们的 SHA256 与 README 登记值**一致**；
+  不一致就指名道姓（"样本文件变了：xxx"，并同时打印登记指纹与现在的指纹）。
+  另外钉一条：登记表本身也必须是"三个都有"（少了某一行不许被静默放过）。
+
+**耗时实测**：这条用例 `call` 阶段 **0.9 ~ 1 毫秒**（直接调用检查器的实测是 0.9 毫秒）；
+`--durations` 里 a1/a2 的 call 都是 0.00s，唯一那 0.35s 是**整个测试模块的 autouse 夹具拆除**
+（会话内容根清理，与本用例无关，任何模块都要付这一笔）。
+
+**阳性对照（"做不到就不算数"）—— 两条都在真样本上实做**：
+
+1. 把教材第 5000 字节**翻转一位** → 用例 **exit=1**，报
+   「样本文件变了：materials/researchgate-17551026c7.md」，登记指纹 `1895d71c…`、
+   现在的指纹 `090b7e91…`；还原后 exit=0、`git diff` 为空、SHA256 与登记值一致；
+2. 把 `stages/node_s-f2decfcf.u02_auto.md` **移走** → 用例 **exit=1**，报
+   「样本文件不在了：stages/node_s-f2decfcf.u02_auto.md」；还原后检查器无输出、样本目录 git status 干净。
+
+另外用例里自带一条**纯内存**的阳性对照（改一个字节 / 删一个文件 / 登记表被删，三种都测），
+这样"报 0 处问题"每次 pytest 都被证明**不是空转**——而且它不落盘、不用临时目录，
+自己也是毫秒级（避免"为了证明能报警"反而给每次 pytest 加几百毫秒）。
+
+⚠️ 没有动审计本身：判据、阈值、口径（`MIN_LECTURE_SENTENCE`、引文尺子、零接地判定）**一个字没改**；
+本任务只加"样本没被改坏"的自检。
+
+### 90.2 任务 ②：3 个文件的行尾归一（单独一个提交）
+
+`.gitattributes` 写着 `*.py` / `*.ts` / `*.tsx` 用 LF，但这三个文件的 **blob 里存的是 CRLF**
+（历史遗留，不是哪一批搞的）⇒ 任何新 clone / 新 worktree 一 checkout 就报"已修改"，
+而 `git diff --ignore-cr-at-eol` 却是空的。
+
+**三条（字节数变化）**：
+
+- `backend/app/__init__.py`：107 → **106** 字节（去掉 1 个 CR）
+- `frontend/src/components/ErrorBoundary.tsx`：1619 → **1578** 字节（去掉 41 个 CR）
+- `scripts/gen_content.py`：4275 → **4166** 字节（去掉 109 个 CR）
+
+**提交前验了三件事**：
+
+1. 三个文件**只有 CRLF、没有孤立 CR**（孤立 CR 数 = 0）⇒ "CRLF→LF"是纯行尾改动；
+2. `git diff --ignore-cr-at-eol --stat` **为空**；
+3. 比第 2 条更硬的一条：把**旧 blob** 里的 CRLF 归一成 LF 后与新文件**逐字节比对相同**
+   （三个文件依次 `True`）——"内容除行尾外一个字节都没变"。
+
+**提交后**：`git ls-files --eol` 三个文件都是 `i/lf w/lf`（与 `text eol=lf` 一致）。
+
+**新 worktree 实测（含阳性对照）**：
+
+- 修复**前**（`c5f54aa`）新建 worktree → `git status --porcelain` 恰好是那 3 个 `M`；
+- 修复**后**（`7e61ab9`）新建 worktree → `git status --porcelain` **完全为空**。
+
+两个 worktree 验完都已 `git worktree remove` 清掉（`git worktree list` 只剩主工作树）。
+
+### 90.3 回归与自证（本任实测）
+
+- `pytest backend/tests`：**668 collected / 666 passed + 2 skipped / 0 failed**（exit 0）
+  —— 基线 666/664+2 → **收集数 +2**（本批新用例 2 条），**没有掉**。
+- `content validate`：**ok=True nodes=25 exercises=50**（口径：**不含**用户自己的学科内容）。
+- roadmap audit 五学段：**27/31/81/59/60**，五段 `ok=True`、错误 0。
+- 接地审计（仓库内固定样本）：**17/17、6/6、9/83、37/83**（采样与判据未动，逐位一致）。
+- `npx tsc --noEmit` exit 0；`npx vite build` exit 0（1.18s）。
+- `content/`：零改动（`git diff c5f54aa HEAD -- content/` 为空；本批两个提交都没碰它）。
+
+### 90.4 疑点 / 请裁
+
+1. **指纹自检只认"字节没变"，不认"变了但更好"。** 万一将来真要换样本（教材出新版），
+   必须**手工**重算指纹并改 README 那三行（README 里写了命令）—— 这是有意的：
+   换样本是件该有人拍板的事，不该被一条命令顺手完成。若你希望"换样本"也走一条明路
+   （比如加个 `--update-fingerprints` 开关），说一声，那是独立一小批。
+2. **行尾这条只修了 3 个文件，没有"全库扫一遍"。** 我按工单只动这三个；
+   没有顺手去扫其它文件（工单 §红线：不许顺手做别的事）。
+   如果以后想防复发，可以加一条"源码文件必须 LF"的守卫用例（毫秒级、带阳性对照）——
+   但那会新增一条约束，**要不要加请你裁**。
+3. 本批**没起服务做浏览器走查**（8000/5173 未运行）；本批不涉及界面改动（行尾归一不改行为），
+   `tsc`/`build` 通过即可。
+4. 本批两个提交都**只碰**该碰的文件：任务① 2 个（README + 新用例），
+   任务② 3 个（纯行尾），合计 5 个文件；`content/`、用户真实内容与真实库一个字节没动。
+
+
+
+
+
 
 
