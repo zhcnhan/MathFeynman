@@ -166,8 +166,14 @@ def test_r59_4_frontend_button_is_plain_chinese():
         assert bad not in block, f"重读相关文案里有内部字样 {bad}"
 
 
-def test_r59_5_legacy_label_without_page_no_is_explained(app_client, sids, monkeypatch):
-    """**⑤（边界）**：旧记录里"读不出来"的页认不出是第几页 → **中文说清楚**，不弹"页范围写法看不懂"。"""
+def test_r59_5_legacy_label_is_not_a_cryptic_error(app_client, sids, monkeypatch):
+    """**⑤（边界）**：旧记录里"读不出来"的页认不出是第几页 → **不把内部解析报错甩给用户**。
+
+    ⚠️ **R60 任务 B 起口径变了**（架构侧裁定"跳过并列出"）：本用例随裁决更新——
+    现在**不再 422**，而是**跳过该页并如实列出**（这条用例保住的是"绝不出现
+    「页范围写法看不懂」这种内部报错"这一点；完整的跳过语义见
+    `test_r60_page_cap_and_legacy_labels.py::test_r60_b1_*`）。
+    """
     import json
 
     from app.outline import materials as mat
@@ -192,7 +198,9 @@ def test_r59_5_legacy_label_without_page_no_is_explained(app_client, sids, monke
 
     r = app_client.post(f"/api/subjects/{sid}/materials/{up['id']}/read-pages",
                         json={"pages": "unreadable"})
-    assert r.status_code == 422, r.text
+    assert r.status_code == 200, r.text
     body = json.dumps(r.json(), ensure_ascii=False)
-    assert "认不出是第几页" in body and "封面" in body, body
-    assert "页范围写法看不懂" not in body, "不该把内部解析报错甩给用户"
+    assert "页范围写法看不懂" not in body, "绝不把内部解析报错甩给用户"
+    assert "认不出是第几页" not in body, "R60 起改成跳过并列出，不再用这句拒掉整个操作"
+    assert "封面" in body and "跳过" in body, body
+    assert r.json()["skipped"] == ["封面"], body

@@ -373,14 +373,19 @@ export default function OutlinePage() {
     try {
       const r = await api.post<{
         title: string; reread: string[]; count: number; unreadable?: string[];
-        note_zh?: string; reason_zh?: string;
+        skipped?: string[]; note_zh?: string; reason_zh?: string;
       }>(`/subjects/${id}/materials/${mid}/read-pages`, { pages: pagesSpec });
+      const skipMsg = r.skipped?.length
+        ? `另有 ${r.skipped.length} 页标签里没有页号，已跳过：${r.skipped.join("、")}（这几页要自己填页号重读）。`
+        : "";
       if (!r.count) {
-        // 没读不出来的页 → 后端**不调用模型**，这里照实说（别让人以为"点了没反应"）
+        // 没读不出来的页 → 后端**不调用模型**，这里照实说（别让人以为"点了没反应"）；
+        // 全是"标签读不出页号"的旧页时后端也会在这句话里如实写明跳过了哪几页
         setMsg(`「${title}」：${r.note_zh || r.reason_zh || "没有需要重读的页"}`);
       } else {
         setMsg(`「${title}」已重新读：${r.reread.join("、")}（共 ${r.count} 页）。` +
           (r.unreadable?.length ? `还是读不出来：${r.unreadable.join("、")}。` : "") +
+          skipMsg +
           "其它页的记录没有动；这一步同样要问模型，也会花钱。");
       }
       setRereadPages("");

@@ -116,7 +116,8 @@ def render_pages(data: bytes, *, pages: str | list[int] | None = None, width: in
     - ``pages``：页范围（``"1-5,8"``；空 = 全部页）；
     - 出图宽度优先按 ``width``（默认 1024 px），同时受 ``dpi_cap`` 限制
       （实际 dpi = min(目标宽隐含 dpi, dpi_cap)），**两个参数都生效**；
-    - 页数上限＝``max_pages``（默认沿用 `MF_PDF_MAX_PAGES`）；超限**中文报错**；
+    - 页数上限＝``max_pages``（默认沿用 `MF_PDF_MAX_PAGES`）；**只约束"本次要读的页数"**
+      （R60 任务 A：给了页范围就按范围算，没给才按整本算）；超限**中文报错**；
     - 单页超过 ``max_bytes`` → 先降质量重出一次；仍超 → 中文报错（不静默发超大图）。
     """
     ok, why = render_available()
@@ -154,11 +155,21 @@ def render_pages(data: bytes, *, pages: str | list[int] | None = None, width: in
             raise PdfRenderError(f"PDF 页数读不出来（文件可能损坏）：{type(e).__name__}") from e
         if total <= 0:
             raise PdfRenderError("这份 PDF 没有任何页面")
-        if total > max_pages:
-            raise PdfRenderError(f"这份 PDF 有 {total} 页，超过上限 {max_pages} 页——"
-                                 "请拆分后分批导入，或只读其中一段（页范围）")
-
         picked = parse_pages(pages, total)
+        # **R60 任务 A（真缺陷修复）**：页数上限只约束"**本次实际要读的页数**"。
+        # 之前是"先判整本页数、再解析页范围" ⇒ "126 页的书只要第 1 页"也被拒，
+        # 而报错还在建议"只读其中一段（页范围）"这条**当时根本走不通**的路。
+        # 现在：**给了页范围 → 只按范围里的页数校验**（要 1 页就永远放行）；
+        # **没给（＝整本）→ 才按整本校验**。单页体量保护（max_bytes）照旧不受影响。
+        whole_book = pages in (None, "", [])
+        if len(picked) > max_pages:
+            if whole_book:
+                raise PdfRenderError(
+                    f"这份 PDF 有 {total} 页，超过上限 {max_pages} 页——"
+                    f"请指定页范围分批读（例如 1-{max_pages}），或先把它拆成小一点的文件")
+            raise PdfRenderError(
+                f"这次要读 {len(picked)} 页，超过上限 {max_pages} 页——"
+                f"请把页范围缩小一些（比如分几次读，每次不超过 {max_pages} 页）")
         out: list[dict] = []
         for page_no in picked:
             page = doc[page_no - 1]
