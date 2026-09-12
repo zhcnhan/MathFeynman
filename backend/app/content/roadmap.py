@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import yaml
@@ -20,6 +21,41 @@ from . import content_root
 LEVELS = ("primary", "middle", "high", "college", "ai")
 # 学段学习顺序（北极星：小学→初中→高中→大学→AI）。跨学段 prereq 只能引用"本学段或前序学段"条目。
 LEVEL_ORDER = {lv: i for i, lv in enumerate(LEVELS)}
+
+
+# ---------------------------------------------------------------------------
+# R63 任务 ②：蓝图文件的**进程内缓存**（按文件指纹失效）
+# ---------------------------------------------------------------------------
+# 口径**照抄** `service/outline_gate.py::_cached_outline`（仓库已有的成熟做法，不发明新机制）：
+#   指纹 = 文件 (mtime_ns, size)；文件被原子替换 / 内容变化 ⇒ 指纹变化 ⇒ 自动重读。
+# 为什么不用 `@lru_cache`：那会让"文件改了读不到新的"和"测试之间互相污染"同时发生；
+# 指纹方案两者都不沾（文件一变就是新的；测试换目录/换文件自然换指纹）。
+# `all_entries()` 的指纹是**五个学段文件拼起来**的（含"文件不存在"记 "-"），
+# 所以新增 / 删除 content/roadmap/*.yaml 也会让缓存失效（不需要单独枚举目录）。
+_roadmap_lock = threading.Lock()
+_roadmap_cache: dict[str, tuple[str, "Roadmap"]] = {}
+_entries_cache: tuple[str, dict[str, tuple[str, "RoadmapEntry"]]] | None = None
+
+
+def _file_fingerprint(p: Path) -> str:
+    """文件的 (mtime_ns, size) 指纹；读不到（不存在/无权限）= 空串。"""
+    try:
+        st = p.stat()
+        return f"{st.st_mtime_ns}:{st.st_size}"
+    except OSError:
+        return ""
+
+
+def clear_roadmap_cache() -> None:
+    """清空蓝图进程缓存（**指纹已能自动失效**，这里是显式入口：测试/外部文件变更后用）。
+
+    形状与 `service/outline_gate.clear_outline_cache` 一致。
+    """
+    global _entries_cache
+    with _roadmap_lock:
+        _roadmap_cache.clear()
+        _entries_cache = None
+
 
 
 def _split_entry_ref(ref: str) -> tuple[str, str] | None:
@@ -38,7 +74,15 @@ def all_entries() -> dict[str, tuple[str, "RoadmapEntry"]]:
     供 audit / pipeline 判定 prereq 是否指向其它学段的蓝图条目（非内容节点）。
     蓝图条目 id 全局唯一（学段前缀 + 本地号），重复 id 在注册表构建时以先读到的文件为准
     （当前各学段无重复；如未来出现重复属蓝图错误，应在精核批处理）。
+
+    **R63 任务 ②**：进程内缓存（指纹 = 五个学段文件的 mtime_ns+size 拼接，含"缺失"标记）；
+    返回**浅拷贝**字典，调用方改它不会污染缓存。
     """
+    global _entries_cache
+    fp = "|".join(f"{lv}={_file_fingerprint(roadmap_path(lv))}" for lv in LEVELS)
+    with _roadmap_lock:
+        if _entries_cache is not None and _entries_cache[0] == fp:
+            return dict(_entries_cache[1])
     registry: dict[str, tuple[str, RoadmapEntry]] = {}
     for lv in LEVELS:
         p = roadmap_path(lv)
@@ -50,7 +94,9 @@ def all_entries() -> dict[str, tuple[str, "RoadmapEntry"]]:
             continue  # 单文件损坏不应拖垮全局注册（audit 会针对该 level 报错）
         for e in rd.entries:
             registry.setdefault(e.id, (lv, e))
-    return registry
+    with _roadmap_lock:
+        _entries_cache = (fp, registry)
+    return dict(registry)
 
 
 def landed_id_for(entry: "RoadmapEntry", known_node_ids: set[str] | None = None) -> str:
@@ -98,10 +144,22 @@ def roadmap_path(level: str) -> Path:
 
 
 def load_roadmap(level: str, *, path: Path | None = None) -> Roadmap:
-    """载入并校验某学段蓝图；结构问题抛 RoadmapError（含具体条目）。"""
+    """载入并校验某学段蓝图；结构问题抛 RoadmapError（含具体条目）。
+
+    **R63 任务 ②**：命中进程内缓存（键 = 解析后的文件路径，指纹 = mtime_ns+size）时直接返回，
+    不重复读盘/不重复解析；文件一变（原子替换、编辑、删除后重建）指纹就变 ⇒ 立刻读到新的。
+    返回的是**同一个 Roadmap 对象**（只读语义：`audit` / `PathEngine` / 生成管线都只读它，
+    唯一会改它的地方是本函数内部那次 `e.level` 归一——发生在入缓存之前）。
+    """
     p = path or roadmap_path(level)
     if not p.exists():
         raise RoadmapError(f"蓝图文件不存在: {p}")
+    key = str(p)
+    fp = _file_fingerprint(p)
+    with _roadmap_lock:
+        cached = _roadmap_cache.get(key)
+        if cached is not None and cached[0] == fp:
+            return cached[1]
     try:
         raw = yaml.safe_load(p.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
@@ -140,6 +198,8 @@ def load_roadmap(level: str, *, path: Path | None = None) -> Roadmap:
                     )
                 continue  # 合法格式：跨文件蓝图条目或真实节点，语义交给 audit
             raise RoadmapError(f"{p.name}/{e.id}: prereq {pr!r} 未指向文件内条目或锚点节点")
+    with _roadmap_lock:
+        _roadmap_cache[key] = (fp, roadmap)
     return roadmap
 
 
@@ -397,5 +457,6 @@ __all__ = [
     "boss_group_topic",
     "_content_closure_landed",
     "_split_entry_ref",
+    "clear_roadmap_cache",
     "audit",
 ]
