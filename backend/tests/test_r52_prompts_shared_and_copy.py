@@ -33,13 +33,14 @@ def test_r52_a1_system_shared_count_matches_actual_texts(app_client):
     """**必交②（后端半）**：`system_shared_with` 与"文本完全相同的其它调用点数"逐一吻合，
     且点名的独有 system 调用点为 0。
 
-    **R56 更新**：新增了调用点「读教材页/图」（图示教材模式的第一步，工单 §4-B1 要求），
-    所以调用点数 15 → 16、**互不相同的 user 数 15 → 16、互不相同的 system 6 → 7**；
-    "最大一组 10 处共用 system"这个分组事实不变——新增那条是**自带 system** 的独立调用点。
+    **R56 更新**：新增了调用点「读教材页/图」+ 图示教材模式的 8 个环节（工单 §4-B1 要求），
+    所以调用点数 15 → **24**、互不相同的 user 数 15 → **24**、互不相同的 system 6 → **15**；
+    "最大一组 10 处共用 system"这个分组事实不变——新增那些都是**自带 system** 的独立调用点
+    （模式内 8 条共用 `_MODE_COMMON` 前缀但整段文本各不相同）。
     """
     data = app_client.get("/api/prompts").json()
     items = data["prompts"]
-    assert len(items) == 16, len(items)
+    assert len(items) == 24, len(items)
     for it in items:
         assert isinstance(it.get("system_shared_with"), int), it.get("call_name")
         assert isinstance(it.get("user_shared_with"), int), it.get("call_name")
@@ -57,16 +58,17 @@ def test_r52_a1_system_shared_count_matches_actual_texts(app_client):
         assert it["user_shared_with"] == usr_n, (it["call_name"], it["user_shared_with"], usr_n)
 
     # 事实锚点（R52 立案实测）：15 个调用点只有 6 份不同 system；最大一组 10 处共用（＝ N=9）
-    # **R56 更新**：新增「读教材页/图」自带一份 system → 不同 system 6 → 7；共用分组不变。
-    assert len({it["raw_template"] for it in items}) == 7
+    # **R56 更新**：新增的 9 条（读页 + 模式 8 环节）各自带 system → 不同 system 6 → 15；
+    # 共用分组不变（仍是那 10 条路径②调用点共用一份）。
+    assert len({it["raw_template"] for it in items}) == 15
     biggest = max(it["system_shared_with"] for it in items)
     assert biggest == 9, biggest
     assert sum(1 for it in items if it["system_shared_with"] == biggest) == 10
     # user 互不相同 → 每处 user_shared_with 都是 0（界面上"每处都不一样"这句话是真的）
-    assert len({it["raw_user_template"] for it in items}) == 16
+    assert len({it["raw_user_template"] for it in items}) == 24
     assert all(it["user_shared_with"] == 0 for it in items)
     # 独有 system 的调用点（界面应显示"只有这一处在用"）
-    for name in UNIQUE_SYSTEM_CALLS + ("read_page",):
+    for name in UNIQUE_SYSTEM_CALLS + ("read_page", "mode_judge", "mode_lesson", "mode_outline"):
         hit = next(it for it in items if it["call_name"] == name)
         assert hit["system_shared_with"] == 0, hit["call_name"]
 

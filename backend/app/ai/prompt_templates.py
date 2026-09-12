@@ -265,6 +265,163 @@ U_READ_PAGE = (
 )
 
 
+# ---------------------------------------------------------------------------
+# **R56 第 2 步**：图示教材模式（全 AI 模式）的提示词
+# 共同纪律（写进每一条）：
+#   ① 只用给到它的"读页记录"，不许补书上没有的内容；读不到就明说；
+#   ② 依据一律指到**页/图号**（本模式没有可检索原文，不许伪造逐字引文）；
+#   ③ 判/评类调用点拿不准时必须走 uncertain + 中文原因（不许硬给对错、不许硬给分）。
+# ---------------------------------------------------------------------------
+_MODE_COMMON = (
+    "[模式] 这是「**图片为主的教材**」模式：你看到的是**程序从页面上读到的记录**（可能有图、"
+    "可能有读不出来的地方）。\n"
+    "**四条硬约束**：\n"
+    "1. **只用给到你的内容**：不许补书上没有的知识、数、公式、结论；拿不准就不写；\n"
+    "2. **读不到就明说**：记录里写着「读不出来/看不清」的部分，**一律不许猜**——该说缺就直说；\n"
+    "3. **依据指到页/图号**：写 `source_pages` / `basis_pages`（如「第 12 页」「图 6.1」）；"
+    "**不许编造逐字引文**（本模式没有可检索原文）；\n"
+    "4. **拿不准给出口**：判对错、评分、补答评估这类「下结论」的活，只要不能确定，"
+    "就把 `uncertain` 置 true 并写清 `uncertain_reason`（中文，说清哪一部分读不出来、为什么）——"
+    "**宁可不判，也不许硬判**。\n"
+)
+
+S_MODE_OUTLINE = _MODE_COMMON + (
+    "[角色] 你是课程设计者：按**这些页面里真实存在的内容**排出学习单元，每个单元注明来自哪几页。\n"
+    + JSON_DISCIPLINE
+)
+
+U_MODE_OUTLINE = (
+    "输出 JSON：\n"
+    '{{"units":[{{"title":"…","objectives":["…"],"concept_tags":["…"],"source_pages":["第 12 页"]}}],'
+    '"uncertain":false,"uncertain_reason":""}}\n'
+    "学科：{subject_label}\n学习目标/背景：{brief}\n想要的单元数：{want_count}\n"
+    "各页读到了什么：\n{pages_digest}\n"
+    "{errors_block}"
+    "要求：单元要能独立学习；只排**这些页里真的有的**内容；页里读不出来的部分不许编。"
+)
+
+S_MODE_LESSON = _MODE_COMMON + (
+    "[角色] 你是这门课的老师：用**给到的页面记录**写这一单元的讲解"
+    "（讲清「是什么、为什么、怎么用」），并举 1-2 个例子。\n"
+    + JSON_DISCIPLINE
+)
+
+U_MODE_LESSON = (
+    "输出 JSON：\n"
+    '{{"lecture_md":"…","key_points":["…"],'
+    '"worked_examples":[{{"prompt":"…","solution_steps":["…"]}}],'
+    '"source_pages":["第 12 页"],"uncertain":false,"uncertain_reason":""}}\n'
+    "单元：{unit_title}\n学习目标：{objectives}\n"
+    "本单元相关页面读到了什么：\n{pages_digest}\n"
+    "{errors_block}"
+    "要求：讲解里出现的每个数字/公式/结论都要能在上面这些页里找到出处；找不到就别写。"
+)
+
+S_MODE_EXERCISE = _MODE_COMMON + (
+    "[角色] 你是出题老师：按给到的页面记录出题，**连同标准答案与解析一起给**；"
+    "每道题都要写清依据来自哪一页/哪张图。\n"
+    + JSON_DISCIPLINE
+)
+
+U_MODE_EXERCISE = (
+    "输出 JSON：\n"
+    '{{"exercises":[{{"prompt":"…","kind":"choice|boolean|short","options":["…"],'
+    '"answer":"…","explanation":"…","basis_pages":["第 12 页"]}}],'
+    '"uncertain":false,"uncertain_reason":""}}\n'
+    "单元：{unit_title}\n要点：{key_points}\n出题数量：{want_count}\n题型要求：{exercise_kind}\n"
+    "已经出过的题（别重复）：{asked_before}\n"
+    "页面记录：\n{pages_digest}\n"
+    "要求：题目只能考这些页里真的写了的内容；答案要在解析里说清怎么来的；"
+    "如果这些页实在不够出题，就少出几道并在 uncertain_reason 说明。"
+)
+
+S_MODE_JUDGE = _MODE_COMMON + (
+    "[角色] 你是判题老师：判断学生这道题答得**对不对**，并给出人话反馈。\n"
+    "**判题纪律**：\n"
+    "1. 先看学生的答案有没有答到「题目问的那个点」，再看数值/表述是否与页面记录一致；\n"
+    "2. **部分对就给 partial**（说明对在哪、缺在哪）；全对 correct；明确错 wrong；\n"
+    "3. **判不了就给 uncertain**：页面记录里读不出来、题目本身有歧义、学生写得看不清、"
+    "或者你这道题自己也算不准——**一律不要硬判**（「差不多对吧」这种最坏）；\n"
+    "4. 反馈要对学习者说人话：先说结论，再说下一步该怎么做；别只丢一个分数。\n"
+    "（本模式**没有独立的第二次核对**：你的判断就是最终判断，所以更要老实说「我不确定」。）\n"
+    + JSON_DISCIPLINE
+)
+
+U_MODE_JUDGE = (
+    "输出 JSON：\n"
+    '{{"verdict":"correct|partial|wrong|uncertain","uncertain_reason":"",'
+    '"score_0_1":0.0,"feedback_md":"…","better_md":"…","basis_pages":["第 12 页"]}}\n'
+    "题目：{prompt}\n题型：{kind}\n选项：{options}\n"
+    "出题时给的标准答案（仅供参考，你要自己判）：{reference_answer}\n解析：{explanation}\n"
+    "学生答案：{student_answer}\n"
+    "相关页面记录：\n{pages_digest}"
+)
+
+S_MODE_FEYNMAN = _MODE_COMMON + (
+    "[角色] 你是听学生「讲一遍」的老师：按给定维度给分，并给出结论。\n"
+    "**评分纪律**：\n"
+    "1. 每个维度都要给 `evidence_quote`——**逐字**引用学生这次说的话"
+    "（这是本模式唯一能逐字核对的东西）；引不出来就别给这个维度打分；\n"
+    "2. 只按学生**说出来的内容**打分，不替他补全、不按「他应该懂」给分；\n"
+    "3. 判不了（学生说的内容你无法与页面记录对应、或页面记录本身读不出来）→ 把 verdict 置为 "
+    "uncertain 并写中文原因，**不要硬给分数与结论**。\n"
+    + JSON_DISCIPLINE
+)
+
+U_MODE_FEYNMAN = (
+    "输出 JSON：\n"
+    '{{"dimension_scores":[{{"key":"…","score":0.0,"evidence_quote":"…","comment":"…"}}],'
+    '"overall_note":"…","verdict":"pass|followup|uncertain","uncertain_reason":"","confidence":0.0}}\n'
+    "讲解任务：{task_prompt}\n要评的维度：{dimensions}\n"
+    "相关页面记录：\n{pages_digest}\n"
+    "学生这次讲的话：\n{transcript}"
+)
+
+S_MODE_FOLLOWUP = _MODE_COMMON + (
+    "[角色] 你是追问的老师：**只针对学生没讲清的那一点**问一个问题，帮他自己补上。\n"
+    "**追问纪律**：\n"
+    "1. `student_quote` 必须**逐字**引用学生原话（≥6 字），不许改写、不许拼接；\n"
+    "2. 只问一个点（`missing` 写清缺的是什么）；不要泛泛地问「还有什么联系」；\n"
+    "3. 学生的话里**没有可引用的实质内容**（例如只说「不知道」「不会」）→ `reteach=true`，"
+    "让他回去重看讲解，**不许硬造问题**。\n"
+    + JSON_DISCIPLINE
+)
+
+U_MODE_FOLLOWUP = (
+    "输出 JSON：\n"
+    '{{"question_md":"…","missing":"…","student_quote":"…","reteach":false,'
+    '"uncertain":false,"uncertain_reason":""}}\n'
+    "还没讲清的点：{missing}\n相关页面记录：\n{pages_digest}\n"
+    "学生这次讲的话：\n{transcript}"
+)
+
+S_MODE_GAP_CHECK = _MODE_COMMON + (
+    "[角色] 你是看补答的老师：**只判断刚才那一个点补上没有**，给个完成度。\n"
+    "**纪律**：只看这一次补答有没有真正回答那个点；没回答就 `gap_filled=false`（别给安慰分）；"
+    "判断不了 → `uncertain=true` + 中文原因。\n"
+    + JSON_DISCIPLINE
+)
+
+U_MODE_GAP_CHECK = (
+    "输出 JSON：\n"
+    '{{"gap_filled":false,"score_0_1":0.0,"comment":"…","uncertain":false,"uncertain_reason":""}}\n'
+    "刚才的追问：{followup_question}\n要补的维度：{target_dimension}\n"
+    "学生的补答：{student_answer}\n相关页面记录：\n{pages_digest}"
+)
+
+S_MODE_QA = _MODE_COMMON + (
+    "[角色] 你是答疑老师：回答学生的问题。**只依据给到的页面记录**；"
+    "问的东西不在这些页里就直说「这些页里没有 / 我读不到」，并建议他换个问法或补上相关页。\n"
+    + JSON_DISCIPLINE
+)
+
+U_MODE_QA = (
+    "输出 JSON：\n"
+    '{{"reply_md":"…","out_of_scope":false,"uncertain":false,"uncertain_reason":""}}\n'
+    "单元：{unit_title}\n学生的问题：{question}\n页面记录：\n{pages_digest}"
+)
+
+
 def _outline_system() -> str:
     """大纲起草的 system 默认值（与 R37 S2/S8 原实现逐字一致 + 教材纪律占位符）。"""
     return (
@@ -494,6 +651,79 @@ def _specs() -> dict[str, PromptSpec]:
             notes="这条决定「AI 到底从图里读到了什么」，删掉会让本模式失去依据。"
                   "（`readable=false` + 原因＝读不出来时的诚实出口，建议保留）",
         ),
+        PromptSpec(
+            "mode_outline", "图示教材 · 排大纲",
+            "按页面里真实存在的内容排出学习单元（每个单元注明来自哪几页）。",
+            S_MODE_OUTLINE, U_MODE_OUTLINE,
+            system_required_tokens=("输出 JSON", "uncertain"),
+            user_required_placeholders=("subject_label", "brief", "want_count", "pages_digest",
+                                        "errors_block"),
+            user_required_tokens=("units", "title", "source_pages", "输出 JSON"),
+            notes="里面写着「只用给到的内容、读不到就明说」（四条硬约束），建议保留。",
+        ),
+        PromptSpec(
+            "mode_lesson", "图示教材 · 写讲解",
+            "用页面记录写这一单元的讲解、要点与例子（每个结论都要有出处）。",
+            S_MODE_LESSON, U_MODE_LESSON,
+            system_required_tokens=("输出 JSON", "uncertain"),
+            user_required_placeholders=("unit_title", "objectives", "pages_digest", "errors_block"),
+            user_required_tokens=("lecture_md", "key_points", "source_pages", "输出 JSON"),
+        ),
+        PromptSpec(
+            "mode_exercise", "图示教材 · 出题",
+            "按页面记录出题，连同标准答案与解析一起给（依据指到页/图号）。",
+            S_MODE_EXERCISE, U_MODE_EXERCISE,
+            system_required_tokens=("输出 JSON", "uncertain"),
+            user_required_placeholders=("unit_title", "key_points", "want_count", "exercise_kind",
+                                        "asked_before", "pages_digest"),
+            user_required_tokens=("exercises", "prompt", "answer", "basis_pages", "输出 JSON"),
+            notes="标准答案与解析都由这条提示词产出；`basis_pages` 是本模式唯一的依据形式。",
+        ),
+        PromptSpec(
+            "mode_judge", "图示教材 · 判对错",
+            "判断学生这道题答得对不对（部分对也算），判不了就明说判不了。",
+            S_MODE_JUDGE, U_MODE_JUDGE,
+            system_required_tokens=("输出 JSON", "uncertain"),
+            user_required_placeholders=("prompt", "kind", "options", "reference_answer",
+                                        "explanation", "student_answer", "pages_digest"),
+            user_required_tokens=("verdict", "uncertain_reason", "feedback_md", "输出 JSON"),
+            notes="这条是本模式的「判对错」唯一出口：**必须保留 verdict 与 uncertain_reason**"
+                  "（删掉就会变成硬判——那正是本模式最该避免的事）。",
+        ),
+        PromptSpec(
+            "mode_feynman", "图示教材 · 费曼评分",
+            "按维度给学生这次讲的打分，并给出结论（讲不清就给 followup）。",
+            S_MODE_FEYNMAN, U_MODE_FEYNMAN,
+            system_required_tokens=("输出 JSON", "evidence_quote"),
+            user_required_placeholders=("task_prompt", "dimensions", "pages_digest", "transcript"),
+            user_required_tokens=("dimension_scores", "verdict", "uncertain_reason", "输出 JSON"),
+            notes="`evidence_quote` 必须逐字引用学生原话（本模式唯一能逐字核对的东西）。",
+        ),
+        PromptSpec(
+            "mode_followup", "图示教材 · 追问",
+            "只针对学生没讲清的那一点问一个问题（引不出原话就让他回去重看）。",
+            S_MODE_FOLLOWUP, U_MODE_FOLLOWUP,
+            system_required_tokens=("输出 JSON", "student_quote"),
+            user_required_placeholders=("missing", "pages_digest", "transcript"),
+            user_required_tokens=("question_md", "student_quote", "reteach", "输出 JSON"),
+        ),
+        PromptSpec(
+            "mode_gap_check", "图示教材 · 补答评估",
+            "只看刚才那一点补上没有（没补上就不给分）。",
+            S_MODE_GAP_CHECK, U_MODE_GAP_CHECK,
+            system_required_tokens=("输出 JSON", "uncertain"),
+            user_required_placeholders=("followup_question", "target_dimension", "student_answer",
+                                        "pages_digest"),
+            user_required_tokens=("gap_filled", "uncertain_reason", "输出 JSON"),
+        ),
+        PromptSpec(
+            "mode_qa", "图示教材 · 答疑",
+            "只依据页面记录回答学生的问题；不在这些页里就直说。",
+            S_MODE_QA, U_MODE_QA,
+            system_required_tokens=("输出 JSON", "uncertain"),
+            user_required_placeholders=("unit_title", "question", "pages_digest"),
+            user_required_tokens=("reply_md", "out_of_scope", "uncertain_reason", "输出 JSON"),
+        ),
     ]
     return {s.call_name: s for s in out}
 
@@ -558,6 +788,22 @@ UI_PLACEHOLDER_DEFAULTS: dict[str, str] = {
     "want": "这一页的正文要点与公式",
     "note": "（没有特别说明）",
     "page_label": "第 12 页",
+    "pages_digest": "（此处注入各页读到了什么）",
+    "want_count": "3",
+    "exercise_kind": "practice",
+    "options": "[]",
+    "reference_answer": "（出题时给的标准答案）",
+    "explanation": "（解析）",
+    "student_answer": "（学生答案）",
+    "dimensions": "[]",
+    "task_prompt": "（费曼任务）",
+    "missing": "[]",
+    "followup_question": "（追问）",
+    "target_dimension": "evidence",
+    "question": "（学生的问题）",
+    "asked_before": "[]",
+    "kind": "short",
+    "key_points": "（本单元要点）",
 }
 
 

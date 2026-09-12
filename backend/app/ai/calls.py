@@ -479,6 +479,179 @@ CALL_READ_PAGE = CallSpec(
     "read_page", "light", ReadPageIn, ReadPageOut, temperature=0.1, max_retries=1,
 )
 
+
+# ---------------------------------------------------------------------------
+# **R56 第 2 步**：图示教材模式（全 AI 模式）的完整提示词调用点
+#
+# 为什么要**独立一套**（不与路径②共用）：路径②的提示词里写着"必须逐字出自教材段落"
+# "服务端会丢弃找不到依据的题"——那套尺子在本模式**不成立**（本模式没有可检索原文，
+# 依据只能指到"页/图号"）。共用会让两条路径的口径互相污染（工单 §1/§3-A 明确禁止）。
+#
+# **诚实出口**：凡是"判/评"的调用点都带 `uncertain` + `uncertain_reason`——
+# 模型读不出来/拿不准时**必须**走这个出口，不许硬给对错（工单 §5-任务 C）。
+# ---------------------------------------------------------------------------
+class ModeOutlineIn(BaseModel):
+    subject_label: str = ""
+    brief: str = ""
+    pages_digest: str = ""        # 各页"读到了什么"的结构化摘要（程序拼好给它）
+    want_count: int = 0
+    errors: list[str] = Field(default_factory=list)   # 上一轮不通过的原因（回灌）
+
+
+class ModeUnit(BaseModel):
+    title: str = ""
+    objectives: list[str] = Field(default_factory=list)
+    concept_tags: list[str] = Field(default_factory=list)
+    source_pages: list[str] = Field(default_factory=list)   # 依据指到页/图号（本模式没有逐字原文）
+
+
+class ModeOutlineOut(BaseModel):
+    units: list[ModeUnit] = Field(default_factory=list)
+    uncertain: bool = False
+    uncertain_reason: str = ""
+
+
+class ModeLessonIn(BaseModel):
+    unit_title: str = ""
+    objectives: list[str] = Field(default_factory=list)
+    pages_digest: str = ""        # 本单元相关页的"读到了什么"
+    errors: list[str] = Field(default_factory=list)
+
+
+class ModeLessonOut(BaseModel):
+    lecture_md: str = ""
+    key_points: list[str] = Field(default_factory=list)
+    worked_examples: list[dict] = Field(default_factory=list)   # [{prompt, solution_steps[]}]
+    source_pages: list[str] = Field(default_factory=list)
+    uncertain: bool = False
+    uncertain_reason: str = ""
+
+
+class ModeExerciseOutItem(BaseModel):
+    prompt: str = ""
+    kind: Literal["choice", "boolean", "short"] = "short"
+    options: list[str] = Field(default_factory=list)
+    answer: str = ""              # 标准答案（模型给的，本模式没有独立验算）
+    explanation: str = ""         # 解析
+    basis_pages: list[str] = Field(default_factory=list)        # 依据指到页/图号
+
+
+class ModeExerciseIn(BaseModel):
+    unit_title: str = ""
+    key_points: list[str] = Field(default_factory=list)
+    pages_digest: str = ""
+    want_count: int = 3
+    kind: Literal["practice", "challenge"] = "practice"
+    asked_before: list[str] = Field(default_factory=list)
+
+
+class ModeExerciseOut(BaseModel):
+    exercises: list[ModeExerciseOutItem] = Field(default_factory=list)
+    uncertain: bool = False
+    uncertain_reason: str = ""
+
+
+class ModeJudgeIn(BaseModel):
+    prompt: str = ""
+    kind: str = "short"
+    options: list[str] = Field(default_factory=list)
+    reference_answer: str = ""    # 出题时给的标准答案（仅供参考：本模式由模型自己判）
+    explanation: str = ""
+    student_answer: str = ""
+    pages_digest: str = ""        # 相关页"读到了什么"（判题依据）
+
+
+class ModeJudgeOut(BaseModel):
+    """判对错的**诚实出口**：`verdict="uncertain"` 时**必须**给中文原因，且不打分。"""
+
+    verdict: Literal["correct", "partial", "wrong", "uncertain"] = "uncertain"
+    uncertain_reason: str = ""
+    score_0_1: float = 0.0        # 部分对时给 0~1 的把握度/完成度
+    feedback_md: str = ""         # 对学习者说人话
+    better_md: str = ""           # 更对的思路/答案（只讲思路也行）
+    basis_pages: list[str] = Field(default_factory=list)
+
+
+class ModeFeynmanIn(BaseModel):
+    task_prompt: str = ""
+    dimensions: list[str] = Field(default_factory=list)
+    transcript: str = ""
+    pages_digest: str = ""
+
+
+class ModeDimensionScore(BaseModel):
+    key: str = ""
+    score: float = 0.0
+    evidence_quote: str = ""      # **逐字**引用学生原话（本模式唯一可逐字核对的东西）
+    comment: str = ""
+
+
+class ModeFeynmanOut(BaseModel):
+    dimension_scores: list[ModeDimensionScore] = Field(default_factory=list)
+    overall_note: str = ""
+    verdict: Literal["pass", "followup", "uncertain"] = "followup"
+    uncertain_reason: str = ""
+    confidence: float = 0.0
+
+
+class ModeFollowupIn(BaseModel):
+    transcript: str = ""
+    missing: list[str] = Field(default_factory=list)
+    pages_digest: str = ""
+
+
+class ModeFollowupOut(BaseModel):
+    question_md: str = ""
+    missing: str = ""
+    student_quote: str = ""       # 逐字引用学生原话（引不出来 → reteach）
+    reteach: bool = False         # 学生的话没有实质内容 → 让他回去看讲解（不硬造问题）
+    uncertain: bool = False
+    uncertain_reason: str = ""
+
+
+class ModeGapCheckIn(BaseModel):
+    followup_question: str = ""
+    target_dimension: str = ""
+    student_answer: str = ""
+    pages_digest: str = ""
+
+
+class ModeGapCheckOut(BaseModel):
+    gap_filled: bool = False
+    score_0_1: float = 0.0
+    comment: str = ""
+    uncertain: bool = False
+    uncertain_reason: str = ""
+
+
+class ModeQaIn(BaseModel):
+    question: str = ""
+    unit_title: str = ""
+    pages_digest: str = ""
+
+
+class ModeQaOut(BaseModel):
+    reply_md: str = ""
+    out_of_scope: bool = False    # 问的东西不在教材这些页里
+    uncertain: bool = False
+    uncertain_reason: str = ""
+
+
+def _mode_call(name: str, inp: Type[BaseModel], outp: Type[BaseModel], *,
+               tier: ModelTier = "light", temperature: float = 0.3) -> CallSpec:
+    return CallSpec(name, tier, inp, outp, temperature=temperature, max_retries=1)
+
+
+CALL_MODE_OUTLINE = _mode_call("mode_outline", ModeOutlineIn, ModeOutlineOut, temperature=0.4)
+CALL_MODE_LESSON = _mode_call("mode_lesson", ModeLessonIn, ModeLessonOut, temperature=0.6)
+CALL_MODE_EXERCISE = _mode_call("mode_exercise", ModeExerciseIn, ModeExerciseOut, temperature=0.6)
+# 判对错给低温度：本模式没有独立验算，模型的判断要尽量稳定、别"越判越飘"
+CALL_MODE_JUDGE = _mode_call("mode_judge", ModeJudgeIn, ModeJudgeOut, temperature=0.1)
+CALL_MODE_FEYNMAN = _mode_call("mode_feynman", ModeFeynmanIn, ModeFeynmanOut, temperature=0.2)
+CALL_MODE_FOLLOWUP = _mode_call("mode_followup", ModeFollowupIn, ModeFollowupOut, temperature=0.4)
+CALL_MODE_GAP_CHECK = _mode_call("mode_gap_check", ModeGapCheckIn, ModeGapCheckOut, temperature=0.2)
+CALL_MODE_QA = _mode_call("mode_qa", ModeQaIn, ModeQaOut, temperature=0.5)
+
 CALLS: dict[str, CallSpec] = {
     c.name: c for c in (
         CALL_EXPLAIN_NODE,
@@ -497,6 +670,14 @@ CALLS: dict[str, CallSpec] = {
         CALL_UNIT_CONTENT,
         CALL_SEARCH_CANDIDATES,
         CALL_READ_PAGE,
+        CALL_MODE_OUTLINE,
+        CALL_MODE_LESSON,
+        CALL_MODE_EXERCISE,
+        CALL_MODE_JUDGE,
+        CALL_MODE_FEYNMAN,
+        CALL_MODE_FOLLOWUP,
+        CALL_MODE_GAP_CHECK,
+        CALL_MODE_QA,
     )
 }
 
