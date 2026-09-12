@@ -6542,6 +6542,130 @@ git worktree add --detach D:\DeepseekHarness\_r69_verify_wt HEAD
 
 
 
+## 91. R73 两条最小加固：行尾守卫 / 样本指纹只读打印
+
+（工单：`.runtime/EULER_TICKET_R73.md`；**验收批次 = R74**；开工 HEAD = `07ac026`）
+
+### 91.0 开工复核（本任自己复测）
+
+- `pytest backend/tests`：**668 collected / 666 passed + 2 skipped / 0 failed**（exit 0）。
+- `content validate`：**ok=True nodes=25 exercises=50**（口径：**不含**用户自己的学科内容）。
+- roadmap audit 五学段：**27/31/81/59/60**，五段 `ok=True`、错误 0。
+- 接地审计（仓库内固定样本）：**17/17、6/6、9/83、37/83**。
+- `tsc --noEmit` / `vite build` exit 0；`content/` 零改动。
+
+### 91.1 ⚠️ 任务 ① 的一处口径冲突：工单字面写法会踩红线（已请裁并确认）
+
+工单字面写"断言**没有任何文件**的 index 侧是 `i/crlf`"。开工先量了一遍（289 个受管文件）：
+
+- index 侧 `i/lf`：**240** 个；index 侧 `i/crlf`：**41** 个；
+- 那 41 个按顶层目录分：`content/` **20**、`docs/` **10**、`backend/` **4**
+  （`pyproject.toml` + 三个审计样本）、`frontend/` **3**、仓库根 **3**（README /
+  IMPLEMENTATION_NOTES / .env.example）、`scripts/` **1**；
+- 其中被 `.gitattributes` 要求 LF（`attr/text eol=lf`）的：**0 个**（R71 已把那一类清零）。
+
+⇒ 按字面口径，这条守卫在**当前健康仓库上就是红的**；要让它变绿必须去改 `content/`（20 个）
+和三个审计样本（红线："content/ 一个字节都不许改"、"样本文件一个字都不许改"，
+且改样本会立刻让 R71 的指纹自检变红）。
+
+**已请裁，定的口径是**：**只守 `.gitattributes` 要求 LF 的文件**（`*.py` / `*.ts` / `*.tsx`，
+即 attr 含 `text eol=lf`），**不动** `content/`、`docs/`、审计样本，也不做全局归一化。
+这正是 R71 那一类坑（blob 在加 `.gitattributes` 之前就存成了 CRLF），且与既有政策不冲突。
+
+### 91.2 任务 ①：行尾守卫用例（新文件 1 个）
+
+新文件 `backend/tests/test_r73_line_endings.py`（含正反两条断言，约 30 行）：
+
+- **只读** `git ls-files --eol`（`subprocess`，无新依赖、不写文件、不改仓库状态）；
+- 解析函数 `crlf_in_index(text)`：从输出里挑出"**attr 要求 LF、但 index 侧是 `i/crlf`**"的文件；
+  `git ls-files --eol` 的行格式是 `i/<eol> … w/<eol> … attr/<attr>\t<path>`
+  （meta 与路径之间是 **tab**，meta 内部是空格对齐），按这个切；
+- 断言这份表为空；**不为空就把文件名逐个列出来**（不写"有 N 个"）；
+- 另加一条**防空转**断言：输出里必须真的存在 `attr/text eol=lf` 的条目
+  （否则"报 0 个"什么也不能证明），并且 `git ls-files` 的 returncode 必须为 0。
+
+**耗时实测**：`call` 阶段 **0.08 秒**（是 `git ls-files --eol` 这个子进程本身）；
+`--durations` 里显示的那 0.35 秒是**整个测试模块的 autouse 夹具拆除**（会话内容根清理），
+与本用例无关（任何测试模块都要付这一笔）。
+
+**阳性对照（两条，都不改仓库状态）**：
+
+1. **用例内、纯字符串、零副作用**（工单要求）——把一段合成输出喂给同一个解析函数：
+
+   ```
+   i/lf    w/lf    attr/text eol=lf      	backend/app/ok.py
+   i/crlf  w/crlf  attr/text eol=lf      	backend/app/bad.py
+   i/crlf  w/crlf  attr/                 	docs/kept-crlf-on-purpose.md
+   ```
+
+   断言解析结果**恰好**是 `["backend/app/bad.py"]` —— 一举证明两件事：
+   含 `i/crlf` + 要求 LF 的**报得出来**；而 `docs/` 那种"没有 LF 属性、政策上就该是 CRLF"的
+   **不会**被误报。
+2. **真 index 上的人为造错**（工单验收口径："人为把某个受管文件以 CRLF 写进 index → 必须变红"）。
+   为**不污染主仓库**，我把这一步放在一个**一次性 worktree** 里做
+   （`git worktree add --detach HEAD`，验完 `git worktree remove`）：
+
+   - 先确认干净 worktree 里跑这条守卫是**绿的**（exit=0）；
+   - 注意：直接 `git add` 一个 CRLF 文件**不会**造出脏 index —— `.gitattributes` 会在入库时
+     把它归一成 LF（这本身就是一道安全网）。要复现 R71 的**历史状态**（blob 在加属性之前就是 CRLF），
+     得绕过过滤器：`git hash-object -w --no-filters` 造 CRLF blob +
+     `git update-index --cacheinfo` 放进 index；
+   - 这时 `git ls-files --eol` 对该文件显示：`i/crlf  w/crlf  attr/text eol=lf`（正是要抓的状态）；
+   - 再跑守卫 → **exit=1**，报出来的正是
+     `['backend/app/__init__.py']`，并打印
+     "这些文件 `.gitattributes` 要求 LF，仓库里（index/blob）却存成了 CRLF ——
+     新 clone / 新 worktree 一 checkout 就会报'已修改'：\n  backend/app/__init__.py"；
+   - 验完删 worktree；主仓库 `git status` 与"attr=lf 但 index=crlf 命中数（0）"都未受影响。
+
+### 91.3 任务 ②：样本指纹只读打印（改既有文件，3 行）
+
+在 `backend/tests/test_r71_grounding_sample_intact.py` 末尾加 `if __name__ == "__main__":`
+分支：直接跑本文件时，把三个样本文件**现在**的 SHA256 打出来，
+格式与 README 登记表**一模一样**（`<64 位小写十六进制><两个空格><相对路径>`），便于整段复制替换。
+
+- **只打印**：不写文件、不动 README、不动样本；**没有**任何"写回 README"的开关
+  （架构侧 R72 已裁定：那等于把钥匙挂在锁上）。
+- 实测输出三行，与 README 现有登记值 **`Compare-Object` 无差异（逐位一致）**：
+
+  ```
+  1895d71c641c86f8189111228fe7105eb5b902c8374e7ff884b244f939fa2f92  materials/researchgate-17551026c7.md
+  7cb2bdb69ed14496d7832aee7f09fe64a2c0782f945c38105bd9262982d64286  stages/node_s-f2decfcf.u01_auto.md
+  801c7194812e1f1d68b2c178d9dd7de077730064e555dc8ddea843883d62a574  stages/node_s-f2decfcf.u02_auto.md
+  ```
+
+- exit=0；跑完 `git status --porcelain` **为空**（证明一个文件都没写）。
+- 踩了一个自己的小坑（记一笔）：R71 那版最终代码里 `_sha256` 已被内联进 `_diff`、**并不存在**，
+  我第一版 `__main__` 直接调它 → `NameError`。改成在 `__main__` 里直接
+  `hashlib.sha256(...).hexdigest()`（不新增辅助函数，最小改动）后通过。
+
+### 91.4 回归与自证（本任实测）
+
+- `pytest backend/tests`：**669 collected / 667 passed + 2 skipped / 0 failed**（exit 0）
+  —— 基线 668/666+2 → **收集数 +1**（任务① 新用例），**没有掉**。
+- `content validate`：**ok=True nodes=25 exercises=50**（口径：**不含**用户自己的学科内容）。
+- roadmap audit 五学段：**27/31/81/59/60**，五段 `ok=True`、错误 0。
+- 接地审计（仓库内固定样本）：**17/17、6/6、9/83、37/83**。
+- `npx tsc --noEmit` exit 0；`npx vite build` exit 0。
+- `content/` **零改动**；三个审计样本 **零改动**（`git status --porcelain` 对这两处都为空）。
+
+### 91.5 疑点 / 请裁
+
+1. **守卫只认 `i/crlf`，不认 `i/mixed`**（工单字面只点了 `i/crlf`，我就没扩）。
+   实测当前仓库 `i/mixed` 的文件数 = 0，所以现在两条口径等价；
+   但"同一文件里 LF 与 CRLF 混着"也是同类病，将来要不要一并守，请裁。
+2. **`git add` 本身会把 CRLF 归一成 LF**，所以这条坑**只可能**来自"`.gitattributes` 之前就提交的
+   历史文件"或"绕过过滤器的工具"（`hash-object --no-filters` / `update-index --cacheinfo` /
+   某些合并）。守卫能抓住它，但它**不是**日常 `git add` 能造出来的 —— 这也解释了 R71 那 3 个文件
+   为什么会长期潜伏。记在这里，免得下一个人以为"守卫没必要"。
+3. 我**没有**顺手把 `docs/`（10 个）/根目录 3 个/`frontend/` 3 个等 CRLF 文件归一化
+   —— 工单明令"不许顺手做别的"，且 `.gitattributes` 明写"docs/ 的 CRLF 维持现状"。
+   仓库现在是"严格 LF 的源码"与"维持 CRLF 的文档/内容"并存，这是**有意**的状态。
+4. 本批**没起服务做浏览器走查**（不涉及界面改动）。
+
+
+
+
+
 
 
 
