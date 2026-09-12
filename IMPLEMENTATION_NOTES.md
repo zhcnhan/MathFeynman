@@ -3944,7 +3944,35 @@ R36 D4 的"预算即全局上限、超出即截断/丢弃"已被 **R37 S1 ＋ R3
     AST 级扫描 `backend/app/**` 的**每一条 raise**、扫描文件数 ≥30 防"扫空"、R60 页数报错仍是人话）；
     R60 A-④ 与 R58 A4-② 的文案断言同步更新（**意图不变：造错必报中文**）
 
+### 67.4r 融合对照表（**R63 行**：新增件 → 复用点 → 断言）
+
+> 写法同 §67.4d–q：按 docs/13 §2 写成**并列列表项**，不新建表格。
+
+- **新增件**：`service/selfextend.py::_lib_ids()` **改走既有进程内缓存**（`service/library.get_library()`）
+  - **复用点**：`service/library.py` 早有的 `get_library()` 缓存 + **既有失效路径**
+    （`refresh_library()` / `sync_content()`）；**不改** `content/loader.load_library()` 本身
+    （离线工具/生成管线要的仍是"当下的磁盘"）
+  - **断言/用例**：`test_r63_home_perf_cache.py` A-①（一次请求 + 学段循环，每个内容文件最多读 1 次）、
+    A-②（阳性对照：还原旧写法时同一文件被读多次 ⇒ 尺子有牙）
+- **新增件**：同类漏缓存点收口（`feedback.node_source()`、`concepts.unit_states()`／
+  `subject_content_ids()`／`recompute_subject_concepts()`、`api/subjects._content_ids()`、
+  `path.make_engine()` 的缺省兜底）
+  - **复用点**：同一份 `get_library()` 缓存与同一条失效路径；**离线工具 / 启动一次性 /
+    生成管线 / 内容替换路径保持原样**（清单与理由见 §86.2）
+  - **断言/用例**：A-①／A-①b（三个端点各一遍）+ 全套回归（619 → 624 条不变红）
+- **新增件**：`content/roadmap.py` 的 `load_roadmap()` / `all_entries()` **进程内缓存**
+  + `clear_roadmap_cache()`
+  - **复用点**：失效口径**照抄** `service/outline_gate.py::_cached_outline` 的"文件 mtime_ns+size 指纹"
+    （不发明新机制）；`all_entries()` 的指纹＝五个学段文件拼接（含"缺失"标记）⇒ 新增/删除文件也失效；
+    清缓存入口形状同 `clear_outline_cache`
+  - **断言/用例**：A-③（命中缓存 / 改文件立刻读到新的 / 新增删除文件也反映 / 清缓存入口）、
+    A-④（返回浅拷贝，调用方改不污染缓存）
+- **新增件**：`backend/tests/home_perf_probe.py`（真实库、主页请求顺序、逐项耗时 + 合计、超阈值非 0 退出）
+  - **复用点**：不新建机制，只按前端主页顺序打既有接口；文件名不叫 `test_*` ⇒ pytest 不收集（不进 CI）
+  - **断言/用例**：脚本自身在 >400 ms 时非 0 退出；实测 165 ms（冷）/108 ms（热）
+
 ### 67.4b 融合对照表（**R38 / R39 行**：新增件 → 复用点 → 断言）
+
 
 | 新增件 | 复用点（禁新建平行机制） | 断言/用例 |
 |---|---|---|
@@ -5832,6 +5860,156 @@ docs/14 §8.14 + 本 NOTES §85 · 融合对照表 §67.4q + 挂账 §58-31）�
 5. **截图方式**：本机 Edge 用 `--screenshot` + `--virtual-time-budget` 会**卡住**
    （SPA 在 load 之后才取数据，且虚拟时钟在有未完成网络请求时会暂停）；
    改成"无头 + DevTools 协议 + 等 6.5 秒再抓图"就稳了。这条已写进证据文件，供后续批次复用。
+
+
+## 86. R63：主页"点开等几秒"的性能修复（一处漏缓存 + 蓝图缓存 + 一把可重跑的尺子）
+
+**来源**：`docs/09` R63（架构侧 R62 实测确诊）· 工单见对话（验收批次 R64）。
+**基线**：`05c5baa` 之后的工作树（架构侧 R62 验收提交的父），`pytest` **619/617+2/0**。
+**性质**：**纯性能批次**——接口请求/响应形状、账本条目、门禁判定、推荐结果、文案一律不变。
+
+### 86.1 任务 ① 根因与改法（P0）
+
+- **根因（架构侧函数级定位，我复现一致）**：`service/selfextend.py::_lib_ids()` 里
+  `return set(load_library().by_id)` ——直接调**无缓存**的 `load_library()`，
+  每次重扫重解析整个 `content/stages`；而 `service/library.py::get_library()` **早就有进程内缓存**。
+  它被 `next_pending_topics()` / `mastered_ratio()` 调用，在 `auto_check()` / `/selfextend/status` 的
+  学段循环里放大成 **一次请求 10 遍全库**（27 个节点文件 × 10 = 270 次 YAML 解析）。
+- **改法**：`_lib_ids()` 改成 `set(get_library().by_id)`（**只改调用点**）。
+  **没有**把 `content/loader.load_library()` 本身改成全局单例——那会改变
+  "谁在什么时候能看到磁盘新内容"的语义（离线工具与生成管线要的是**当下的磁盘**）。
+- **我实测的前后耗时**（用架构侧留下的 `.runtime/verify_r62_homeperf.py`，真实库、主页请求顺序）：
+
+  ```
+  改前（.runtime 里我跑的第一遍）：合计 3007 / 2968 / 2924 ms
+       逐项 subjects=79  dashboard=1487  campaign=1420  graph=11  review/queue=3  ledger=8
+  改后（.runtime/r63_home_after.out）：合计 165 / 108 / 108 ms
+       逐项 subjects=78  dashboard=36  campaign=28  graph=10  review/queue=3  ledger=9（冷）
+       逐项 subjects=38  dashboard=29  campaign=26  graph=10  review/queue=2  ledger=3（热）
+  ```
+
+  我最慢的一遍**165 ms**（冷启动后第一遍），热态 **108 ms** —— 阈值 400 ms，余量充足
+  （`/api/dashboard` 1487→36 ms、`/api/campaign` 1420→28 ms）。
+  另外架构侧的解析计数脚本 `.runtime/verify_r62_count.py` 现在对
+  `/api/dashboard`、`/api/campaign` 都报 **0 次解析**（全命中缓存）。
+
+### 86.2 我扫出的"同类漏缓存点"清单（逐个判断）
+
+**改了（请求路径上，走 `get_library()`）**
+
+- `service/selfextend.py::_lib_ids()` —— 主因（本批 P0）；
+- `service/feedback.py::node_source()` —— **最严重的同类点**：它在反馈列表里**逐行**调用，
+  以前每行重扫全库（列表最多 200 行 ⇒ 最多 200 次全库解析）；
+- `outline/concepts.py::unit_states()` —— `/subjects/{id}/progress` 每屏都打（主页/学科页）；
+- `outline/concepts.py::subject_content_ids()` —— `/progress/reset` 走它；
+- `outline/concepts.py::recompute_subject_concepts()` —— `/progress/recompute` 走它（只读内容、写 DB）；
+- `api/subjects.py::_content_ids()` —— `/subjects` 与 `/subjects/{id}/outline` 都要它；
+- `service/path.py::make_engine()` 的**缺省兜底**（调用方多数已显式传 `lib=`）。
+
+**判断为"保持原样"（离线工具 / 启动一次性 / 生成与内容替换路径）**
+
+- `content/cli.py`（validate / render / semantics）、`content/verify.py::library_stats()`、
+  `content/roadmap.py::audit()` —— 离线工具，就该读**当下磁盘**；
+- `service/library.py::refresh_library()` —— 缓存本体的刷新入口，当然要读盘；
+- `outline/generate.py::generate_unit_content()`、`_prereq_docs()`（生成管线内部）、
+  `outline/math_preset.py::build_math_outline()`/`derive_math_outline()`（启动派生 + 显式重生成）、
+  `content/pipeline.py` 的 `cross_level_gaps()`/`generate_sequence()`/`generate_topic()`、
+  `service/guardrails.py::_landed_auto_ids()`（只被 `selfextend.extend()` 的内容生成调用）——
+  都是**写内容**的路径，且这些路径结束时会 `refresh_library()/sync_content()`；
+  它们自己要用"生成前后都一致的磁盘真相"，改用缓存反而有"生成到一半读到旧库"的风险；
+- `service/feedback.py::_node_file_and_entry()`/`_regenerate_node_now()`/`_invalidate_stale_practice()`
+  —— 内容**替换**路径（同一个函数里刚写过文件），必须看到刚写的东西；
+- `content/loader.py::load_library()` 本体 —— 见 86.1 的理由。
+
+### 86.3 任务 ② 蓝图缓存（`load_roadmap` / `all_entries`）
+
+- **口径照抄** `service/outline_gate.py::_cached_outline`：指纹 = 文件 `(mtime_ns, size)`，
+  文件一变（原子替换 / 编辑 / 删除后重建）指纹就变 ⇒ 立刻重读；
+- `all_entries()` 的指纹 = **五个学段文件拼接**（缺失记 `-`）⇒ **新增 / 删除
+  `content/roadmap/*.yaml` 也会失效**（不需要额外枚举目录）；
+- **清缓存入口**：`content.roadmap.clear_roadmap_cache()`（形状同 `clear_outline_cache`）；
+  指纹本身已能自动失效，这个入口给"换了内容目录的测试"和外部变更用；
+- `all_entries()` **返回浅拷贝**：调用方改返回值不会污染缓存（有用例锁住）；
+- **不用 `@lru_cache`**：那会让"文件改了读不到新的"与"测试互相污染"同时发生；
+- `load_roadmap()` 返回的是**同一个 Roadmap 对象**（只读语义；唯一会改它的 `e.level` 归一
+  发生在入缓存之前）——调用方（audit / PathEngine / 生成管线）都只读它。
+
+### 86.4 任务 ③ 回归尺子
+
+- **新增探针** `backend/tests/home_perf_probe.py`（**我新写的**，形状照架构侧脚本但更全：
+  真实库、主页六项请求顺序、逐项耗时 + 合计、**超 400 ms 非 0 退出**、
+  另外打印冷启动那遍最慢两项与"解析过的 YAML 调用次数"）。
+  ⚠️ 文件名**故意不叫** `test_*` ⇒ pytest 不收集它（它要真实库，不该进 CI）。
+  实测输出：
+
+  ```
+  第1遍：后端合计     188 ms   逐项：subjects=97  dashboard=37  campaign=30  graph=12  review/queue=3  ledger=9
+  第2遍：后端合计     115 ms   逐项：subjects=42  dashboard=32  campaign=27  graph=9   review/queue=2  ledger=3
+  第3遍：后端合计     111 ms   逐项：subjects=41  dashboard=30  campaign=25  graph=9   review/queue=2  ledger=3
+  判定：最慢一遍 188 ms vs 阈值 400 ms → 通过 ✅
+  ```
+
+- **新增 pytest 用例** `backend/tests/test_r63_home_perf_cache.py`（5 条，离线、临时内容目录，可进 CI）：
+  - **A-①**：一次 `/api/dashboard` **＋学段循环**（`auto_check` 的形状）里，
+    **每个内容文件最多被读 1 次**（量法：给 `pathlib.Path.read_text` 装计数器按文件路径归口）；
+  - **A-①b**：`/api/campaign`、`/api/selfextend/status` 同样一遍；
+  - **A-②（阳性对照）**：把 `_lib_ids` 换回**基线里那一行**（脚本 `git show 05c5baa:...` 取原文作证），
+    同一条路径下同一文件被读 **≥3 次** ⇒ 证明 A-① 不是恒真断言；
+  - **A-③**：蓝图缓存命中（同一文件只读 1 次）、**文件一变立刻读到新的**、
+    **新增/删除**蓝图文件 `all_entries()` 立刻反映、`clear_roadmap_cache()` 之后重新解析；
+  - **A-④**：`all_entries()` 返回浅拷贝，调用方乱改不污染缓存。
+- **独立阳性对照脚本** `.runtime/r63_positive_control.py`（不入库）输出：
+
+  ```
+  基线 05c5baa 里的旧实现：def _lib_ids() -> set[str]: return set(load_library().by_id)
+  阶段 1「修复后」：/api/dashboard 读了 0 个内容文件；同一文件最多 0 次
+  阶段 2「旧写法」：读了 27 个内容文件；同一文件最多 10 次（node_0201… 等）
+  判定：修复后 ≤1 次 ⇒ 用例 A-① 通过 ✅；旧写法 >1 次 ⇒ 用例 A-① 会红 ✅（尺子有牙）
+  ```
+
+  （"27 个文件 × 10 次 = 270 次解析"与架构侧的定位数字**逐位吻合**。）
+
+### 86.5 回归与自证（实测）
+
+- `pytest backend/tests` ＝ **622 passed + 2 skipped / 624 collected，0 failed，exit 0**
+  （`.runtime/r63_full.xml`；开工 619 → **+5 条**，全是本批新用例；**没有一条既有用例转红**，
+  说明"改用缓存"没有破坏任何依赖"读磁盘最新内容"的既有语义；
+  特别是 `test_guardrails.py`、`test_feedback.py`、`test_total_order_gate.py`、
+  `test_subject_visibility.py`、`test_generic_subject_e2e.py` 这些**显式 refresh 内容**的模块全绿）；
+- `content validate` ＝ ok=True nodes=27 exercises=56；roadmap audit 五学段 **27/31/81/59/60**（错误项全 0）；
+- 接地审计 **17/17、6/6、9/83、37/83**（与开工逐位一致）；
+- `npx tsc --noEmit` exit 0；`npx vite build` exit 0；
+- 前端文案守卫 **0 处**；后端文案守卫命中 **245 处（与开工一致，未增）**——本批**没有改任何文案**；
+- 锚点红线：`content/` 与 `content/roadmap/*.yaml` **一个字节都没动**
+  （roadmap 五个文件 mtime 仍是 2026-09-08）；用户内容四文件字节/mtime 未变；`content/` 零图片。
+
+### 86.6 提交链（标 R63）
+
+`49dbdf8`（任务 ①：`_lib_ids` 走缓存 + 6 处同类漏缓存点）→
+`6941b97`（任务 ②：蓝图 `load_roadmap`/`all_entries` 指纹缓存 + 清缓存入口）→
+`c730f36`（任务 ③：探针脚本 + 5 条用例含阳性对照）→ 本步文档（docs/14 §8.15 + 本 NOTES §86 ·
+融合对照表 §67.4r + 挂账 §58-32）。
+
+### 86.7 疑点 / 待确认（已登记 §58-32）
+
+1. **缓存与"外部改文件"**：现在所有**进程内**写内容的路径都会 `refresh_library()/sync_content()`，
+   所以缓存不会挡住新内容。但如果有**绕过程序**直接改 `content/stages` 的操作（手工编辑文件、
+   另一个进程写入），常驻进程要等下一次 refresh 才看到；`/api/content_admin` 的同步端点
+   （`sync_content`）是给这种情形用的**既有**入口。要不要再加一个"内容目录 mtime 变了就自动重扫"
+   的看门狗？（本批没做：那会把"每次请求都 stat 一遍目录树"的成本加回来，与本次目标相反。）
+2. **`load_roadmap()` 返回共享对象**：仓库内调用方都只读，所以没问题；
+   但这是**新的共享语义**（以前每次一个新的 Roadmap）。若将来有人写"就地改 roadmap 条目再传下去"，
+   会污染缓存。要不要在返回值上做深拷贝（代价：每次调用 ~ms 级）？
+3. **`_lib_ids()` 的返回**：仍是**新的 set**（每次调用都新建），所以调用方改它没有风险——
+   这一点与"共享 Roadmap 对象"不同，特此说明。
+4. **`all_levels_exist()` 没加缓存**：它只 `glob("*.yaml")`（5 个文件量级，微秒级），
+   实测不是热点；纳入缓存的收益小于"多一处失效面"的风险。若架构侧要求口径统一，可以再加。
+5. **`/api/subjects` 仍是较慢的一项**（冷 78–97 ms，热约 40 ms）：它要读**所有**学科的大纲
+   （`outline_gate` 指纹缓存已生效）+ 内容节点 id。热态 40 ms 可接受；若还想再压，
+   下一批可以看 `list_all()` 里逐学科 `get_outline` 的 IO 次数（本批未动）。
+6. **本机脚本噪声**：`.runtime/verify_r62_*.py` 直接 `print` 时 PowerShell 会把 stderr 的
+   `StarletteDeprecationWarning` 当错误，`$LASTEXITCODE` 有时显示 1；重定向到文件后 exit 0。
+   这不是探针失败（工单 §7 提醒的"先怀疑自己的量法"我照做了：两次都用文件重定向复核过）。
 
 
 

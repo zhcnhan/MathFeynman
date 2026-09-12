@@ -427,6 +427,34 @@ Materials 材料层（候选清单 → 勾选导入 → 本地引用库 → 供�
   或换一版更清晰的图重新导入；出图宽度这一项在导入处的说明里能看到当前值"；
   全仓再扫一遍，用户可见文案里的内部变量名命中 0（新守卫用例锁死）。
 
+### 8.15 主页"点开等几秒"的性能修复（R63：一处漏缓存 + 蓝图缓存 + 一把可重跑的尺子）
+
+- **根因只有一个**：`service/selfextend.py::_lib_ids()` 直接 `load_library()`（**无缓存**，每次重扫重解析
+  整个 `content/stages`），而 `service/library.py::get_library()` **早就有进程内缓存**。
+  它被 `next_pending_topics()` / `mastered_ratio()` 调用，在学段循环里放大成
+  "一次请求把全库解析 10 遍"（27 个节点文件 × 10 = 270 次 YAML 解析）——
+  主页的 `/api/dashboard`、`/api/campaign` 因此各约 1.5 秒，合计约 3 秒。
+- **改法**：`_lib_ids()` 走既有缓存 `get_library()`（**只改调用点**，不把 `load_library()` 本身改成单例——
+  那会改变"谁在什么时候能看到磁盘新内容"的语义）。同一类漏缓存点一并收口：
+  反馈列表的 `node_source()`（以前**逐行**重扫全库，最多 200 次）、
+  `/subjects/{id}/progress` 的 `unit_states()`、`/subjects` 与 `/subjects/{id}/outline` 的 `_content_ids()`、
+  `subject_content_ids()`（重置进度）、`make_engine()` 的缺省兜底。
+- **缓存失效口径**：内容写入路径**本来就会**刷新缓存——启动 `sync_content()`、内容管理同步端点、
+  大纲删除/停用、单元内容生成、图示教材模式生成、纠错重生成、内容自续生成，
+  以及测试里的 `refresh_library()`。所以"内容一变能不能立刻看到"与
+  `service/progress.py` 等处**完全一致**（它们本来就用 `get_library()`）。
+- **任务 ②**：`content/roadmap.py` 的 `load_roadmap()` / `all_entries()` 加**进程内缓存**，
+  失效口径照抄 `service/outline_gate.py::_cached_outline` 的"**文件 mtime_ns + size 指纹**"
+  （`all_entries()` 的指纹是五个学段文件拼起来，含"缺失"标记 ⇒ 新增/删除 `content/roadmap/*.yaml`
+  也立刻反映）；显式入口 `clear_roadmap_cache()`（形状同 `clear_outline_cache`）。
+  **不用 `@lru_cache`**：那会让"文件改了读不到新的"与"测试互相污染"同时发生。
+- **效果（真实库 · 架构侧脚本复跑）**：主页六项合计 **3007 ms → 165 ms（冷）/ 108 ms（热）**；
+  `/api/dashboard` **1487 → 36 ms**、`/api/campaign` **1420 → 28 ms**。
+- **回归尺子（任务 ③）**：`backend/tests/home_perf_probe.py`（真实库、主页请求顺序、逐项耗时 + 合计，
+  超 400 ms 非 0 退出；文件名不叫 `test_*` ⇒ 不进 CI）
+  ＋ `backend/tests/test_r63_home_perf_cache.py`（离线、临时内容目录：
+  一次请求每个内容文件**最多读 1 次** + **阳性对照**证明还原旧写法时该断言会红 + 蓝图缓存命中/失效）。
+
 ### 8.3 「一切显性」铁则（R39 §1，2026-09-10 · 地基级）
 > **程序任何时候"没有按用户以为的方式使用他的输入/产出"，都必须被记录、并可见。**
 
