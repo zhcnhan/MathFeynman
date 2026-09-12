@@ -359,6 +359,9 @@ export interface ConfigModels {
   base_url: string;
   tiers: { heavy: { model: string }; light: { model: string } };
   configured: boolean;
+  /** R56：设置页可改模型与 Key（只回掩码，永不回完整 Key） */
+  provider_label?: string;
+  api_key_masked?: string;
 }
 
 export interface FeynmanHistoryItem {

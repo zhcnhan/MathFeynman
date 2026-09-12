@@ -8,8 +8,32 @@ import { ModelMode } from "../components/ModelMode";
 
 type AppSettings = {
   developer_mode: boolean;
+  model?: ModelSettings;
   ai_trace: { dir: string; keep_days: number };
 };
+
+// R56 第 0 步：模型与 Key（页面设置 > 配置文件 > 程序默认；接口只回掩码，永不回完整 Key）
+type ModelSettings = {
+  provider: string;
+  provider_label: string;
+  providers: { key: string; label: string }[];
+  configured: boolean;
+  api_key_masked: string;
+  api_key_source_zh: string;
+  memory_only: boolean;
+  base_url: string;
+  base_url_source_zh: string;
+  heavy: string;
+  heavy_source_zh: string;
+  light: string;
+  light_source_zh: string;
+  max_tokens_per_day: number;
+  daily_source_zh: string;
+  key_notice_zh: string;
+  need_key_zh: string;
+};
+
+type TestResult = { ok: boolean; reason_zh: string; model: string; latency_ms: number };
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -19,6 +43,27 @@ export default function SettingsPage() {
   const [app, setApp] = useState<AppSettings | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // R56：模型与 Key（表单草稿与生效值分开——留空＝不改）
+  const [model, setModel] = useState<ModelSettings | null>(null);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [provider, setProvider] = useState("deepseek");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [heavy, setHeavy] = useState("");
+  const [light, setLight] = useState("");
+  const [daily, setDaily] = useState("0");
+  const [memoryOnly, setMemoryOnly] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const applyModel = (m: ModelSettings) => {
+    setModel(m);
+    setProvider(m.provider);
+    setBaseUrl(m.base_url);
+    setHeavy(m.heavy);
+    setLight(m.light);
+    setDaily(String(m.max_tokens_per_day || 0));
+    setMemoryOnly(!!m.memory_only);
+  };
 
   useEffect(() => {
     api
@@ -36,9 +81,68 @@ export default function SettingsPage() {
     // R39 §3：开发者/调试模式（决定界面入口是否出现；审计本身默认记录）
     api
       .get<AppSettings>("/settings")
-      .then(setApp)
+      .then((s) => {
+        setApp(s);
+        if (s.model) applyModel(s.model);
+      })
       .catch(() => setApp(null));
+    // R56 第 0 步：模型与 Key 的当前状态（只回掩码）
+    api
+      .get<ModelSettings>("/settings/model")
+      .then(applyModel)
+      .catch(() => setModel(null));
   }, []);
+
+  const saveModel = async () => {
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    setTestResult(null);
+    try {
+      const body: Record<string, unknown> = {
+        provider,
+        base_url: baseUrl,
+        heavy,
+        light,
+        max_tokens_per_day: Number(daily || 0),
+        memory_only: memoryOnly,
+      };
+      if (keyDraft.trim()) body.api_key = keyDraft.trim();
+      const next = await api.put<ModelSettings>("/settings/model", body);
+      applyModel(next);
+      setKeyDraft("");
+      setMsg(next.configured ? "已保存模型设置（Key 不回显，只显示后 4 位）。" : "已保存；还没有填 Key，AI 功能暂时用不了。");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearKey = async () => {
+    setBusy(true);
+    try {
+      applyModel(await api.put<ModelSettings>("/settings/model", { api_key: "" }));
+      setKeyDraft("");
+      setMsg("已清除 Key（AI 功能会停用，直到你重新填）。");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const testConnection = async () => {
+    setBusy(true);
+    setTestResult(null);
+    try {
+      setTestResult(await api.post<TestResult>("/settings/model/test", {}));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const toggleDev = async (on: boolean) => {
     try {
@@ -109,19 +213,84 @@ export default function SettingsPage() {
           )}
         </section>
         <section className="card">
-          <h2>模型配置</h2>
+          <h2>模型与 Key</h2>
+          {!model?.configured && <div className="banner warn">{model?.need_key_zh ?? "还没有配模型 Key。"}</div>}
+          <p className="dim" style={{ fontSize: 13 }}>
+            在这里填就行（不用改程序文件）。填完点「保存」，再点「测试连接」确认能用。
+            这里的设置优先于程序文件里的设置，改了立刻生效。
+          </p>
+          <label>服务商</label>
+          <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+            {(model?.providers ?? [{ key: "deepseek", label: "DeepSeek（默认）" }]).map((p) => (
+              <option key={p.key} value={p.key}>{p.label}</option>
+            ))}
+          </select>
+          <label>API Key</label>
+          <input
+            type="password"
+            autoComplete="off"
+            placeholder={model?.configured ? `已配置（${model.api_key_masked}）——留空表示不改` : "把 Key 粘到这里"}
+            value={keyDraft}
+            onChange={(e) => setKeyDraft(e.target.value)}
+            style={{ width: "100%" }}
+          />
+          <div className="dim" style={{ fontSize: 12 }}>
+            当前：{model?.configured ? `已配置（${model.api_key_masked}）` : "未配置"} · 来自：{model?.api_key_source_zh ?? "—"}
+          </div>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+            <input type="checkbox" checked={memoryOnly} onChange={(e) => setMemoryOnly(e.target.checked)} />
+            只放在内存里（关掉程序就要重填；勾上就不写进本地数据）
+          </label>
+          <label>模型名（快：答疑、分类这类）</label>
+          <input value={light} onChange={(e) => setLight(e.target.value)} style={{ width: "100%" }} />
+          <label>模型名（深：讲解、评分、难题）</label>
+          <input value={heavy} onChange={(e) => setHeavy(e.target.value)} style={{ width: "100%" }} />
+          <label>服务地址</label>
+          <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} style={{ width: "100%" }} />
+          <div className="dim" style={{ fontSize: 12 }}>
+            这一项来自：{model?.base_url_source_zh ?? "—"}（模型名同理：快 {model?.light_source_zh ?? "—"} /
+            深 {model?.heavy_source_zh ?? "—"}）
+          </div>
+          <label>每天最多用多少 token（0 = 不限）</label>
+          <input
+            type="number"
+            min={0}
+            value={daily}
+            onChange={(e) => setDaily(e.target.value)}
+            style={{ width: 160 }}
+          />
+          <div className="dim" style={{ fontSize: 12 }}>这一项来自：{model?.daily_source_zh ?? "—"}</div>
+          <div className="depth-row" style={{ marginTop: 10 }}>
+            <button className="primary" disabled={busy} onClick={() => void saveModel()}>保存</button>
+            <button className="ghost" disabled={busy} onClick={() => void testConnection()}>测试连接</button>
+            {model?.configured && (
+              <button className="ghost" disabled={busy} onClick={() => void clearKey()}>清除 Key</button>
+            )}
+          </div>
+          {testResult && (
+            <div className={testResult.ok ? "banner ok" : "banner error"}>
+              {testResult.reason_zh}
+              {testResult.latency_ms ? `（耗时 ${testResult.latency_ms} 毫秒）` : ""}
+            </div>
+          )}
+          <p className="dim" style={{ fontSize: 12 }}>{model?.key_notice_zh ?? "Key 存在这台机器上，别把本地数据文件发给别人。"}</p>
+        </section>
+        <section className="card">
+          <h2>当前生效值（只读，要改就在上面改）</h2>
           {cfg ? (
             <ul className="plain">
-              <li>Provider：{cfg.provider}</li>
-              <li>Base URL：{cfg.base_url}</li>
-              <li>重推理档（讲解/费曼）：{cfg.tiers.heavy.model}</li>
-              <li>轻档（提示/分类）：{cfg.tiers.light.model}</li>
+              <li>服务商：{cfg.provider_label ?? cfg.provider}</li>
+              <li>服务地址：{cfg.base_url}</li>
+              <li>讲解/评分用的模型：{cfg.tiers.heavy.model}</li>
+              <li>答疑/分类用的模型：{cfg.tiers.light.model}</li>
               <li className={cfg.configured ? "ok" : "warn"}>
-                {cfg.configured ? "已配置 API Key → AI 在线模式" : "未配置 API Key → 离线兜底模式"}
+                {cfg.configured
+                  ? `已配置 Key（${cfg.api_key_masked || "已保存"}）→ AI 功能可用`
+                  : "还没配 Key → AI 功能用不了；去上面的「模型与 Key」里填一下"}
               </li>
             </ul>
           ) : (
-            <p className="empty">无法读取模型配置</p>
+            <p className="empty">暂时读不到模型设置，刷新页面试试</p>
           )}
         </section>
         <section className="card">
