@@ -195,9 +195,11 @@ def recompute_subject_concepts(
             "note": f"学科 {subject_id} 尚无大纲，概念证据未派生（数学历史迁移待 math 大纲建立后执行）",
         }
     if lib_docs is None:
-        from ..content.loader import load_library
+        # R63：请求路径上走进程内缓存（get_library），不要每次重扫重解析全库；
+        # 缓存由 refresh_library()/sync_content() 刷新（内容生成、导入、测试清场都会走）。
+        from ..service.library import get_library
 
-        lib = load_library()
+        lib = get_library()
         lib_docs = {n.id: n.doc for n in lib.nodes}
     elif lib_ids is None:
         lib_ids = set(lib_docs)
@@ -291,9 +293,10 @@ def unit_states(
         return {"subject": subject_id, "outline_revision": None, "concepts_mastered": 0,
                 "units": [], "content": {}, "note": "尚无大纲"}
     if lib_docs is None:
-        from ..content.loader import load_library
+        # R63：`/subjects/{id}/progress` 是主页/学科页每屏都会打的请求，走进程内缓存
+        from ..service.library import get_library
 
-        lib = load_library()
+        lib = get_library()
         lib_docs = {n.id: n.doc for n in lib.nodes}
         lib_ids = set(lib_docs)
     elif lib_ids is None:
@@ -367,9 +370,10 @@ def subject_content_ids(db: Session, user_id: str, subject_id: str) -> set[str]:
     from ..domain.graph import LEVELS
 
     outline = outline_store.get_outline(subject_id)
-    from ..content.loader import load_library
+    # R63：`/progress/reset` 也是请求路径；读内容库走进程内缓存（写库语义不变）
+    from ..service.library import get_library
 
-    lib = load_library()
+    lib = get_library()
     if outline is None and subject_id == PRESET_MATH:
         return {n.id for n in lib.nodes if n.doc.level in LEVELS}
     if outline is None:

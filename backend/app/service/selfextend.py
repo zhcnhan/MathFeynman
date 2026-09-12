@@ -17,12 +17,11 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..config import get_settings
 from ..content import pipeline as pl
-from ..content.loader import load_library
 from ..content.roadmap import Roadmap, all_levels_exist, load_roadmap
 from ..domain.graph import LEVELS
 from . import model_config
 from . import progress as progress_svc
-from .library import get_graph, refresh_library, sync_content
+from .library import get_graph, get_library, refresh_library, sync_content
 
 AUTO_RATIO = 0.90
 EST_TOKENS_PER_ITEM = 6000
@@ -61,7 +60,20 @@ def _effective_ids(roadmap: Roadmap) -> dict[str, str]:
 
 
 def _lib_ids() -> set[str]:
-    return set(load_library().by_id)
+    """当前内容库全部节点 id。
+
+    **R63 任务 ①（性能真缺陷修复）**：这里以前直接 `load_library()`（**无缓存**，每次重扫重解析
+    整个 content/stages），而 `service/library.py::get_library()` 早就有进程内缓存。
+    它被 `next_pending_topics()` / `mastered_ratio()` 调用，在 `auto_check()` 的学段循环里被放大成
+    "一次请求把全库解析 10 遍"（实测：27 个节点文件 × 10 = 270 次 YAML 解析，
+    主页 `/api/dashboard` 与 `/api/campaign` 各约 1.5 秒）。
+    改走既有缓存后行为不变：缓存由 `refresh_library()` / `sync_content()` 刷新
+    （内容生成、导入、重生成、测试清场都会走这两条路），所以"内容变了能不能立刻看到"的语义与
+    `service/progress.py` 等处**完全一致**（它们本来就用 `get_library()`）。
+    ⚠️ 不要把 `content/loader.load_library()` 本身改成全局单例——那会改变
+    "谁在什么时候能看到磁盘新内容"的语义（离线工具/生成管线要的是**当下的磁盘**）。
+    """
+    return set(get_library().by_id)
 
 
 def roadmap_levels() -> list[str]:

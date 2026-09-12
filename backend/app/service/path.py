@@ -218,9 +218,10 @@ def make_engine(mastered: set[str], lib=None) -> PathEngine:
     lib 可选（复用调用方已载库，避免每请求重复解析内容文件）；缺省自载。
     """
     if lib is None:
-        from ..content.loader import load_library
+        # R63：请求路径的兜底读法走**进程内缓存**（调用方多数已显式传 lib=）
+        from .library import get_library
 
-        lib = load_library()
+        lib = get_library()
     roadmaps, registry = _cached_maps()
     return PathEngine(
         mastered=set(mastered),

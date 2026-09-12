@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from .. import models
-from .library import refresh_library, sync_content
+from .library import get_library, refresh_library, sync_content
 
 KINDS = ("lecture", "exercise", "content", "answerability")
 # R35 S7：kind=answerability = "这题我没法答（讲解里没有）" 的可答性投诉——**同表同闭环**，
@@ -33,11 +33,17 @@ _regen_active: set[str] = set()
 
 
 def node_source(node_id: str) -> str:
-    """节点来源：auto（流水线生成）| human（人工/锚点）。读原始文件 front-matter source。"""
-    from ..content.loader import load_library, parse_node_text
+    """节点来源：auto（流水线生成）| human（人工/锚点）。读原始文件 front-matter source。
+
+    **R63**：走**进程内缓存**（`service/library.get_library()`）——本函数在反馈列表里**逐行**调用，
+    以前每行都 `load_library()` 重扫重解析一遍全库（最多 200 行 ⇒ 200 次全库解析）。
+    front-matter 仍是从已加载的 `raw_text` 里解析（不多读盘）；缓存由
+    `refresh_library()` / `sync_content()` 刷新，内容一变就能看到。
+    """
+    from ..content.loader import parse_node_text
 
     try:
-        lib = load_library()
+        lib = get_library()
         loaded = lib.by_id.get(node_id)
         if loaded is None:
             return "unknown"

@@ -18,7 +18,6 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..content.loader import load_library
 from ..outline import OutlineDoc, OutlineError, OutlineUnit
 from ..outline import concepts as concept_svc
 from ..outline.schemas import OUTLINE_SOURCES, OUTLINE_STATUSES, SUBJECT_ID_RE
@@ -71,7 +70,11 @@ def _subject_summary(db: Session, subj) -> dict:
 
 
 def _content_ids() -> set[str]:
-    lib = load_library()
+    """当前内容库节点 id（**R63**：走进程内缓存——`/subjects` 与 `/subjects/{id}/outline`
+    都要它，以前每次请求重扫重解析全库）。"""
+    from ..service.library import get_library
+
+    lib = get_library()
     return {n.id for n in lib.nodes}
 
 
