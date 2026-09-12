@@ -280,6 +280,28 @@ def reread_pages(db, subject_id: str, material_id: str, *, pages: str = "",
     if provider is None:
         provider = _build_provider(db)
 
+    # **R59**：一键重读"读不出来的页"——`pages="unreadable"`
+    # 口径：只挑 `readable=false` 的页；**一页都没有 → 不调用模型**（也**不记账**，没发生的事不记），
+    # 只回一句中文说明（界面直接显示）。已 readable 的页**永不重读** ⇒ 天然幂等、不重复计费。
+    unreadable_only = str(pages or "").strip().lower() == "unreadable"
+    if unreadable_only:
+        bad_labels = [str(r.get("page_label") or "") for r in records if r.get("readable") is False]
+        if not bad_labels:
+            return {"id": material_id, "title": doc.get("title") or "", "reread": [], "count": 0,
+                    "pages": records, "unreadable": [], "model_calls": 0,
+                    "note_zh": "这份材料没有读不出来的页，不用重读。",
+                    "reason_zh": "这份材料没有读不出来的页，不用重读（没有调用模型，也没花钱）。"}
+        mapped = [_label_to_page_no(x) for x in bad_labels]
+        # 页标签认不出页号（只可能来自更早版本留下的旧记录）→ **说清楚**，不要拿它去撞
+        # 页范围解析、弹一句"页范围写法看不懂"；也不静默跳过（那页就白点了）。
+        bad_map = [lbl for lbl, num in zip(bad_labels, mapped) if not num.isdigit()]
+        if bad_map:
+            from .schemas import OutlineError
+
+            raise OutlineError("这几页读不出来、又认不出是第几页，没法一键重读："
+                               + "、".join(bad_map[:5]) + "——请重新导入这份材料")
+        pages = ",".join(mapped)
+
     is_pdf = str(render.get("source") or "") == "pdf_render"
     rendered: list[tuple[str, str, bytes, int | None]] = []   # (label, mime, bytes, page_no)
     if is_pdf:
@@ -329,16 +351,34 @@ def reread_pages(db, subject_id: str, material_id: str, *, pages: str = "",
                            ensure_ascii=False, indent=1), encoding="utf-8")
         break
     labels = [str(r.get("page_label") or "") for r in updated]
+    # 重读之后仍读不出来的页（如实回显"还剩哪几页读不出来"）
+    still_bad = [str(r.get("page_label") or "") for r in merged if r.get("readable") is False]
     ledger.note(
         ledger.CAT_MATERIAL, f"材料《{doc.get('title') or material_id}》· 按页重读",
-        f"按你的要求把 {'、'.join(labels[:8])} 重新读了一遍（共 {len(updated)} 页）——"
-        "页面记录已就地更新；这一步同样要问模型，所以也会花钱。",
+        ("把**读不出来的页**再读一遍：" if unreadable_only else "按你的要求把 ")
+        + f"{'、'.join(labels[:8])} 重新读了一遍（共 {len(updated)} 页）——"
+        + ("这次仍然读不出来：" + "、".join(still_bad[:8]) + "；" if still_bad else "")
+        + "页面记录已就地更新；这一步同样要问模型，所以也会花钱。",
         impact=ledger.SCOPE_SUBJECT, remedy=ledger.REMEDY_YES, subject_id=subject_id,
         detail={"kind": "pages_reread", "pages": labels[:20], "count": len(updated),
-                "source": render.get("source") or ""},
+                "source": render.get("source") or "",
+                "trigger": ("unreadable" if unreadable_only else "pages"),
+                "still_unreadable": still_bad[:20]},
     )
     return {"id": material_id, "title": doc.get("title") or "", "reread": labels,
-            "count": len(updated), "pages": merged}
+            "count": len(updated), "pages": merged, "unreadable": still_bad,
+            "model_calls": len(updated),
+            "note_zh": (f"把读不出来的页又读了一遍（{'、'.join(labels[:8])}）"
+                        + (f"；还是读不出来：{'、'.join(still_bad[:8])}" if still_bad else "；这次都读到了")
+                        if unreadable_only else f"已重新读：{'、'.join(labels[:8])}")}
+
+
+def _label_to_page_no(label: str) -> str:
+    """页标签（"第 12 页"）→ 页号字符串（"12"）；认不出来就原样返回（交给页范围解析报中文错）。"""
+    import re as _re
+
+    m = _re.search(r"第\s*(\d+)\s*页", str(label or ""))
+    return m.group(1) if m else str(label or "").strip()
 
 
 def _merge_pages(old: list[dict], new: list[dict]) -> list[dict]:

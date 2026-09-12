@@ -361,9 +361,9 @@ export default function OutlinePage() {
   // R58 任务 C：按需重读某几页（后端 /read-pages 已可用，这里补界面入口）
   const [rereadPages, setRereadPages] = useState("");
 
-  const rereadMaterialPages = async (mid: string, title: string) => {
-    const spec = rereadPages.trim();
-    if (!spec) {
+  const rereadMaterialPages = async (mid: string, title: string, spec?: string) => {
+    const pagesSpec = (spec ?? rereadPages).trim();
+    if (!pagesSpec) {
       setErr("请先填要重读的页（例如 3 或 3-5；页号从 1 开始数）");
       return;
     }
@@ -371,11 +371,18 @@ export default function OutlinePage() {
     setErr("");
     setMsg("");
     try {
-      const r = await api.post<{ title: string; reread: string[]; count: number }>(
-        `/subjects/${id}/materials/${mid}/read-pages`, { pages: spec }
-      );
-      setMsg(`「${title}」已重新读：${r.reread.join("、")}（共 ${r.count} 页）。` +
-        "其它页的记录没有动；这一步同样要问模型，也会花钱。");
+      const r = await api.post<{
+        title: string; reread: string[]; count: number; unreadable?: string[];
+        note_zh?: string; reason_zh?: string;
+      }>(`/subjects/${id}/materials/${mid}/read-pages`, { pages: pagesSpec });
+      if (!r.count) {
+        // 没读不出来的页 → 后端**不调用模型**，这里照实说（别让人以为"点了没反应"）
+        setMsg(`「${title}」：${r.note_zh || r.reason_zh || "没有需要重读的页"}`);
+      } else {
+        setMsg(`「${title}」已重新读：${r.reread.join("、")}（共 ${r.count} 页）。` +
+          (r.unreadable?.length ? `还是读不出来：${r.unreadable.join("、")}。` : "") +
+          "其它页的记录没有动；这一步同样要问模型，也会花钱。");
+      }
       setRereadPages("");
       await loadMaterials();
     } catch (e) {
@@ -969,6 +976,12 @@ export default function OutlinePage() {
                               onClick={() => void rereadMaterialPages(m.id, m.title)}
                               title="只把这几页重新读一遍（会再问一次模型，所以会花钱）；其它页的记录不动">
                         重读这几页
+                      </button>
+                      {/* R59：一键把**读不出来的页**再读一遍（没有就直说，不打电话给模型） */}
+                      <button className="ghost" disabled={busy}
+                              onClick={() => void rereadMaterialPages(m.id, m.title, "unreadable")}
+                              title="把这份材料里读不出来的页一起再读一遍（没有读不出来的页就不会调用模型）">
+                        把读不出来的页再读一遍
                       </button>
                     </span>
                   )}
