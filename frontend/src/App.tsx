@@ -39,16 +39,22 @@ export default function App() {
   return (
     <div className="layout">
       <nav>
-        <span className="brand">颜回（YanHui）</span>
-        <NavLink to="/" end>仪表盘</NavLink>
+        <span className="brand">颜回<small>YANHUI</small></span>
+        <NavLink to="/" end>主页</NavLink>
         <SubjectSwitcher />
         <NavLink to="/subjects" end>学科列表</NavLink>
         <NavLink to="/review">复习</NavLink>
         <NavLink to="/feedback">内容反馈</NavLink>
         <NavLink to="/feynman-history">费曼复盘</NavLink>
-        {/* R39 §1：总账页（一切显性的"一处看全部"入口）——R52：界面一律说人话 */}
-        <NavLink to="/ledger">记录</NavLink>
-        {devMode && <NavLink to="/ai-traces">AI 对话记录</NavLink>}
+        {/* R61：记录 / 提示词 / AI 对话记录**默认从主导航收起**，在「设置 · 高级」里打开；
+            打开后入口明显（就在下面这一串）。功能一个不少、两次点击内可达。 */}
+        {devMode && (
+          <>
+            <NavLink to="/ledger">记录</NavLink>
+            <NavLink to="/prompts">提示词</NavLink>
+            <NavLink to="/ai-traces">AI 对话记录</NavLink>
+          </>
+        )}
         <NavLink to="/settings">设置</NavLink>
       </nav>
       <main>

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import MaterialBudgetPanel, { charsText } from "../components/MaterialBudgetPanel";
 import LedgerAlerts, { LedgerEntry } from "../components/LedgerAlerts";
+import { Collapsible, PageHead } from "../components/ui";
 
 type Unit = {
   id: string;
@@ -230,6 +231,13 @@ const KIND_LABEL: Record<string, string> = {
   pdf: "PDF",
 };
 
+const POLICY_LABEL: Record<string, string> = {
+  ai: "AI 全生成",
+  import: "本地教材导入",
+  web: "联网候选清单",
+  mixed: "混合",
+};
+
 export default function OutlinePage() {
   const { id = "" } = useParams();
   const nav = useNavigate();
@@ -360,6 +368,63 @@ export default function OutlinePage() {
   // R57 任务 B-①：本模式一键起草大纲（走本模式提示词；依据是页/图号）
   // R58 任务 C：按需重读某几页（后端 /read-pages 已可用，这里补界面入口）
   const [rereadPages, setRereadPages] = useState("");
+  // 大纲/进度读完之前不挂载折叠区（否则"默认收起"会被误判成"还没有大纲→展开"）
+  const [loaded, setLoaded] = useState(false);
+  // 旧格式页（标签里没有页号）→ 人工指定"当作第几页"（每个材料一行输入）
+  const [mapLabel, setMapLabel] = useState<Record<string, string>>({});
+  const [mapNo, setMapNo] = useState<Record<string, string>>({});
+
+  /** 把某个旧标签当作第 N 页（后端：冲突/非法都给中文说明，不静默覆盖）。 */
+  const mapLegacyPage = async (mid: string) => {
+    const label = (mapLabel[mid] ?? "").trim();
+    const n = Number((mapNo[mid] ?? "").trim());
+    if (!label) {
+      setErr("请先填页面上原来的标签（例如 封面）");
+      return;
+    }
+    if (!Number.isInteger(n) || n < 1) {
+      setErr("页号要填 1 以上的整数（页码从 1 开始数）");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const r = await api.post<{ label: string; page_no: number; note_zh?: string }>(
+        `/subjects/${id}/materials/${mid}/page-mapping`, { label, page_no: n });
+      setMsg(r.note_zh || `已把「${label}」当作第 ${n} 页。`);
+      setMapLabel({ ...mapLabel, [mid]: "" });
+      setMapNo({ ...mapNo, [mid]: "" });
+      await loadMaterials();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 撤销人工指定（指定错了能改回来；撤销也留痕）。 */
+  const unmapLegacyPage = async (mid: string) => {
+    const label = (mapLabel[mid] ?? "").trim();
+    if (!label) {
+      setErr("请先填要撤销的那个标签（例如 封面）");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const r = await api.del<{ label: string; note_zh?: string }>(
+        `/subjects/${id}/materials/${mid}/page-mapping/${encodeURIComponent(label)}`);
+      setMsg(r.note_zh || `已撤销「${label}」的人工页号。`);
+      setMapLabel({ ...mapLabel, [mid]: "" });
+      await loadMaterials();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const rereadMaterialPages = async (mid: string, title: string, spec?: string) => {
     const pagesSpec = (spec ?? rereadPages).trim();
@@ -584,6 +649,10 @@ export default function OutlinePage() {
       setTagsDraft(t);
     } catch (e) {
       setErr(String(e));
+    } finally {
+      // 折叠区的"默认开/关"在挂载那一刻定下来：必须等这里读完再挂载，
+      // 否则会在"还没读到大纲"时误判成"没有大纲"从而默认展开。
+      setLoaded(true);
     }
   }, [id]);
 
@@ -750,24 +819,35 @@ export default function OutlinePage() {
 
   return (
     <div>
-      <div className="crumbs">
-        <Link to="/subjects">← 学科列表</Link>
-      </div>
-      {subject && (
-        <>
-          <h1>
-            {subject.label}{" "}
-            <span className="badge">{isPreset ? "系统自带的学科" : "自定义学科"}</span>
-          </h1>
-          <div className="dim">{subject.id} · {subject.description}</div>
-        </>
-      )}
+      <PageHead
+        crumb={<Link to="/subjects">← 学科列表</Link>}
+        title={
+          <>
+            {subject?.label ?? "学科"}
+            {subject && (
+              <span className="badge" style={{ marginLeft: 10, verticalAlign: "middle" }}>
+                {isPreset ? "系统自带的学科" : "自定义学科"}
+              </span>
+            )}
+          </>
+        }
+        sub={
+          outline
+            ? `大纲第 ${outline.revision} 版 · ${groups.length} 章 · ${(outline.units as Unit[]).length} 个单元`
+            : "还没有课程安排"
+        }
+        actions={<Link className="button-link" to="/">← 回主页</Link>}
+      />
       {err && <div className="banner error">{err}</div>}
       {msg && <div className="banner ok">{msg}</div>}
 
-      {/* 学科管理：内容来源策略 + 材料层（docs/14 §8 · Phase B B3 + Phase C C1） */}
-      <div className="card">
-        <h2>学科管理 · 内容来源与材料</h2>
+      {/* 学科管理：内容来源策略 + 材料层（docs/14 §8 · Phase B B3 + Phase C C1）
+          R61：默认收成一行摘要（"有多少份教材、来源是什么"），点开才是导入/检索/PDF/图片为主那套。 */}
+      <Collapsible
+        id="outline-materials"
+        title="材料与来源"
+        summary={`${materials.length} 份教材 · 来源：${POLICY_LABEL[policy] ?? policy}${modeLabel ? ` · ${modeLabel}` : ""}`}
+      >
         <div className="input-row" style={{ gap: 10, margin: "6px 0" }}>
           <label className="dim">来源策略</label>
           <select value={policy} disabled={busy} onChange={(e) => void setPolicyNow(e.target.value)}>
@@ -988,6 +1068,29 @@ export default function OutlinePage() {
                               title="把这份材料里读不出来的页一起再读一遍（没有读不出来的页就不会调用模型）">
                         把读不出来的页再读一遍
                       </button>
+                      {/* 旧格式页（标签里没有页号，比如「封面」）：在这里人工说清它是第几页 */}
+                      <input value={mapLabel[m.id] ?? ""}
+                             onChange={(e) => setMapLabel({ ...mapLabel, [m.id]: e.target.value })}
+                             placeholder="旧标签（如 封面）"
+                             style={{ width: 130, padding: 4, borderRadius: 6, border: "1px solid #c5cdd6" }}
+                             title="页面上没有页号的那种标签，照原样填进来" />
+                      <span className="dim">当作第</span>
+                      <input value={mapNo[m.id] ?? ""}
+                             onChange={(e) => setMapNo({ ...mapNo, [m.id]: e.target.value })}
+                             placeholder="4"
+                             style={{ width: 52, padding: 4, borderRadius: 6, border: "1px solid #c5cdd6" }}
+                             title="页码从 1 开始数" />
+                      <span className="dim">页</span>
+                      <button className="ghost" disabled={busy}
+                              onClick={() => void mapLegacyPage(m.id)}
+                              title="指定后这一页就有页号了，可以被正常引用；不会自动去问模型">
+                        指定
+                      </button>
+                      <button className="ghost" disabled={busy}
+                              onClick={() => void unmapLegacyPage(m.id)}
+                              title="指定错了可以改回来（撤销也会留下记录）">
+                        撤销指定
+                      </button>
                     </span>
                   )}
                   {/* R38 B2：材料角色（主教材定顺序与范围；未标注 → 按导入顺序并在覆盖账注明） */}
@@ -1014,18 +1117,33 @@ export default function OutlinePage() {
           </div>
         )}
 
-        {/* R38：材料注入预算（两个滑块 + 上一轮实际注入量/批次 + 未纳入清单） */}
+        {/* R38：材料读多少（两个滑块 + 上一轮实际读了多少 + 哪几章没读） */}
         <MaterialBudgetPanel subjectId={id} onChanged={() => void load()} />
+      </Collapsible>
 
-        {/* R39 §1：材料层的**就地**账目（材料吸纳/被挡下/未纳入 —— 界面必须能看见） */}
-        <div style={{ marginTop: 8 }}>
-          <SubjectLedgerInline subjectId={id} />
-        </div>
-      </div>
+      {/* R39 §1：材料层的就地账目。R61 起**收成一行**（默认收起、可展开、另给「看全部」）——
+          正文太长的最大来源就是它；记录本身一条没删，仍在页面上、一键可见。
+          ⚠️ 若架构侧要求"必须默认展开"，把 defaultOpen 去掉即可（一行）。 */}
+      <Collapsible
+        id={`outline-ledger-${id}`}
+        title="内容记录（谁被丢下、为什么）"
+        summary="材料与出稿用不上的内容都在这里，点开可逐条看；也可以去「记录」页看全部"
+      >
+        <SubjectLedgerInline subjectId={id} />
+      </Collapsible>
 
-      {/* 起草 / 采纳（无大纲或重生成时） */}
-      <div className="card">
-        <h2>大纲起草与审阅</h2>
+      {/* 起草 / 采纳：已经有课程安排时默认收起（主体让给下面的单元列表）
+          ⚠️ 折叠区的"默认开/关"在挂载那一刻定下来，所以要等学科数据到位后再挂载，
+          否则会在"还没读到大纲"时误判成"没有大纲"从而默认展开。 */}
+      {loaded && (
+      <Collapsible
+        id="outline-draft"
+        title="大纲起草与审阅"
+        summary={outline
+          ? `当前第 ${outline.revision} 版 · ${outline.status === "active" ? "使用中" : "草稿"} · 要重新起草点开`
+          : "还没有课程安排——点开这里起草"}
+        defaultOpen={!outline}
+      >
         {isPreset ? (
           <div className="dim">
             系统自带学科的大纲按官方课程安排生成。当前：第 {outline?.revision ?? "-"} 版 ·{" "}
@@ -1139,14 +1257,15 @@ export default function OutlinePage() {
             </div>
           </div>
         )}
-      </div>
+      </Collapsible>
+      )}
 
       {outline && (
         <div className="card">
           <div className="session-head">
             <h2 style={{ margin: 0 }}>
-              大纲 第 {outline.revision} 版 · {outline.status === "active" ? "使用中" : outline.status === "draft" ? "草稿" : outline.status} ·{" "}
-              {outline.source === "ai" ? "由 AI 生成" : "手工/系统生成"} · 格式版本 {outline.schema_version}
+              单元列表 · 第 {outline.revision} 版 · {outline.status === "active" ? "使用中" : outline.status === "draft" ? "草稿" : outline.status} ·{" "}
+              {outline.source === "ai" ? "由 AI 生成" : "手工/系统生成"}
             </h2>
             {progress && (
               <span className="badge pass">已掌握概念 {progress.concepts_mastered}</span>
@@ -1165,15 +1284,19 @@ export default function OutlinePage() {
             </div>
           )}
           {coverage && coverage.has_materials && (
-            <div className="card" style={{ borderColor: coverage.uncovered.length ? "#e6a23c" : "#90caf9", margin: "8px 0" }}>
-              <h2 style={{ margin: "0 0 4px" }}>
+            <Collapsible
+              id={`outline-coverage-${id}`}
+              title="章节进度与依据"
+              summary={`已有内容 ${coverage.covered} / ${coverage.total} 节${coverage.uncovered.length ? ` · 还没出内容 ${coverage.uncovered.length} 节` : " · 全书都覆盖到了"}`}
+            >
+              <h4 style={{ margin: "0 0 4px" }}>
                 章节进度 · 已有内容 {coverage.covered} / {coverage.total} 节
                 {typeof coverage.page_covered === "number" && coverage.page_total ? (
                   <span className="dim" style={{ fontSize: 13 }}>
                     {" "}（按页算：{coverage.page_covered}/{coverage.page_total} 页已对应到单元）
                   </span>
                 ) : null}
-              </h2>
+              </h4>
               <div className="dim" style={{ fontSize: 12 }}>
                 书的结构：
                 {coverage.materials.map((m) => `${m.title}（${m.structure_kind}：${m.structure_note}）`).join("；")}
@@ -1365,15 +1488,22 @@ export default function OutlinePage() {
                   </tbody>
                 </table>
               </details>
-            </div>
+            </Collapsible>
           )}
-          {groups.map((g: string) => (
-            <div key={g}>
-              <h2>▸ {g}</h2>
+          {groups.map((g: string, gi: number) => {
+            const groupUnits = (outline.units as Unit[]).filter((u) => u.group === g);
+            const ready = groupUnits.filter((u) => contentOf(u.id)?.usable !== false).length;
+            return (
+              <Collapsible
+                key={g}
+                id={`outline-group-${id}-${g}`}
+                title={g}
+                summary={`${groupUnits.length} 个单元 · 有内容 ${ready} 个`}
+                defaultOpen={gi === 0}
+              >
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                 <tbody>
-                  {(outline.units as Unit[])
-                    .filter((u) => u.group === g)
+                  {groupUnits
                     .map((u) => {
                       const pv = progressById[u.id];
                       return (
@@ -1490,12 +1620,22 @@ export default function OutlinePage() {
                     })}
                 </tbody>
               </table>
-            </div>
-          ))}
+              </Collapsible>
+            );
+          })}
           {/* R39 §1：单元出稿的**就地**账目（题/事实句被丢弃、降级启发式、整单元未出稿…）
-              R54 B：每条丢弃账目就地给"重新生成这个单元"；已重新生成的旧账目标"已解决" */}
-          <LedgerAlerts entries={lastUnitLedger} subjectId={id} title="最近一次单元出稿记录" compact
-                        onAction={(a) => void regenerateFromLedger(a)} />
+              R54 B：每条丢弃账目就地给"重新生成这个单元"；已重新生成的旧账目标"已解决"
+              R61：收成一行（默认收起；一条记录都没删） */}
+          {lastUnitLedger && lastUnitLedger.length > 0 && (
+            <Collapsible
+              id={`outline-unit-ledger-${id}`}
+              title="最近一次单元出稿记录"
+              summary={`${lastUnitLedger.length} 条（哪些内容没用上、为什么）`}
+            >
+              <LedgerAlerts entries={lastUnitLedger} subjectId={id} compact
+                            onAction={(a) => void regenerateFromLedger(a)} />
+            </Collapsible>
+          )}
         </div>
       )}
     </div>

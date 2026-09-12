@@ -5,6 +5,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, FeynmanHistoryItem } from "../api";
 import { dimLabel } from "../components/feynmanLabels";
 import MdMath from "../components/MdMath";
+import { Loading, PageHead } from "../components/ui";
 
 const VERDICT_TEXT: Record<string, string> = {
   pass: "通过（完整稿）",
@@ -25,13 +26,13 @@ export default function FeynmanHistoryPage() {
       .catch((e) => setErr((e as Error).message));
   }, []);
   if (err) return <div className="card error">{err}</div>;
-  if (!items) return <div className="card">加载中…</div>;
+  if (!items) return <Loading what="正在读取费曼复盘记录…" />;
   if (items.length === 0) {
     return (
       <div className="card">
         <NavBar nav={nav} />
         <div className="crumbs"><Link to="/feedback">内容纠错记录（内容反馈）→</Link></div>
-        <h1>费曼复盘</h1>
+        <PageHead title="费曼复盘" />
         <p className="empty">还没有费曼口述记录 —— 学完一个知识点（讲一遍并通过）后，这里会回放你的每一次口述。</p>
       </div>
     );
@@ -40,7 +41,7 @@ export default function FeynmanHistoryPage() {
     <div className="history-page">
       <NavBar nav={nav} />
       <div className="crumbs"><Link to="/feedback">内容纠错记录（内容反馈）→</Link></div>
-      <h1>费曼复盘记录</h1>
+      <PageHead title="费曼复盘记录" sub="每一次口述的原文与得分都在这里。" />
       {items.map((it) => {
         const dims = (it.meta?.dims as Array<{ key: string; score: number; evidence_quote: string; comment: string }>) ?? [];
         return (

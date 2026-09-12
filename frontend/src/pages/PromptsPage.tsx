@@ -5,6 +5,7 @@
 // 删掉必填占位符/硬约束 → 中文报错并**拒绝保存**。
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import { PageHead } from "../components/ui";
 
 type DiffLine = { kind: "hunk" | "add" | "del"; line: string; text: string };
 
@@ -179,7 +180,7 @@ export default function PromptsPage() {
 
   return (
     <div className="settings-page">
-      <h1>提示词（可以自己改）</h1>
+      <PageHead title="提示词（可以自己改）" sub="左边挑一处、右边直接改，保存后下一次就生效。" />
       <div className="dim" style={{ fontSize: 13 }}>
         这里列的是程序每次问 AI 时用的原话。左边挑一处，右边直接改，保存后**下一次就生效**；
         改坏了随时能恢复默认。带「必填」标记的花括号是程序往里填内容的位置（比如这次的题目、学生的回答），

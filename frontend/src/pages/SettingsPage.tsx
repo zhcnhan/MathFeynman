@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { api, ConfigModels, ProfileData } from "../api";
 import ModelModeSwitch from "../components/ModelModeSwitch";
 import { ModelMode } from "../components/ModelMode";
+import { Card, Collapsible, PageHead } from "../components/ui";
 
 type AppSettings = {
   developer_mode: boolean;
@@ -187,18 +188,22 @@ export default function SettingsPage() {
 
   return (
     <div className="settings-page">
-      <h1>设置</h1>
+      <PageHead
+        title="设置"
+        sub="模型和 Key、讲解偏好在这里改；提示词、记录、AI 对话记录都在最下面的「高级」里。"
+      />
       {msg && <div className="banner ok">{msg}</div>}
       {err && <div className="banner error">{err}</div>}
+
+      <div className="section-title">模型与讲解</div>
       <div className="grid">
-        <section className="card">
-          <h2>模型模式</h2>
+        <Card title="模型模式">
           <ModelModeSwitch value={modelMode} onChange={(m) => void changeModelMode(m)} />
           <p className="dim">
             自动 = 一般内容用快模型，难题和纠错自动换更强的；⚡ 快 = 一直用快模型；
             🧠 深度 = 一直用最强模型。讲解和评分卡会标出这次用的是哪一档，学习页顶部随时能切换。
           </p>
-          <h2>讲解偏好</h2>
+          <h3 style={{ marginTop: 16 }}>讲解偏好</h3>
           <label>解释深度（1 直觉类比 → 5 严格推导）</label>
           <div className="depth-row">
             {[1, 2, 3, 4, 5].map((d) => (
@@ -209,20 +214,8 @@ export default function SettingsPage() {
             <button className="primary" onClick={() => void saveDepth()}>保存</button>
           </div>
           <p className="dim">当前深度：{depth} · {profile ? describe(depth) : ""}</p>
-          {profile && (
-            <>
-              <h2>错误画像（累计）</h2>
-              <div>
-                {Object.entries(profile.error_profile).map(([k, v]) => (
-                  <span key={k} className="chip">{k}×{v}</span>
-                ))}
-                {Object.keys(profile.error_profile).length === 0 && <span className="empty">暂无记录</span>}
-              </div>
-            </>
-          )}
-        </section>
-        <section className="card">
-          <h2>模型与 Key</h2>
+        </Card>
+        <Card title="模型与 Key">
           {!model?.configured && <div className="banner warn">{model?.need_key_zh ?? "还没有配模型 Key。"}</div>}
           <p className="dim" style={{ fontSize: 13 }}>
             在这里填就行（不用改程序文件）。填完点「保存」，再点「测试连接」确认能用。
@@ -281,7 +274,18 @@ export default function SettingsPage() {
             <button className="primary" disabled={busy} onClick={() => void saveModel()}>保存</button>
             <button className="ghost" disabled={busy} onClick={() => void testConnection()}>测试连接</button>
             {model?.configured && (
-              <button className="ghost" disabled={busy} onClick={() => void clearKey()}>清除 Key</button>
+              <button
+                className="danger"
+                disabled={busy}
+                onClick={() => {
+                  // 危险项：清掉 Key 之后 AI 功能会停用 —— 先问一句再动手
+                  if (window.confirm("确定要清除 Key 吗？清掉之后 AI 功能会停用，直到你重新填一个。")) {
+                    void clearKey();
+                  }
+                }}
+              >
+                清除 Key
+              </button>
             )}
           </div>
           {testResult && (
@@ -291,61 +295,89 @@ export default function SettingsPage() {
             </div>
           )}
           <p className="dim" style={{ fontSize: 12 }}>{model?.key_notice_zh ?? "Key 存在这台机器上，别把本地数据文件发给别人。"}</p>
-        </section>
-        <section className="card">
-          <h2>当前生效值（只读，要改就在上面改）</h2>
-          {cfg ? (
-            <ul className="plain">
-              <li>服务商：{cfg.provider_label ?? cfg.provider}</li>
-              <li>服务地址：{cfg.base_url}</li>
-              <li>讲解/评分用的模型：{cfg.tiers.heavy.model}</li>
-              <li>答疑/分类用的模型：{cfg.tiers.light.model}</li>
-              <li className={cfg.configured ? "ok" : "warn"}>
-                {cfg.configured
-                  ? `已配置 Key（${cfg.api_key_masked || "已保存"}）→ AI 功能可用`
-                  : "还没配 Key → AI 功能用不了；去上面的「模型与 Key」里填一下"}
-              </li>
-            </ul>
-          ) : (
-            <p className="empty">暂时读不到模型设置，刷新页面试试</p>
-          )}
-        </section>
-        <section className="card">
-          <h2>提示词（可以自己改）</h2>
-          <p className="dim" style={{ fontSize: 13 }}>
-            程序每次问 AI 用的话都在这里，可以自己改，也能一键恢复默认。改完下一次就生效；
-            删掉必须留的内容会被拒绝保存（会有中文说明）。
-          </p>
-          <p>
-            <Link className="button-link" to="/prompts">打开「提示词」页 →</Link>
-          </p>
-          <h2>高级：查看 AI 对话记录</h2>
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              type="checkbox"
-              checked={!!app?.developer_mode}
-              onChange={(e) => void toggleDev(e.target.checked)}
-            />
-            开启「AI 对话记录」（排查问题用，平时可以不开）
-          </label>
-          <p className="dim" style={{ fontSize: 12 }}>
-            这个开关只决定侧栏里是否出现「AI 对话记录」入口；程序**一直在记录**每次问 AI 的完整内容，
-            方便出问题时回看。记录存在本地文件里（{app?.ai_trace?.dir ?? "—"}），页面上看的时候不是边生成边刷；
-            出错和没用上的内容会排在前面、标红。
-            {app?.ai_trace && (
-              <>
-                <br />
-                记录保存 {app.ai_trace.keep_days} 天后自动清理（清理会写进「记录」页）。
-              </>
-            )}
-          </p>
-          {app?.developer_mode && (
-            <p>
-              <Link className="button-link" to="/ai-traces">打开「AI 对话记录」→</Link>
-            </p>
-          )}
-        </section>
+        </Card>
       </div>
+
+      <Collapsible
+        id="settings-error-profile"
+        title="错误画像（累计）"
+        summary={profile
+          ? (Object.keys(profile.error_profile).length
+            ? `${Object.keys(profile.error_profile).length} 类错法 · 用来挑更合适的讲法`
+            : "还没有记录")
+          : "读不到画像"}
+      >
+        <div>
+          {profile && Object.entries(profile.error_profile).map(([k, v]) => (
+            <span key={k} className="chip">{k}×{v}</span>
+          ))}
+          {profile && Object.keys(profile.error_profile).length === 0 && (
+            <span className="empty">暂无记录——做过练习之后这里会按错法归类，用来挑更适合你的讲法。</span>
+          )}
+        </div>
+      </Collapsible>
+
+      <Collapsible
+        id="settings-current"
+        title="当前生效值"
+        summary={cfg
+          ? `${cfg.provider_label ?? cfg.provider} · ${cfg.tiers.heavy.model}${cfg.configured ? " · Key 已配置" : " · 还没有 Key"}`
+          : "暂时读不到模型设置"}
+      >
+        {cfg ? (
+          <ul className="plain">
+            <li>服务商：{cfg.provider_label ?? cfg.provider}</li>
+            <li>服务地址：{cfg.base_url}</li>
+            <li>讲解/评分用的模型：{cfg.tiers.heavy.model}</li>
+            <li>答疑/分类用的模型：{cfg.tiers.light.model}</li>
+            <li className={cfg.configured ? "ok" : "warn"}>
+              {cfg.configured
+                ? `已配置 Key（${cfg.api_key_masked || "已保存"}）→ AI 功能可用`
+                : "还没配 Key → AI 功能用不了；去上面的「模型与 Key」里填一下"}
+            </li>
+          </ul>
+        ) : (
+          <p className="empty">暂时读不到模型设置，刷新页面试试</p>
+        )}
+      </Collapsible>
+
+      <div className="section-title">高级</div>
+      <Card title="提示词（可以自己改）">
+        <p className="dim" style={{ fontSize: 13 }}>
+          程序每次问 AI 用的话都在这里，可以自己改，也能一键恢复默认。改完下一次就生效；
+          删掉必须留的内容会被拒绝保存（会有中文说明）。
+        </p>
+        <p>
+          <Link className="button-link" to="/prompts">打开「提示词」页 →</Link>
+        </p>
+      </Card>
+
+      <Card title="高级：查看 AI 对话记录">
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            type="checkbox"
+            checked={!!app?.developer_mode}
+            onChange={(e) => void toggleDev(e.target.checked)}
+          />
+          开启「高级入口」（右侧顶部就会出现 记录 / 提示词 / AI 对话记录；排查问题用，平时可以不开）
+        </label>
+        <p className="dim" style={{ fontSize: 12 }}>
+          这个开关只决定顶部是否出现那几个入口；程序**一直在记录**每次问 AI 的完整内容，
+          方便出问题时回看。记录存在本地文件里（{app?.ai_trace?.dir ?? "—"}），页面上看的时候不是边生成边刷；
+          出错和没用上的内容会排在前面、标红。
+          {app?.ai_trace && (
+            <>
+              <br />
+              记录保存 {app.ai_trace.keep_days} 天后自动清理（清理会写进「记录」页）。
+            </>
+          )}
+        </p>
+        <div className="actions">
+          <Link className="button-link" to="/ledger">记录（它做了什么、为什么）</Link>
+          <Link className="button-link" to="/prompts">提示词（可以自己改）</Link>
+          {app?.developer_mode && <Link className="button-link" to="/ai-traces">AI 对话记录</Link>}
+        </div>
+      </Card>
     </div>
   );
 }

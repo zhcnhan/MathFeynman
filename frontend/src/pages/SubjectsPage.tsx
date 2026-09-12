@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { PageHead } from "../components/ui";
 
 interface OutlineSummary {
   exists: boolean;
@@ -145,10 +146,13 @@ export default function SubjectsPage() {
 
   return (
     <div>
-      <h1>学科（Subjects · 管理）</h1>
+      <PageHead
+        title="学科（Subjects · 管理）"
+        sub="自己建学科、启用或移除都在这里；每个学科的内容与进度互相独立。"
+      />
       {err && <div className={`banner ${err.startsWith("✅") ? "ok" : "error"}`}>{err}</div>}
 
-      <h2>启用中</h2>
+      <div className="section-title">启用中</div>
       <div className="grid" style={{ marginTop: 4 }}>
         {enabledList.length === 0 ? (
           <p className="empty">暂无启用中的学科。可新建自定义学科，或在下方「已移除」中重新启用。</p>

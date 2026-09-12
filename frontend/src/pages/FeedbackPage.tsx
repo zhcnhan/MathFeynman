@@ -1,6 +1,7 @@
 // 内容反馈（纠错记录）查看页：列出 pending/regenerating/regenerated/failed/reviewed 状态与结果。
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { PageHead } from "../components/ui";
 
 interface FeedbackRow {
   id: number;
@@ -40,11 +41,11 @@ export default function FeedbackPage() {
 
   return (
     <div>
-      <h1>内容反馈（纠错记录）</h1>
-      <div className="dim">
-        报错后：AI 生成的内容会自动重做替换；人工精写的内容只记下来等你修改。
-        {items.length === 0 && " 当前没有记录。"}
-      </div>
+      <PageHead
+        title="内容反馈（纠错记录）"
+        sub="报错后：AI 生成的内容会自动重做替换；人工精写的内容只记下来等你修改。"
+      />
+      {items.length === 0 && <p className="empty">当前没有记录。</p>}
       {err && <div className="banner error">{err}</div>}
       <div className="card">
         <button className="btn" onClick={() => void load()}>刷新</button>

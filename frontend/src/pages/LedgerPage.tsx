@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import LedgerAlerts, { LedgerEntry } from "../components/LedgerAlerts";
+import { PageHead } from "../components/ui";
 
 type CountItem = { key: string; label: string; count: number };
 type LedgerResp = {
@@ -55,7 +56,10 @@ export default function LedgerPage() {
 
   return (
     <div>
-      <h1>记录（它做了什么、为什么）</h1>
+      <PageHead
+        title="记录（它做了什么、为什么）"
+        sub="程序没有按你预期的方式使用你给的内容时，这里都留了一条中文原因。"
+      />
       <div className="card">
         <div className="dim" style={{ fontSize: 13 }}>
           只要程序没有按你预期的方式使用你给的内容，这里都会留下一条记录，写明对象与原因。

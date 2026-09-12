@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, DueReviewItem, ExerciseView } from "../api";
 import ExercisePanel, { Feedback } from "../components/ExercisePanel";
+import { Loading, PageHead } from "../components/ui";
 
 const RATINGS = [
   { v: 1, label: "忘记", cls: "again" },
@@ -101,12 +102,12 @@ export default function ReviewPage() {
 
   return (
     <div className="review-page">
-      <h1>复习</h1>
+      <PageHead title="复习" sub="按记忆曲线到期提醒；评一次分就排下一次。" />
       {msg && <div className="banner error">{msg}</div>}
       {lastResult && <div className="banner ok">{lastResult}</div>}
       {!current && (
         <div className="card">
-          {!queue ? <p>加载复习队列…</p> : queue.due.length === 0 ? <p className="empty">今日无到期复习 🎉 去学新知识吧。</p> : (
+          {!queue ? <Loading what="正在读取今天要复习的…" /> : queue.due.length === 0 ? <p className="empty">今日无到期复习 🎉 去学新知识吧。</p> : (
             <ul className="queue-list">
               {queue.due.map((q) => (
                 <li key={q.node_id} className={q.stacked ? "stacked" : ""}>

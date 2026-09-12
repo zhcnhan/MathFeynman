@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, ChallengeView, ExerciseView, FeynmanGapUpdate, FeynmanLedger, NodeMeta, ReteachPayload, StepResponse, postStepStream } from "../api";
 import ExercisePanel, { Feedback } from "../components/ExercisePanel";
+import { Collapsible } from "../components/ui";
 import { dimLabel } from "../components/feynmanLabels";
 import MdMath from "../components/MdMath";
 import ModelModeSwitch from "../components/ModelModeSwitch";
@@ -51,6 +52,9 @@ export default function SessionPage() {
   const [loading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<StepResponse["events"]>([]);
+  // 回看用：这一步见过的讲解/例题留在页面上，切到练习/费曼时能收成小块随时回看
+  const [seenLecture, setSeenLecture] = useState("");
+  const [seenExamples, setSeenExamples] = useState<unknown[]>([]);
   const [question, setQuestion] = useState("");
   const [feynmanText, setFeynmanText] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -127,6 +131,13 @@ export default function SessionPage() {
       const fe = localStorage.getItem(dkey("feyn"));
       if (ask) setQuestion(ask);
       if (fe) setFeynmanText(fe);
+      // 进来时如果是"讲解"这一步，讲解本身就要留在页面上可回看
+      if (typeof resp.payload?.lecture_md === "string" && resp.payload.lecture_md) {
+        setSeenLecture(resp.payload.lecture_md);
+      }
+      if (Array.isArray(resp.payload?.worked_examples) && resp.payload.worked_examples.length) {
+        setSeenExamples(resp.payload.worked_examples as unknown[]);
+      }
       const nodeTitle = (resp.payload?.node as { title?: string } | undefined)?.title;
       localStorage.setItem(
         "yanhui:last_session",
@@ -281,6 +292,13 @@ export default function SessionPage() {
     setError(null);
     const apply = (r: StepResponse) => {
       setResp(r);
+      // 讲解/例题出现过就记住（切到别的环节时收成"回看"小块，不用重新问模型）
+      if (typeof r.payload?.lecture_md === "string" && r.payload.lecture_md) {
+        setSeenLecture(r.payload.lecture_md);
+      }
+      if (Array.isArray(r.payload?.worked_examples) && r.payload.worked_examples.length) {
+        setSeenExamples(r.payload.worked_examples as unknown[]);
+      }
       if (action === "reissue_after_regen") setCanReissue(false);
       setEvents((prev) => [...prev.slice(-6), ...r.events]);
       // R35 S3：挑战题视图**只随 challenge_* 动作下发**（默认流程 payload 里没有它）
@@ -376,11 +394,20 @@ export default function SessionPage() {
           ⏳ AI 正在思考… 已用时 {thinkingSecs}s{thinkingSecs >= 10 && "（首次生成讲解/评分可能较慢，请耐心等待）"}
         </div>
       )}
-      <div className="event-feed">
-        {events.slice(-4).map((e, i) => (
-          <div key={i} className={`event ${e.type}`}>{EVENT_TEXT[e.type] ?? e.type}</div>
-        ))}
-      </div>
+      {/* 这一轮的经过（次要信息，默认收起；出错/被退回时上面已有横幅） */}
+      {events.length > 0 && (
+        <Collapsible
+          id={`sess-events-${session.id}`}
+          title="这一轮的经过"
+          summary={(EVENT_TEXT[events[events.length - 1]?.type] ?? events[events.length - 1]?.type ?? "") || "刚刚发生了什么"}
+        >
+          <div className="event-feed">
+            {events.slice(-8).map((e, i) => (
+              <div key={i} className={`event ${e.type}`}>{EVENT_TEXT[e.type] ?? e.type}</div>
+            ))}
+          </div>
+        </Collapsible>
+      )}
 
       <div className="session-body">
         <main className="session-main">
@@ -421,6 +448,19 @@ export default function SessionPage() {
             />
           )}
 
+          {/* 回看：讲解/例题在别的环节收成小块（点开就能对照，不用重新问模型） */}
+          {step !== "explain" && seenLecture && (
+            <Collapsible id={`sess-lecture-${session.id}`} title="回看讲解" summary="这一节的概念与讲解（点开对照）">
+              <div className="lecture"><TypeMd text={seenLecture} /></div>
+            </Collapsible>
+          )}
+          {step !== "example" && seenExamples.length > 0 && (
+            <Collapsible id={`sess-example-${session.id}`} title="回看例题"
+                          summary={`${seenExamples.length} 道例题与解法`}>
+              <ExampleView payload={{ worked_examples: seenExamples }} onNext={() => act("next")} />
+            </Collapsible>
+          )}
+
           {/* R35 S4：追问无据/学生无可引用内容 → 退回讲解补讲（不发无法回答的追问） */}
           {reteach && (
             <div className="card reteach">
@@ -437,32 +477,46 @@ export default function SessionPage() {
             </div>
           )}
 
-          {/* R35 S3：挑战题池（用户主动触发；**永不出现在默认流程**） */}
-          {challenge?.question && (
-            <ChallengePanel
-              view={challenge}
-              answer={challengeAnswer}
-              setAnswer={setChallengeAnswer}
-              submitting={submitting}
-              onBegin={() => act("challenge_begin")}
-              onSubmit={() => act("challenge_submit", { answer: challengeAnswer })}
-              onCancel={() => { setChallengeAnswer(""); void act("challenge_cancel"); }}
-              onAbandon={() => { setChallengeAnswer(""); void act("challenge_abandon"); }}
-            />
-          )}
+          {/* R35 S3：挑战题池（用户主动触发；**永不出现在默认流程**）
+              默认收起：它不是主线，答不出不影响任何进度 —— 但入口一直在这儿。 */}
+          <Collapsible
+            key={`sess-challenge-${session.id}-${challenge?.question ? "on" : "off"}`}
+            id={`sess-challenge-${session.id}`}
+            title="挑战题"
+            summary={challenge?.question
+              ? "有一道挑战题正在作答（答不出不影响任何进度）"
+              : "想看更难的题、或换换脑子的时候点开（完全不算分）"}
+            defaultOpen={!!challenge?.question}
+          >
+            {challenge?.question ? (
+              <ChallengePanel
+                view={challenge}
+                answer={challengeAnswer}
+                setAnswer={setChallengeAnswer}
+                submitting={submitting}
+                onBegin={() => act("challenge_begin")}
+                onSubmit={() => act("challenge_submit", { answer: challengeAnswer })}
+                onCancel={() => { setChallengeAnswer(""); void act("challenge_cancel"); }}
+                onAbandon={() => { setChallengeAnswer(""); void act("challenge_abandon"); }}
+              />
+            ) : (
+              <p className="muted">这是额外加练，不计入任何进度，也不会影响这一节的达标情况。</p>
+            )}
+            <div className="action-row">
+              {challenge?.question ? (
+                <button className="ghost" disabled={submitting} onClick={() => { setChallengeAnswer(""); void act("challenge_cancel"); }}>
+                  关闭挑战题
+                </button>
+              ) : (
+                <button className="ghost" disabled={submitting} onClick={() => void act("challenge_start")}
+                  title="单独生成一道需要讲解之外知识的题；答不出不影响任何进度">
+                  {submitting ? "生成中…" : "🎲 挑战一下"}
+                </button>
+              )}
+            </div>
+          </Collapsible>
 
           <div className="action-row">
-            {/* R35 S3：「挑战一下」——用户主动触发、单独调模型生成；默认流程里没有它 */}
-            {challenge?.question ? (
-              <button className="ghost" disabled={submitting} onClick={() => { setChallengeAnswer(""); void act("challenge_cancel"); }}>
-                关闭挑战题
-              </button>
-            ) : (
-              <button className="ghost" disabled={submitting} onClick={() => void act("challenge_start")}
-                title="单独生成一道需要讲解之外知识的题；答不出不影响任何进度">
-                {submitting ? "生成中…" : "🎲 挑战一下"}
-              </button>
-            )}
             {step === "practice" && canReissue && (
               <button className="ghost" disabled={submitting} onClick={async () => { await act("reissue_after_regen"); }}>
                 {submitting ? "♻️ 换题中…" : "🔄 换新题（已纠错替换）"}

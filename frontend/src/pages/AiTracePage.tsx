@@ -4,6 +4,7 @@
 //         长文本默认收起（>10 万字不卡界面：详情按需请求 + 折叠渲染 + 仅前 20 万字给浏览器）。
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import { PageHead } from "../components/ui";
 
 const FULL_RENDER_CAP = 200000; // 单块最多渲染 20 万字（再长只提示字符数，避免浏览器卡死）
 
@@ -159,7 +160,7 @@ export default function AiTracePage() {
 
   return (
     <div>
-      <h1>AI 对话记录</h1>
+      <PageHead title="AI 对话记录" sub="排查问题时用：每次发给 AI 的内容和它的回答都能在这里回看。" />
       <div className="banner warn" style={{ fontSize: 13 }}>
         只存在你本机：这里能看到每次发给 AI 的内容和它的回答。文字较长，默认收起，展开就是完整原文。
         记录里不会出现 API Key（已自动遮掉）。保存 {data?.keep_days ?? "—"} 天。
