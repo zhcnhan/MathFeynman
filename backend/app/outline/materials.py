@@ -285,6 +285,22 @@ def add_material(db, subject_id: str, *, title: str, text: str, source: str = "�
             meta_lines.append(f"raw_file: {raw_name}")
         meta_lines += ["", "---", ""]
         p.write_text("\n".join(meta_lines) + "\n" + text + "\n", encoding="utf-8")
+    if fixed:
+        # **R55 C3 ＋ R39 铁则**：改了用户给的正文就必须留痕（改了什么、原文在哪）
+        from ..service import ledger as _ledger
+
+        ex = dict(health.get("extract") or {})
+        _ledger.note(
+            _ledger.CAT_MATERIAL, f"材料《{title}》· 抽取修正",
+            f"导入时做了抽取修正：原始抽取里有 {int(ex.get('unrecognized') or 0)} 个认不出的字形、"
+            f"{int(ex.get('broken_space_lines') or 0)} 行字被空格拆开——已按通用规则修正，"
+            f"注入给模型的是修正后的文本；原始抽取另存 {raw_name} 备查",
+            impact=_ledger.SCOPE_SUBJECT, remedy=_ledger.REMEDY_YES, subject_id=subject_id,
+            detail={"kind": "extract_fixed", "raw_file": raw_name,
+                    "unrecognized": int(ex.get("unrecognized") or 0),
+                    "broken_space_lines": int(ex.get("broken_space_lines") or 0),
+                    "unrecognized_ratio": float(ex.get("unrecognized_ratio") or 0.0)},
+        )
     return {"id": entry_id, "title": title, "source": source, "url": url,
             "kind": effective_kind, "file": p.name,
             "filename": filename or p.name, "text_health": health}
@@ -432,6 +448,20 @@ def reparse_material(db, subject_id: str, material_id: str) -> dict:
         health = text_health(fixed, quality=quality)
         health["fixed"] = str(fm.get("extract_fixed") or "") == "yes"
         health["summary_zh"] = _health_summary_zh(health, health["extract"])
+        if changed:
+            # **R55 C4 ＋ R39 铁则**：重写了用户材料的正文 → 必须留痕（改了什么、原文在哪）
+            from ..service import ledger as _ledger
+
+            _ledger.note(
+                _ledger.CAT_MATERIAL, f"材料《{e['title']}》· 重新整理文字",
+                "按你的要求重做了一次抽取修正：修正后的文本已写回材料"
+                f"（原始抽取留档 {raw_name} 备查）；原始上传文件与已生成的内容文件**没有改动**",
+                impact=_ledger.SCOPE_SUBJECT, remedy=_ledger.REMEDY_YES, subject_id=subject_id,
+                detail={"kind": "extract_reparsed", "raw_file": raw_name,
+                        "unrecognized_ratio": quality["unrecognized_ratio"],
+                        "broken_space_ratio": quality["broken_space_ratio"],
+                        "grade": quality["grade"]},
+            )
         return {"id": material_id, "title": e["title"], "changed": changed,
                 "text_health": health}
     raise OutlineError(f"材料不存在: {material_id}")

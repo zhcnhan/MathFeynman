@@ -15,7 +15,10 @@ import pytest
 from app.outline.pdfparse import (
     _clean, _fold_private_use, _merge_broken_spaces, extract_quality, is_private_use,
 )
-from r55_support import cleanup_subjects, make_subject, material_body, material_path, materials, upload_text_material
+from r55_support import (
+    cleanup_subjects, ledger_entries, make_subject, material_body, material_path, materials,
+    upload_text_material,
+)
 
 # 真实材料里实测到的上下文（R55 立案数据）：U+1001BA 点线 / U+1001B0 句点 / U+100170 间隔号 / U+1001B3 撇号
 PUA_DOT_LEADER = "\U001001ba"
@@ -133,6 +136,12 @@ def test_r55_c3_raw_text_is_kept_and_marked(app_client, sids):
     listed = [m for m in materials(app_client, sid) if m["id"] == r.json()["id"]][0]
     assert listed["text_health"]["fixed"] is True
     assert "修正" in listed["text_health"]["summary_zh"], listed["text_health"]["summary_zh"]
+    # **账本也留痕**（R39 铁则：改了用户给的正文就必须能被看见）
+    rows = ledger_entries(app_client, sid, kind="extract_fixed")
+    assert rows, "抽取修正必须记账"
+    text = f"{rows[0].get('object','')}{rows[0].get('reason','')}"
+    assert "抽取修正" in text and "备查" in text, text
+    assert rows[0]["detail"].get("raw_file") == health["raw_file"]
 
 
 def test_r55_c4_reparse_endpoint_is_idempotent(app_client, sids):
@@ -158,5 +167,10 @@ def test_r55_c4_reparse_endpoint_is_idempotent(app_client, sids):
     r2 = app_client.post(f"/api/subjects/{sid}/materials/{up['id']}/reparse", json={})
     assert r2.status_code == 200 and r2.json()["changed"] is False, r2.text
     assert material_body(sid, up["id"]) == fixed_body, "重复重新整理不许放大改动"
+    # 账本：**改了的**那次留痕（中文），第二次没改 → 不产生新账目（不刷屏）
+    rows = ledger_entries(app_client, sid, kind="extract_reparsed")
+    assert len(rows) == 1, rows
+    text = f"{rows[0].get('object','')}{rows[0].get('reason','')}"
+    assert "重新整理" in text and "没有改动" in text, text
     # 重新整理**不动已生成的内容文件**（这里没有内容文件，断言材料文件之外没有别的写入）
     assert is_private_use(PUA_PERIOD) and PUA_PERIOD not in material_body(sid, up["id"])
