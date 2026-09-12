@@ -45,3 +45,32 @@
 ⚠️ 后两条**偏低是正常的**：S3 允许讲解"换措辞/举例/类比"，所以"整句照抄"不是硬要求；
 「含逐字片段」才反映"这句话是从教材演绎出来的"。审计的判据、阈值、口径写在
 `backend/tests/audit_material_binding.py` 里，**改本样本不许顺手改它**。
+
+## 样本指纹（SHA256）—— 样本被改坏时有人报警
+
+下面这段是**三个样本文件的指纹登记表**（相对本目录的路径 ➜ SHA256）。
+`backend/tests/test_r71_grounding_sample_intact.py` 会**毫秒级**核一遍：
+文件不在了、或者看不懂这段登记表、或者文件内容变了一个字节 → **用例立刻变红并指名道姓**。
+
+（登记表本身不参与校验——它比对的是下面这三行里登记的**样本文件**，README 自己的改动不受影响。）
+
+```
+1895d71c641c86f8189111228fe7105eb5b902c8374e7ff884b244f939fa2f92  materials/researchgate-17551026c7.md
+7cb2bdb69ed14496d7832aee7f09fe64a2c0782f945c38105bd9262982d64286  stages/node_s-f2decfcf.u01_auto.md
+801c7194812e1f1d68b2c178d9dd7de077730064e555dc8ddea843883d62a574  stages/node_s-f2decfcf.u02_auto.md
+```
+
+**万一真的要换样本**（例如教材有新版）：换完以后用下面这条命令重算指纹，
+把上面代码块里的三行**原样替换**掉（格式就是"64 位十六进制 + 两个空格 + 相对路径"）：
+
+```powershell
+Get-ChildItem -Recurse -File . | Where-Object Name -ne 'README.md' |
+  ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.FullName.Replace((Get-Location).Path + '\','').Replace('\','/'))" }
+```
+
+（在 `backend/tests/fixtures/grounding_sample/` 目录里跑；把三条**路径顺序**与上面保持一致。）
+
+⚠️ 这两件事要分清：**指纹自检**只回答"样本文件还是不是当初那三个字节"（毫秒级、随 pytest 跑）；
+**完整审计**（17/17、6/6、9/83、37/83）回答"内容与教材的接地有没有变"，它约 10 秒，
+**照旧按需手动跑**，不塞进每次 pytest。
+
