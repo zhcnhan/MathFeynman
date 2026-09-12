@@ -539,17 +539,35 @@ def cleanup_once(reason: str = "定时", *, keep_days_override: int | None = Non
 
     ``reason``（**R48 B**）作为 ``trigger`` 落进账目 ``detail``（``启动`` / ``定时`` / ``手动``）。
     异常一律**只 warning**（不清就下次再清），**绝不抛**——审计清理不得影响主流程。
+
+    **R58 任务 B**：同一次清理里**顺带**清 `outline.pdfrender` 的 PDF 渲染缓存
+    （**同一套定时器/同一实现**，不新建第二个机制）；它失败也只 warning，
+    结果放在返回值的 ``pdf_cache`` 里（便于界面/测试核对）。
     """
+    out: dict = {}
     try:
         out = cleanup_old(None, keep_days_override=keep_days_override, trigger=reason)
         if out.get("count"):
             logger.info("审计保留期清理（%s）: 删除 %s 个文件（保留期 %s 天，已记入总账）",
                         reason, out["count"], out.get("keep_days"))
-        return out
     except Exception as e:
         logger.warning("审计保留期清理失败（%s，不影响主流程，下次再清）: %s", reason, e)
-        return {"removed": [], "count": 0, "keep_days": keep_days(),
-                "trigger": reason, "error": str(e)}
+        out = {"removed": [], "count": 0, "keep_days": keep_days(),
+               "trigger": reason, "error": str(e)}
+    # **R58 B**：PDF 渲染缓存（同一 trigger 口径；失败只 warning）
+    try:
+        from ..outline import pdfrender
+
+        cache = pdfrender.cleanup_pdf_cache(trigger=reason)
+        if cache.get("removed_count"):
+            logger.info("PDF 渲染缓存清理（%s）: 删除 %s 个文件（保留期 %s 天，已记入总账）",
+                        reason, cache["removed_count"], cache.get("keep_days"))
+        out["pdf_cache"] = cache
+    except Exception as e:
+        logger.warning("PDF 渲染缓存清理失败（%s，不影响主流程，下次再清）: %s", reason, e)
+        out["pdf_cache"] = {"removed": [], "removed_count": 0, "trigger": reason,
+                            "error": str(e)}
+    return out
 
 
 class PeriodicCleanup:
