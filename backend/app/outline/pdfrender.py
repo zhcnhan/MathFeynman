@@ -225,9 +225,16 @@ def _encode_with_limit(img, *, fmt: str, quality: int, max_bytes: int,
         buf = _encode(img, fmt, max(30, quality - 25))       # 先降质量重试一次
     data_bytes = buf.getvalue()
     if max_bytes and len(data_bytes) > max_bytes:
-        raise PdfRenderError(f"第 {page_no} 页渲染出来太大（{len(data_bytes) // 1024} KB > "
-                             f"{max_bytes // 1024} KB）——请把目标宽度调小"
-                             "（MF_PAGE_IMAGE_WIDTH）后重试")
+        # **R61 任务 B**：文案里**不许出现内部变量名**（那个宽度参数用户改不了），
+        # 也不许指向界面上并不存在的编辑入口（R61 集成时校正：现在没有改出图宽度的界面，
+        # 所以先把**真能走**的两条路说清楚——跳过这一页 / 换更清晰的版本重新导入；
+        # 宽度这一项的当前值在导入说明里能看到）。页号与真实体量（KB）照实保留
+        # （R60 A-④ 的口径不变：造错必报中文）。
+        # ⚠️ 也不能退回 R60 任务 A 已废弃的那两句旧建议（见 R60 用例）。
+        raise PdfRenderError(f"第 {page_no} 页出图太大（{len(data_bytes) // 1024} KB > 上限 "
+                             f"{max_bytes // 1024} KB）——这一页暂时发不出去："
+                             "可以跳过这一页、只读别的页，或换一版更清晰的图重新导入；"
+                             "出图宽度这一项在导入处的说明里能看到当前值")
     return data_bytes, px_w, px_h
 
 

@@ -2190,12 +2190,14 @@ def search_candidates(db, subject_id: str, query: str) -> dict:
 
 
 def _no_backend_note(status: dict) -> str:
+    # **R61 任务 B**：这段 note 会在界面上原样显示（大纲页的「联网检索」提示）——
+    # 不许出现内部变量名，只说人话 + 指向用户真能走的两条路（「本地导入」在这里）。
     provider = status.get("provider") or "none"
     if provider == "searxng":
-        return ("联网检索后端未配置完成：已选 SearXNG 但缺少实例地址（设 MF_SEARXNG_URL）。"
-                "配置后可用联网候选，或现在用「本地导入」上传自有/授权资料。")
-    return ("联网检索后端未配置（当前无检索 provider）。可选方案：自托管 SearXNG（设 "
-            "MF_SEARCH_PROVIDER=searxng 与 MF_SEARXNG_URL），或先用「本地导入」上传自有/授权资料。")
+        return ("联网检索后端未配置完成：已选 SearXNG 但还缺实例地址（要在这台机器的程序配置文件里"
+                "填自托管实例地址）。配好就能用联网候选，或现在用「本地导入」上传自有/授权资料。")
+    return ("联网检索后端未配置（当前没有选检索服务）。可选方案：在这台机器的程序配置文件里"
+            "启用自托管 SearXNG 并填实例地址，或先用「本地导入」上传自有/授权资料。")
 
 
 def _refine_candidates(db, subj, query: str, raw: list[dict], settings) -> list[dict]:

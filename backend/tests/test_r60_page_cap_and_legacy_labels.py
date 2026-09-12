@@ -1,4 +1,4 @@
-﻿"""R60 用例：① 页数上限只约束「本次实际要读的页数」② 旧标签跳过并列出。
+"""R60 用例：① 页数上限只约束「本次实际要读的页数」② 旧标签跳过并列出。
 
 工单 `.runtime/EULER_TICKET_R60.md`：
 - **任务 A（真缺陷）**：给了页范围就**只按范围里的页数**校验（126 页的书只要 1 页必须放行）；
@@ -162,14 +162,23 @@ def test_r60_a3_whole_book_over_limit_still_refused(app_client, sids, monkeypatc
 
 
 def test_r60_a4_single_page_size_guard_still_works(monkeypatch):
-    """**A-④**：单页体量保护（`max_bytes`）**照旧在**——页数口径改了，这条不许被顺手改没。"""
+    """**A-④**：单页体量保护（`max_bytes`）**照旧在**——页数口径改了，这条不许被顺手改没。
+
+    **R61 任务 B 更新**：文案改了（旧文案带内部变量名 `MF_PAGE_IMAGE_WIDTH`，用户改不了）——
+    这里只换"锁哪句话"，**意图不变**：仍然是"造错必报中文 + 说清第几页/多大 + 给可操作指引"。
+    """
     from app.outline import pdfrender
 
     data = sample_pdf(2)
     # 小范围（1 页）也不再受"整本页数"影响，但单页太大照样中文报错
     with pytest.raises(pdfrender.PdfRenderError) as e:
         pdfrender.render_pages(data, pages="1", max_bytes=1024)
-    assert "渲染出来太大" in str(e.value), str(e.value)
+    msg = str(e.value)
+    assert "出图太大" in msg, msg                       # 旧文案是「渲染出来太大」（R61 改）
+    assert "第 1 页" in msg and "KB" in msg, msg        # 页号与真实体量照实留（不是含糊其辞）
+    assert "宽度" in msg or "设置" in msg, msg          # 必须给出可操作的去处（R61：出图宽度这一项的当前值在导入说明里）
+    assert "MF_" not in msg and "docs/" not in msg, msg  # 不许出现内部变量名/文档路径
+    assert re.search(r"[\u4e00-\u9fff]", msg), msg     # 永远中文
     # 给足体量上限 → 同一页正常出图（说明拒绝来自体量保护，不是页数口径）
     ok = pdfrender.render_pages(data, pages="1", max_bytes=4 * 1024 * 1024)
     assert len(ok) == 1 and ok[0]["page_no"] == 1 and len(ok[0]["data"]) > 2000

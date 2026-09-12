@@ -66,12 +66,16 @@ def test_r58_a1_no_open_documents_after_many_renders():
 
 
 def test_r58_a1_error_path_also_closes():
-    """**A4-②**：出错路径（图太大）也把句柄关掉（R57 那条分支永远不会关 doc）。"""
+    """**A4-②**：出错路径（图太大）也把句柄关掉（R57 那条分支永远不会关 doc）。
+
+    **R61 任务 B 更新**：那句报错改了文案（旧文案带内部变量名）——本用例只关心
+    "**出错路径能走到、且是中文报错**"，故断言随之更新，意图不变。
+    """
     data = sample_pdf(2)
     before = alive_objects()
     with pytest.raises(pdfrender.PdfRenderError) as e:
         pdfrender.render_pages(data, width=1024, max_bytes=1024)
-    assert "渲染出来太大" in str(e.value)
+    assert "出图太大" in str(e.value), str(e.value)
     assert alive_objects() == before, f"出错路径泄漏了：{before} → {alive_objects()}"
     pdfrender.render_pages(data, width=1024)          # 出错之后再渲染照样干净
     assert alive_objects() == before

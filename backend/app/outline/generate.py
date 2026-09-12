@@ -518,8 +518,9 @@ def generate_unit_content(
                 "note": "内容已在库（懒生成幂等）"
                         + (f"；覆盖状态：{coverage['status']}" if coverage else "")}
     if has_material and not pack.get("covered"):
+        # **R61 任务 B**：这条 note 会随出稿结果回到界面 —— 去掉内部编号，只说人话。
         note = ("教材未覆盖此单元：" + str(pack.get("note") or "教材中未检索到与本节相关的内容")
-                + "。按 R37 S6，系统不编造内容——请调整单元与教材章节的对应关系，"
+                + "。系统不编造内容——请调整单元与教材章节的对应关系，"
                   "或确认该主题确实不在本教材中。")
         _record_coverage(db, subject_id, unit.id, {
             "status": "未覆盖", "material_bound": True, "grounded_facts": 0,
@@ -782,8 +783,9 @@ def _coverage_of(report, pack: dict, *, has_material: bool) -> dict:
         return {"status": "未覆盖", "material_bound": False, "grounded_facts": facts,
                 "dropped_facts": dropped_facts, "dropped_exercises": dropped_ex, **basis,
                 "sources": sources,
-                "note": "本内容无教材依据（离线启发式出稿：未配置模型，未读教材；"
-                        "配置 LLM_API_KEY 后重新生成即可获得教材锚定内容）"}
+                # **R61 任务 B**：不出现内部变量名；"去哪配"改成界面上的入口。
+                "note": "本内容无教材依据（离线启发式出稿：没配可用模型，没读教材；"
+                        "到「设置 · 模型」里填好模型与 Key 后重新生成即可获得教材锚定内容）"}
     if dropped_facts or dropped_ex:
         status = "部分"
         note = (f"教材锚定：{facts} 条事实句逐字出自教材；"

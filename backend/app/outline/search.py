@@ -54,7 +54,8 @@ def provider_status(settings: Settings | None = None) -> dict:
             "configured": False,
             "provider": "searxng",
             "url": "",
-            "note": "SearXNG 未配置实例地址（MF_SEARXNG_URL）",
+            # **R61 任务 B**：这段 note 会随检索响应回给界面——不许出现内部变量名。
+            "note": "SearXNG 未配置实例地址（要在这台机器的程序配置文件里填自托管实例地址）",
         }
     return {"configured": True, "provider": provider, "url": s.searxng_url, "note": ""}
 
@@ -111,8 +112,10 @@ def search_web(query: str, *, settings: Settings | None = None,
     status = provider_status(s)
     if not status["configured"]:
         note = status.get("note") or ""
-        raise SearchBackendError(f"联网检索后端未配置（{note}）。可选方案：自托管 SearXNG 后设 "
-                                 "MF_SEARCH_PROVIDER=searxng 与 MF_SEARXNG_URL。")
+        # **R61 任务 B**：这条中文报错会被材料层拼进界面上的 note（`联网检索失败：…`）——
+        # 不出现内部变量名，只说"在这台机器的程序配置文件里配"。
+        raise SearchBackendError(f"联网检索后端未配置（{note}）。可选方案：在这台机器的程序配置文件里"
+                                 "启用自托管 SearXNG 并填实例地址。")
     if s.search_provider == "searxng":
         items = _searxng_search(query, settings=s, transport=transport)
     else:  # pragma: no cover - provider_status 已拦截未知值
